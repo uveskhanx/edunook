@@ -31,11 +31,6 @@ function SignupPage() {
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [usernameSuggestions, setUsernameSuggestions] = useState<string[]>([]);
 
-  if (user) {
-    navigate({ to: '/' });
-    return null;
-  }
-
   const checkUsername = useCallback(async (value: string) => {
     if (value.length < 3) {
       setUsernameAvailable(null);

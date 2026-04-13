@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router';
 interface CourseCardProps {
   id: string;
   title: string;
-  description: string | null;
+  description?: string | null;
   thumbnailUrl: string | null;
   price: number;
   category: string;
@@ -11,7 +11,7 @@ interface CourseCardProps {
   creatorAvatar: string | null;
 }
 
-export function CourseCard({ id, title, description, thumbnailUrl, price, category, creatorName, creatorAvatar }: CourseCardProps) {
+export function CourseCard({ id, title, thumbnailUrl, price, category, creatorName, creatorAvatar }: CourseCardProps) {
   return (
     <Link
       to="/course/$courseId"
