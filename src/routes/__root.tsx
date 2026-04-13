@@ -31,14 +31,13 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "EduNook — Modern Education Platform" },
+      { name: "description", content: "Learn and teach with EduNook. Browse courses, create content, and connect with educators." },
+      { name: "author", content: "EduNook" },
+      { property: "og:title", content: "EduNook — Modern Education Platform" },
+      { property: "og:description", content: "Learn and teach with EduNook. Browse courses, create content, and connect with educators." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
       {
