@@ -64,6 +64,11 @@ function SignupPage() {
     return () => clearTimeout(timer);
   }, [username, checkUsername]);
 
+  if (user) {
+    navigate({ to: '/' });
+    return null;
+  }
+
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
     setError('');
