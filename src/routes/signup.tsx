@@ -20,6 +20,9 @@ function SignupPage() {
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [dob, setDob] = useState('');
+  const [gender, setGender] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -81,13 +84,23 @@ function SignupPage() {
       setError('Username is taken');
       return;
     }
+    if (password.length < 1) {
+      setError('Password is required');
+      return;
+    }
 
     setLoading(true);
     const { error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { username, full_name: fullName },
+        data: {
+          username,
+          full_name: fullName,
+          phone,
+          date_of_birth: dob || null,
+          gender,
+        },
         emailRedirectTo: window.location.origin,
       },
     });
@@ -175,12 +188,7 @@ function SignupPage() {
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 <span className="text-xs text-muted-foreground">Try:</span>
                 {usernameSuggestions.map(s => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setUsername(s)}
-                    className="text-xs text-primary hover:underline"
-                  >
+                  <button key={s} type="button" onClick={() => setUsername(s)} className="text-xs text-primary hover:underline">
                     {s}
                   </button>
                 ))}
@@ -201,15 +209,51 @@ function SignupPage() {
           </div>
 
           <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Mobile Number</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+1 234 567 8900"
+              className="w-full px-3 py-2.5 bg-input border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Date of Birth</label>
+              <input
+                type="date"
+                value={dob}
+                onChange={(e) => setDob(e.target.value)}
+                className="w-full px-3 py-2.5 bg-input border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Gender</label>
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value)}
+                className="w-full px-3 py-2.5 bg-input border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all"
+              >
+                <option value="">Select</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="non-binary">Non-binary</option>
+                <option value="prefer-not-to-say">Prefer not to say</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Password</label>
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="Enter any password"
                 required
-                minLength={6}
                 className="w-full px-3 py-2.5 pr-10 bg-input border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all"
               />
               <button
@@ -225,9 +269,9 @@ function SignupPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 disabled:opacity-50 transition-all duration-200"
+            className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 disabled:opacity-50 transition-all duration-200 flex items-center justify-center gap-2"
           >
-            {loading ? 'Creating account...' : 'Create Account'}
+            {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating account...</> : 'Create Account'}
           </button>
         </form>
 
