@@ -85,8 +85,11 @@ export type Database = {
           avatar_url: string | null
           bio: string | null
           created_at: string
+          date_of_birth: string | null
           full_name: string
+          gender: string | null
           id: string
+          phone: string | null
           updated_at: string
           user_id: string
           username: string
@@ -95,8 +98,11 @@ export type Database = {
           avatar_url?: string | null
           bio?: string | null
           created_at?: string
+          date_of_birth?: string | null
           full_name?: string
+          gender?: string | null
           id?: string
+          phone?: string | null
           updated_at?: string
           user_id: string
           username: string
@@ -105,8 +111,11 @@ export type Database = {
           avatar_url?: string | null
           bio?: string | null
           created_at?: string
+          date_of_birth?: string | null
           full_name?: string
+          gender?: string | null
           id?: string
+          phone?: string | null
           updated_at?: string
           user_id?: string
           username?: string
@@ -267,7 +276,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_email_by_username: {
+        Args: { lookup_username: string }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never
