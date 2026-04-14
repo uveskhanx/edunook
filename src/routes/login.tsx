@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
-import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft, Loader2 } from 'lucide-react';
 
 export const Route = createFileRoute('/login')({
   head: () => ({
@@ -33,28 +33,20 @@ function LoginPage() {
     setError('');
     setLoading(true);
 
-    let email = emailOrUsername;
+    let email = emailOrUsername.trim();
 
-    // If not an email, look up by username
-    if (!emailOrUsername.includes('@')) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('user_id')
-        .eq('username', emailOrUsername)
-        .single();
+    // If not an email, look up by username using our database function
+    if (!email.includes('@')) {
+      const { data, error: rpcError } = await supabase.rpc('get_email_by_username', {
+        lookup_username: email,
+      });
 
-      if (!profile) {
+      if (rpcError || !data) {
         setError('Username not found');
         setLoading(false);
         return;
       }
-
-      // Get email from auth (we need to use a workaround - try login with the user_id context)
-      // For simplicity, we'll require email for login or use a server function
-      // Actually, let's query the user's email - but we can't from client. Let's try signing in.
-      setError('Please use your email address to log in');
-      setLoading(false);
-      return;
+      email = data;
     }
 
     const { error: authError } = await supabase.auth.signInWithPassword({
@@ -96,12 +88,12 @@ function LoginPage() {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">Email</label>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Email or Username</label>
             <input
-              type="email"
+              type="text"
               value={emailOrUsername}
               onChange={(e) => setEmailOrUsername(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="you@example.com or username"
               required
               className="w-full px-3 py-2.5 bg-input border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all"
             />
@@ -137,9 +129,9 @@ function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 disabled:opacity-50 transition-all duration-200"
+            className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 disabled:opacity-50 transition-all duration-200 flex items-center justify-center gap-2"
           >
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in...</> : 'Sign In'}
           </button>
         </form>
 
