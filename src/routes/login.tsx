@@ -1,14 +1,25 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/use-auth';
-import { Eye, EyeOff, ArrowLeft, Loader2 } from 'lucide-react';
+import { createFileRoute, useNavigate, Link } from '@tanstack/react-router';
+import { useState, useRef, useEffect } from 'react';
+import { auth, db } from '@/lib/firebase';
+import { 
+  signInWithEmailAndPassword, 
+  sendEmailVerification,
+  sendPasswordResetEmail
+} from 'firebase/auth';
+import { 
+  Lock, Loader2, Sparkles, ArrowRight, 
+  AtSign, Eye, EyeOff, Mail, CheckCircle2,
+  AlertCircle
+} from 'lucide-react';
+import { DbService } from '@/lib/db-service';
+import { AuthService } from '@/lib/auth-service';
+import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 
 export const Route = createFileRoute('/login')({
   head: () => ({
     meta: [
-      { title: 'Login — EduNook' },
-      { name: 'description', content: 'Sign in to your EduNook account' },
+      { title: 'Log In — EduNook' },
     ],
   }),
   component: LoginPage,
@@ -16,132 +27,238 @@ export const Route = createFileRoute('/login')({
 
 function LoginPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [emailOrUsername, setEmailOrUsername] = useState('');
+  
+  // Form State
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  
+  // UI State
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
 
-  if (user) {
-    navigate({ to: '/' });
-    return null;
-  }
+  // Focus Refs
+  const passwordRef = useRef<HTMLInputElement>(null);
 
-  async function handleLogin(e: React.FormEvent) {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!identifier || !password || loading) return;
+
     setError('');
+    setNeedsVerification(false);
     setLoading(true);
 
-    let email = emailOrUsername.trim();
+    try {
+      let loginEmail = identifier.trim();
 
-    // If not an email, look up by username using our database function
-    if (!email.includes('@')) {
-      const { data, error: rpcError } = await supabase.rpc('get_email_by_username', {
-        lookup_username: email,
-      });
+      // SMART LOGIN: If not an email, lookup username
+      if (!loginEmail.includes('@')) {
+        const foundEmail = await DbService.getEmailByUsername(loginEmail);
+        if (!foundEmail) {
+          setError('Account not found');
+          setLoading(false);
+          return;
+        }
+        loginEmail = foundEmail;
+      }
 
-      if (rpcError || !data) {
-        setError('Username not found');
+      const userCredential = await signInWithEmailAndPassword(auth, loginEmail, password);
+      const user = userCredential.user;
+
+      // EMAIL VERIFICATION CHECK
+      if (!user.emailVerified) {
+        setNeedsVerification(true);
+        setError('Please verify your email first');
         setLoading(false);
+        // We sign out because we don't want them in the app yet
+        // await auth.signOut(); 
         return;
       }
-      email = data;
-    }
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (authError) {
-      setError(authError.message);
-    } else {
-      navigate({ to: '/' });
+      // Success!
+      toast.success('Welcome back!');
+      navigate({ to: '/home' });
+    } catch (err: any) {
+      console.error('Login Error:', err);
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+        setError('Account not found');
+      } else if (err.code === 'auth/wrong-password') {
+        setError('Wrong password');
+      } else if (err.code === 'auth/network-request-failed') {
+        setError('Network error, try again');
+      } else {
+        setError('Something went wrong. Try again.');
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }
+  };
+
+  const handleResendVerification = async () => {
+    if (resendLoading || !auth.currentUser) return;
+    setResendLoading(true);
+    try {
+      await sendEmailVerification(auth.currentUser);
+      toast.success('Verification link sent to your email');
+    } catch (err: any) {
+      toast.error('Failed to send link. Try again later.');
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!identifier.includes('@')) {
+      toast.error('Please enter your email address first');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, identifier);
+      toast.success('Password reset link sent to your email');
+    } catch (err: any) {
+      toast.error('Error sending reset link');
+    }
+  };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 bg-background">
-      <div className="w-full max-w-md animate-slide-up">
-        <div className="mb-8">
-          <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Link>
+    <div className="min-h-screen flex items-center justify-center bg-[#050505] px-6 py-8 md:py-12 relative overflow-hidden">
+      {/* Premium Background Effects */}
+      <div className="absolute top-0 left-0 w-full h-full -z-10">
+         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/10 rounded-full blur-[120px]" />
+         <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-violet-500/10 rounded-full blur-[120px]" />
+      </div>
+
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-[400px]"
+      >
+        <div className="flex flex-col items-center mb-6 md:mb-10 space-y-3 md:space-y-4">
+           <Link to="/" className="flex items-center gap-3 group">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center shadow-2xl shadow-primary/20 group-hover:scale-110 transition-transform duration-500">
+                 <Sparkles className="w-6 h-6 text-white" />
+              </div>
+              <span className="text-3xl font-black tracking-tighter text-white uppercase">EduNook</span>
+           </Link>
         </div>
 
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center mx-auto mb-4">
-            <span className="text-primary-foreground font-bold text-lg">E</span>
-          </div>
-          <h1 className="text-2xl font-bold text-foreground">Welcome back</h1>
-          <p className="text-muted-foreground mt-1">Sign in to your account</p>
-        </div>
-
-        <form onSubmit={handleLogin} className="space-y-4">
-          {error && (
-            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm animate-scale-in">
-              {error}
+        <div className="bg-[#0f0f0f]/80 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-6 md:p-10 shadow-3xl">
+          <form onSubmit={handleLogin} className="space-y-6">
+            <div className="text-center space-y-2 mb-8">
+              <h1 className="text-2xl font-black text-white">Welcome Back</h1>
+              <p className="text-muted-foreground text-sm font-medium">Log in to your account</p>
             </div>
-          )}
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">Email or Username</label>
-            <input
-              type="text"
-              value={emailOrUsername}
-              onChange={(e) => setEmailOrUsername(e.target.value)}
-              placeholder="you@example.com or username"
-              required
-              className="w-full px-3 py-2.5 bg-input border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all"
-            />
-          </div>
+            <AnimatePresence mode="wait">
+              {error && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className="flex items-center gap-3 p-4 bg-destructive/10 border border-destructive/20 rounded-2xl"
+                >
+                  <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0" />
+                  <p className="text-destructive text-sm font-bold">{error}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">Password</label>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                className="w-full px-3 py-2.5 pr-10 bg-input border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all"
-              />
+            <div className="space-y-5">
+              {/* Email or Username Info */}
+              <div className="space-y-2 group">
+                <label className="text-xs font-bold text-muted-foreground ml-1">Email or Username</label>
+                <div className="relative">
+                  <AtSign className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    type="text"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="example@email.com"
+                    autoFocus
+                    autoComplete="username"
+                    onKeyDown={(e) => e.key === 'Enter' && passwordRef.current?.focus()}
+                    className="w-full pl-11 pr-4 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/20"
+                  />
+                </div>
+              </div>
+
+              {/* Password Info */}
+              <div className="space-y-2 group">
+                <div className="flex justify-between items-center ml-1">
+                  <label className="text-xs font-bold text-muted-foreground">Password</label>
+                  <button 
+                    type="button" 
+                    onClick={handleForgotPassword}
+                    className="text-[11px] font-bold text-primary hover:text-primary/80 transition-colors"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <input
+                    ref={passwordRef}
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter your password"
+                    autoComplete="current-password"
+                    className="w-full pl-11 pr-12 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/20"
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2">
               <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                type="submit"
+                disabled={loading || !identifier || !password}
+                className="w-full py-4 bg-gradient-to-r from-primary to-violet-600 text-white rounded-2xl font-black text-[16px] shadow-2xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 flex items-center justify-center gap-2 group"
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
+                  <>Log In <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>
+                )}
               </button>
             </div>
+
+            {needsVerification && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="p-4 bg-primary/5 border border-primary/10 rounded-2xl flex flex-col items-center space-y-3"
+              >
+                <p className="text-[11px] font-bold text-primary/80 text-center uppercase tracking-wider">Please verify your email first</p>
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={resendLoading}
+                  className="px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-black uppercase tracking-widest rounded-xl transition-all disabled:opacity-50"
+                >
+                  {resendLoading ? 'Sending...' : 'Resend verification link'}
+                </button>
+              </motion.div>
+            )}
+          </form>
+
+          <div className="mt-8 text-center border-t border-white/5 pt-8">
+            <p className="text-sm text-muted-foreground font-medium">
+              New to EduNook?{' '}
+              <Link to="/signup" className="text-white font-black hover:underline underline-offset-4 decoration-primary transition-all">
+                Create Account
+              </Link>
+            </p>
           </div>
-
-          <div className="text-right">
-            <Link to="/forgot-password" className="text-sm text-primary hover:underline">
-              Forgot password?
-            </Link>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 disabled:opacity-50 transition-all duration-200 flex items-center justify-center gap-2"
-          >
-            {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in...</> : 'Sign In'}
-          </button>
-        </form>
-
-        <p className="text-center text-sm text-muted-foreground mt-6">
-          Don't have an account?{' '}
-          <Link to="/signup" className="text-primary hover:underline font-medium">
-            Sign up
-          </Link>
-        </p>
-      </div>
+        </div>
+      </motion.div>
     </div>
   );
 }

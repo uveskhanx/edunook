@@ -4,23 +4,27 @@ import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">
-          Page not found
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
-        </p>
-        <div className="mt-6">
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Go home
-          </Link>
-        </div>
+    <div className="flex min-h-screen items-center justify-center bg-background px-6 relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-tr from-primary/10 via-transparent to-accent/5 blur-[120px] -z-10" />
+      <div className="max-w-md w-full p-12 premium-glass rounded-[3.5rem] border border-white/5 text-center space-y-8 shadow-2xl">
+         <div className="flex flex-col items-center gap-4">
+            <h1 className="text-9xl font-black tracking-tighter premium-gradient-text leading-none">404</h1>
+            <div className="w-12 h-1 w-1 bg-primary rounded-full animate-bounce" />
+         </div>
+         <div className="space-y-2">
+            <h2 className="text-3xl font-black text-white tracking-tight uppercase italic">Vector Lost.</h2>
+            <p className="text-muted-foreground font-medium leading-relaxed opacity-60">
+              The coordinates you are seeking do not exist in the EduNook constellation.
+            </p>
+         </div>
+         <div className="pt-4">
+           <Link
+             to="/"
+             className="inline-flex items-center justify-center w-full rounded-2xl bg-white px-8 py-5 text-sm font-black text-black transition-all hover:scale-105 active:scale-95 shadow-xl"
+           >
+             Return to Station
+           </Link>
+         </div>
       </div>
     </div>
   );

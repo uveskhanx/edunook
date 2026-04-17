@@ -1,10 +1,10 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, useNavigate, Link } from '@tanstack/react-router';
 import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { DbService } from '@/lib/db-service';
 import { useAuth } from '@/hooks/use-auth';
 import { Layout } from '@/components/Layout';
-import { Upload, Plus, X, Loader2 } from 'lucide-react';
-import { Link } from '@tanstack/react-router';
+import { Upload, Plus, X, Loader2, BookOpen, DollarSign, Tag, Video as VideoIcon, Sparkles, LayoutGrid, CheckCircle2, Link as LinkIcon, FileQuestion, GripVertical } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export const Route = createFileRoute('/create')({
   head: () => ({
@@ -15,6 +15,16 @@ export const Route = createFileRoute('/create')({
 
 const categories = ['programming', 'design', 'business', 'music', 'photography', 'marketing', 'science', 'math', 'language', 'general'];
 
+type ChapterType = 'video' | 'link' | 'quiz';
+
+interface ChapterDraft {
+  title: string;
+  type: ChapterType;
+  file?: File;       // for video type
+  pageUrl?: string;  // for link type
+  quizUrl?: string;  // for quiz type
+}
+
 function CreateCoursePage() {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -23,35 +33,43 @@ function CreateCoursePage() {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('0');
   const [category, setCategory] = useState('general');
-  const [keywords, setKeywords] = useState<string[]>([]);
-  const [keywordInput, setKeywordInput] = useState('');
   const [thumbnail, setThumbnail] = useState<File | null>(null);
-  const [videos, setVideos] = useState<{ file: File; title: string }[]>([]);
+  const [chapters, setChapters] = useState<ChapterDraft[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  if (authLoading) return <Layout><div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div></Layout>;
+  if (authLoading) return <Layout><div className="flex items-center justify-center py-24"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div></Layout>;
 
   if (!user) {
     return (
       <Layout>
-        <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
-          <h2 className="text-xl font-bold text-foreground mb-2">Sign in to create a course</h2>
-          <p className="text-muted-foreground mb-4">You need an account to create courses</p>
-          <Link to="/login" className="px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 transition-all">
-            Sign In
-          </Link>
+        <div className="flex flex-col items-center justify-center py-32 px-4 text-center">
+          <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="p-12 bg-card/30 backdrop-blur-3xl border border-white/5 rounded-[3rem] shadow-2xl max-w-md">
+            <BookOpen className="w-20 h-20 text-primary mx-auto mb-8 opacity-20" />
+            <h2 className="text-3xl font-black text-white mb-4 tracking-tighter">Enter Creator Mode</h2>
+            <p className="text-muted-foreground mb-10 font-medium leading-relaxed">Join our elite collective of master educators. Sign in to publish your masterpiece.</p>
+            <Link to="/login" className="block w-full py-5 bg-primary text-white rounded-2xl font-black shadow-2xl shadow-primary/20 hover:scale-105 transition-all">
+              Ignite Your Journey
+            </Link>
+          </motion.div>
         </div>
       </Layout>
     );
   }
 
-  function addKeyword() {
-    if (keywordInput.trim() && keywords.length < 3) {
-      setKeywords([...keywords, keywordInput.trim()]);
-      setKeywordInput('');
-    }
-  }
+  const addChapter = (type: ChapterType) => {
+    setChapters([...chapters, { title: '', type }]);
+  };
+
+  const updateChapter = (index: number, updates: Partial<ChapterDraft>) => {
+    const newChapters = [...chapters];
+    newChapters[index] = { ...newChapters[index], ...updates };
+    setChapters(newChapters);
+  };
+
+  const removeChapter = (index: number) => {
+    setChapters(chapters.filter((_, i) => i !== index));
+  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -62,153 +80,284 @@ function CreateCoursePage() {
     try {
       let thumbnailUrl: string | null = null;
       if (thumbnail) {
-        const ext = thumbnail.name.split('.').pop();
-        const path = `${user.id}/${Date.now()}.${ext}`;
-        const { error: uploadErr } = await supabase.storage.from('thumbnails').upload(path, thumbnail);
-        if (uploadErr) throw uploadErr;
-        const { data: urlData } = supabase.storage.from('thumbnails').getPublicUrl(path);
-        thumbnailUrl = urlData.publicUrl;
+        thumbnailUrl = await DbService.uploadThumbnail(user.id, thumbnail);
       }
 
-      const { data: course, error: courseErr } = await supabase
-        .from('courses')
-        .insert({
-          user_id: user.id,
-          title,
-          description,
-          price: parseFloat(price) || 0,
-          category,
-          keywords,
-          thumbnail_url: thumbnailUrl,
-          is_published: true,
-        })
-        .select('id')
-        .single();
+      const slug = DbService.slugify(title);
+      const courseId = await DbService.createCourse(user.id, {
+        title,
+        slug,
+        description,
+        price: parseFloat(price) || 0,
+        category,
+        thumbnailUrl,
+      });
 
-      if (courseErr) throw courseErr;
+      // Save chapters
+      for (let i = 0; i < chapters.length; i++) {
+        const ch = chapters[i];
+        let videoUrl: string | undefined;
 
-      // Upload videos
-      for (let i = 0; i < videos.length; i++) {
-        const video = videos[i];
-        const ext = video.file.name.split('.').pop();
-        const path = `${user.id}/${course.id}/${i}.${ext}`;
-        const { error: vidErr } = await supabase.storage.from('videos').upload(path, video.file);
-        if (vidErr) throw vidErr;
-        const { data: vidUrl } = supabase.storage.from('videos').getPublicUrl(path);
+        if (ch.type === 'video' && ch.file) {
+          videoUrl = await DbService.uploadVideo(user.id, courseId, ch.file, i);
+        }
 
-        await supabase.from('videos').insert({
-          course_id: course.id,
-          title: video.title,
-          video_url: vidUrl.publicUrl,
+        await DbService.addChapter(courseId, {
+          title: ch.title || `Chapter ${i + 1}`,
+          type: ch.type,
+          ...(videoUrl && { videoUrl }),
+          ...(ch.pageUrl && { pageUrl: ch.pageUrl }),
+          ...(ch.quizUrl && { quizUrl: ch.quizUrl }),
           position: i,
         });
       }
 
-      navigate({ to: '/course/$courseId', params: { courseId: course.id } });
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      const slugGenerated = DbService.slugify(title);
+      navigate({ to: '/course/$slug', params: { slug: slugGenerated } });
+    } catch (err: any) {
+      setError(err.message || 'Failed to create course');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
+
+  const getChapterIcon = (type: ChapterType) => {
+    switch (type) {
+      case 'video': return <VideoIcon className="w-4 h-4" />;
+      case 'link': return <LinkIcon className="w-4 h-4" />;
+      case 'quiz': return <FileQuestion className="w-4 h-4" />;
+    }
+  };
+
+  const getChapterColor = (type: ChapterType) => {
+    switch (type) {
+      case 'video': return 'text-primary bg-primary/10 border-primary/20';
+      case 'link': return 'text-accent bg-accent/10 border-accent/20';
+      case 'quiz': return 'text-amber-400 bg-amber-400/10 border-amber-400/20';
+    }
+  };
 
   return (
     <Layout>
-      <div className="max-w-2xl mx-auto px-4 py-6">
-        <h1 className="text-2xl font-bold text-foreground mb-6">Create Course</h1>
-
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {error && (
-            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">{error}</div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">Title</label>
-            <input type="text" value={title} onChange={e => setTitle(e.target.value)} required
-              className="w-full px-3 py-2.5 bg-input border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all"
-              placeholder="Course title" />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">Description</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4}
-              className="w-full px-3 py-2.5 bg-input border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all resize-none"
-              placeholder="What will students learn?" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Price ($)</label>
-              <input type="number" value={price} onChange={e => setPrice(e.target.value)} min="0" step="0.01"
-                className="w-full px-3 py-2.5 bg-input border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all" />
+      <div className="max-w-5xl mx-auto px-6 py-12 md:py-24">
+        {/* Page Header */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-20">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2.5 bg-primary/10 text-primary rounded-xl border border-primary/20">
+              <Sparkles className="w-5 h-5" />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Category</label>
-              <select value={category} onChange={e => setCategory(e.target.value)}
-                className="w-full px-3 py-2.5 bg-input border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all">
-                {categories.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-              </select>
-            </div>
+            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary/60">Creative Studio</span>
           </div>
+          <h1 className="text-5xl md:text-7xl font-black text-white tracking-tight leading-[0.9]">Architect Your <br /> <span className="premium-gradient-text">Masterpiece.</span></h1>
+          <p className="text-muted-foreground font-medium mt-6 max-w-xl text-lg opacity-80">Design a transformative learning experience that defines your legacy.</p>
+        </motion.div>
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">Keywords (max 3)</label>
-            <div className="flex gap-2 mb-2 flex-wrap">
-              {keywords.map((k, i) => (
-                <span key={i} className="px-2 py-1 bg-secondary text-secondary-foreground rounded-lg text-xs flex items-center gap-1">
-                  {k}
-                  <button type="button" onClick={() => setKeywords(keywords.filter((_, j) => j !== i))}><X className="w-3 h-3" /></button>
-                </span>
-              ))}
-            </div>
-            {keywords.length < 3 && (
-              <div className="flex gap-2">
-                <input type="text" value={keywordInput} onChange={e => setKeywordInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addKeyword())}
-                  className="flex-1 px-3 py-2 bg-input border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all text-sm"
-                  placeholder="Add keyword" />
-                <button type="button" onClick={addKeyword} className="px-3 py-2 bg-secondary text-secondary-foreground rounded-xl text-sm hover:opacity-80 transition-all">Add</button>
-              </div>
+        <form onSubmit={handleSubmit} className="space-y-16">
+          <AnimatePresence>
+            {error && (
+              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                className="p-6 bg-destructive/10 border border-destructive/20 rounded-3xl text-destructive font-bold text-center">
+                {error}
+              </motion.div>
             )}
-          </div>
+          </AnimatePresence>
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">Thumbnail</label>
-            <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 transition-all">
-              <Upload className="w-5 h-5 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">{thumbnail ? thumbnail.name : 'Upload thumbnail'}</span>
-              <input type="file" accept="image/*" className="hidden" onChange={e => setThumbnail(e.target.files?.[0] || null)} />
-            </label>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">Videos</label>
-            <div className="space-y-2 mb-2">
-              {videos.map((v, i) => (
-                <div key={i} className="flex items-center gap-2 p-2 bg-secondary rounded-xl">
-                  <span className="text-xs text-secondary-foreground flex-1 truncate">{v.file.name}</span>
-                  <input type="text" value={v.title} onChange={e => {
-                    const newVids = [...videos];
-                    newVids[i] = { ...v, title: e.target.value };
-                    setVideos(newVids);
-                  }} placeholder="Video title" className="px-2 py-1 bg-input border border-border rounded-lg text-xs text-foreground flex-1" />
-                  <button type="button" onClick={() => setVideos(videos.filter((_, j) => j !== i))}><X className="w-4 h-4 text-muted-foreground" /></button>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-16">
+            <div className="lg:col-span-2 space-y-12">
+              {/* Module 1: Core Foundation */}
+              <section className="p-10 bg-card/30 backdrop-blur-3xl border border-white/5 rounded-[3rem] shadow-2xl relative">
+                <div className="flex items-center gap-4 mb-10">
+                   <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-primary font-black border border-white/10">01</div>
+                   <h3 className="text-2xl font-black tracking-tight">Core Foundation</h3>
                 </div>
-              ))}
-            </div>
-            <label className="flex items-center justify-center gap-2 p-3 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 transition-all">
-              <Plus className="w-5 h-5 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Add video</span>
-              <input type="file" accept="video/*" className="hidden" onChange={e => {
-                const file = e.target.files?.[0];
-                if (file) setVideos([...videos, { file, title: file.name.replace(/\.[^.]+$/, '') }]);
-              }} />
-            </label>
-          </div>
 
-          <button type="submit" disabled={loading}
-            className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 disabled:opacity-50 transition-all">
-            {loading ? 'Creating...' : 'Create Course'}
-          </button>
+                <div className="space-y-8">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground ml-2">Course Title</label>
+                    <input type="text" value={title} onChange={e => setTitle(e.target.value)} required
+                      className="w-full px-8 py-5 bg-background/50 border border-white/5 rounded-2xl text-white font-bold text-xl placeholder:text-muted-foreground/20 focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all"
+                      placeholder="e.g., The Alchemy of Modern Design" />
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground ml-2">Description</label>
+                    <textarea value={description} onChange={e => setDescription(e.target.value)} rows={6}
+                      className="w-full px-8 py-5 bg-background/50 border border-white/5 rounded-2xl text-white font-medium placeholder:text-muted-foreground/20 focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all resize-none leading-relaxed"
+                      placeholder="Describe what students will learn..." />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground ml-2">Price ($)</label>
+                      <div className="relative group">
+                        <DollarSign className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                        <input type="number" value={price} onChange={e => setPrice(e.target.value)} min="0" step="0.01"
+                          className="w-full pl-16 pr-8 py-5 bg-background/50 border border-white/5 rounded-2xl text-white font-black text-lg focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all" />
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground ml-2">Category</label>
+                      <div className="relative group">
+                        <select value={category} onChange={e => setCategory(e.target.value)}
+                          className="w-full px-8 py-5 bg-background/50 border border-white/5 rounded-2xl text-white font-black text-lg focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all appearance-none cursor-pointer">
+                          {categories.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+                        </select>
+                        <Tag className="absolute right-6 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none opacity-40" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Module 2: Chapters (Advanced) */}
+              <section className="p-10 bg-card/30 backdrop-blur-3xl border border-white/5 rounded-[3rem] shadow-2xl relative">
+                <div className="flex items-center justify-between mb-10">
+                   <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-primary font-black border border-white/10">02</div>
+                      <h3 className="text-2xl font-black tracking-tight">Chapters</h3>
+                   </div>
+                   <span className="px-4 py-2 bg-primary/10 text-primary border border-primary/20 rounded-2xl text-[10px] font-black uppercase tracking-widest">{chapters.length} Chapters</span>
+                </div>
+
+                <div className="space-y-4">
+                  <AnimatePresence mode="popLayout">
+                    {chapters.map((ch, i) => (
+                      <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} key={i} 
+                        className="p-6 bg-background/40 border border-white/5 rounded-3xl group hover:border-primary/30 transition-all space-y-4">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/40 font-black border border-white/5 group-hover:bg-primary/20 group-hover:text-primary transition-all text-sm">
+                            {String(i + 1).padStart(2, '0')}
+                          </div>
+                          <input type="text" value={ch.title} onChange={e => updateChapter(i, { title: e.target.value })}
+                            placeholder="Chapter Title" 
+                            className="flex-1 bg-transparent text-white font-black text-lg placeholder:text-muted-foreground/30 focus:outline-none" />
+                          <div className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest border ${getChapterColor(ch.type)}`}>
+                            <span className="flex items-center gap-1.5">{getChapterIcon(ch.type)} {ch.type}</span>
+                          </div>
+                          <button type="button" onClick={() => removeChapter(i)} 
+                            className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-all">
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+
+                        {/* Type-specific inputs */}
+                        {ch.type === 'video' && (
+                          <div className="ml-14">
+                            {ch.file ? (
+                              <div className="flex items-center gap-3 px-4 py-3 bg-primary/5 border border-primary/10 rounded-xl">
+                                <VideoIcon className="w-4 h-4 text-primary" />
+                                <span className="text-sm font-medium text-white truncate">{ch.file.name}</span>
+                                <button type="button" onClick={() => updateChapter(i, { file: undefined })} className="text-muted-foreground hover:text-destructive ml-auto">
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <label className="flex items-center gap-3 px-4 py-3 border border-dashed border-white/10 rounded-xl cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all">
+                                <Upload className="w-4 h-4 text-muted-foreground" />
+                                <span className="text-sm font-medium text-muted-foreground">Upload video file</span>
+                                <input type="file" accept="video/*" className="hidden" onChange={e => {
+                                  const file = e.target.files?.[0];
+                                  if (file) updateChapter(i, { file });
+                                }} />
+                              </label>
+                            )}
+                          </div>
+                        )}
+
+                        {ch.type === 'link' && (
+                          <div className="ml-14">
+                            <input type="url" value={ch.pageUrl || ''} onChange={e => updateChapter(i, { pageUrl: e.target.value })}
+                              placeholder="https://example.com/page"
+                              className="w-full px-4 py-3 bg-background/50 border border-white/5 rounded-xl text-white text-sm font-medium placeholder:text-muted-foreground/30 focus:outline-none focus:ring-2 focus:ring-accent/20" />
+                          </div>
+                        )}
+
+                        {ch.type === 'quiz' && (
+                          <div className="ml-14">
+                            <input type="url" value={ch.quizUrl || ''} onChange={e => updateChapter(i, { quizUrl: e.target.value })}
+                              placeholder="https://quiz-link.com or /tests/testId"
+                              className="w-full px-4 py-3 bg-background/50 border border-white/5 rounded-xl text-white text-sm font-medium placeholder:text-muted-foreground/30 focus:outline-none focus:ring-2 focus:ring-amber-400/20" />
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+
+                  {/* Add Chapter Buttons */}
+                  <div className="grid grid-cols-3 gap-3 pt-4">
+                    <button type="button" onClick={() => addChapter('video')}
+                      className="flex flex-col items-center gap-3 p-6 border-2 border-dashed border-white/10 rounded-2xl cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all group">
+                      <div className="p-3 bg-primary/10 text-primary rounded-xl group-hover:scale-110 transition-transform">
+                        <VideoIcon className="w-5 h-5" />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground group-hover:text-white">Video</span>
+                    </button>
+                    <button type="button" onClick={() => addChapter('link')}
+                      className="flex flex-col items-center gap-3 p-6 border-2 border-dashed border-white/10 rounded-2xl cursor-pointer hover:border-accent/50 hover:bg-accent/5 transition-all group">
+                      <div className="p-3 bg-accent/10 text-accent rounded-xl group-hover:scale-110 transition-transform">
+                        <LinkIcon className="w-5 h-5" />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground group-hover:text-white">Webpage</span>
+                    </button>
+                    <button type="button" onClick={() => addChapter('quiz')}
+                      className="flex flex-col items-center gap-3 p-6 border-2 border-dashed border-white/10 rounded-2xl cursor-pointer hover:border-amber-400/50 hover:bg-amber-400/5 transition-all group">
+                      <div className="p-3 bg-amber-400/10 text-amber-400 rounded-xl group-hover:scale-110 transition-transform">
+                        <FileQuestion className="w-5 h-5" />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground group-hover:text-white">Quiz</span>
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <aside className="space-y-12">
+              {/* Module 3: Visual Identity */}
+              <section className="p-10 bg-card/30 backdrop-blur-3xl border border-white/5 rounded-[3rem] shadow-2xl">
+                <h3 className="text-[10px] font-black text-primary uppercase tracking-[0.3em] mb-10 text-center">Visual Identity</h3>
+                <label className="relative block aspect-[16/9] rounded-3xl overflow-hidden border-2 border-dashed border-white/10 cursor-pointer group hover:border-primary/50 transition-all">
+                   {thumbnail ? (
+                     <div className="relative w-full h-full">
+                        <img src={URL.createObjectURL(thumbnail)} className="w-full h-full object-cover" alt="Preview" />
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="text-[10px] font-black uppercase text-white tracking-[0.2em] bg-black/60 px-4 py-2 rounded-xl backdrop-blur-md">Change Cover</span>
+                        </div>
+                     </div>
+                   ) : (
+                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-white/5">
+                        <Upload className="w-12 h-12 text-muted-foreground opacity-20 group-hover:text-primary group-hover:opacity-100 transition-all" />
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40">Upload Cover Art</span>
+                     </div>
+                   )}
+                   <input type="file" accept="image/*" className="hidden" onChange={e => setThumbnail(e.target.files?.[0] || null)} />
+                </label>
+                <p className="text-[10px] text-muted-foreground font-medium text-center mt-6 uppercase tracking-widest opacity-40 italic">Stored on Cloudinary CDN</p>
+              </section>
+
+              {/* Deployment Hub */}
+              <div className="sticky top-24 p-10 bg-white text-black rounded-[3rem] shadow-[0_30px_60px_-15px_rgba(255,255,255,0.1)] space-y-8">
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40 text-black/60">Ready to Publish?</p>
+                  <h3 className="text-3xl font-black tracking-tighter">Deploy Now.</h3>
+                </div>
+                <div className="space-y-4">
+                   <div className="flex items-center gap-3 text-xs font-bold text-black/70">
+                      <CheckCircle2 className="w-5 h-5 text-primary" />
+                      <span>Cloudinary CDN Delivery</span>
+                   </div>
+                   <div className="flex items-center gap-3 text-xs font-bold text-black/70">
+                      <CheckCircle2 className="w-5 h-5 text-primary" />
+                      <span>Video + Link + Quiz chapters</span>
+                   </div>
+                </div>
+                
+                <button type="submit" disabled={loading}
+                  className="w-full py-6 bg-black text-white rounded-[2rem] font-black text-lg shadow-2xl hover:scale-[1.03] active:scale-[0.98] transition-all disabled:opacity-50 disabled:scale-100 flex items-center justify-center gap-3">
+                  {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Plus className="w-6 h-6" /> Go Live Now</>}
+                </button>
+              </div>
+            </aside>
+          </div>
         </form>
       </div>
     </Layout>
