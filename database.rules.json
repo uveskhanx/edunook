@@ -1,0 +1,121 @@
+{
+  "rules": {
+    "users": {
+      ".read": "true",
+      "$uid": {
+        ".write": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('profiles').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+    
+    "profiles": {
+      ".read": "true",
+      "$uid": {
+        ".write": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('profiles').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+
+    "usernames": {
+      ".read": "true",
+      "$username": {
+        ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && newData.val() == null))"
+      }
+    },
+    
+    "course_slugs": { 
+      ".read": "true", 
+      ".write": "auth != null" 
+    },
+    
+    "test_slugs": { 
+      ".read": "true", 
+      ".write": "auth != null" 
+    },
+
+    "courses": {
+      ".read": "true",
+      "$courseId": {
+        ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('profiles').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+    
+    "chapters": {
+      "$courseId": {
+        ".read": "true",
+        ".write": "auth != null && root.child('courses').child($courseId).child('userId').val() === auth.uid"
+      }
+    },
+
+    "videos": {
+      ".read": "true",
+      "$courseId": {
+        ".write": "auth != null && root.child('courses').child($courseId).child('userId').val() === auth.uid"
+      }
+    },
+
+    "notifications": {
+      "$uid": {
+        ".read": "auth.uid === $uid",
+        ".write": "auth != null" 
+      }
+    },
+    
+    "followers": { 
+      ".read": "true", 
+      "$uid": { 
+        ".write": "auth != null" 
+      } 
+    },
+    "following": { 
+      ".read": "true", 
+      "$uid": { 
+        ".write": "auth.uid === $uid" 
+      } 
+    },
+
+    "chats": {
+      "$chatId": {
+        ".read": "auth != null && $chatId.contains(auth.uid)",
+        ".write": "auth != null && $chatId.contains(auth.uid)"
+      }
+    },
+    
+    "messages": {
+      "$chatId": {
+        ".read": "auth != null && $chatId.contains(auth.uid)",
+        ".write": "auth != null && $chatId.contains(auth.uid)"
+      }
+    },
+    
+    "user_chats": {
+      "$uid": {
+        ".read": "auth.uid === $uid",
+        "$chatId": {
+          ".write": "auth != null && root.child('chats').child($chatId).child('users').child(auth.uid).val() === true"
+        }
+      }
+    },
+
+    "tests": {
+      ".read": "true",
+      "$testId": {
+        ".write": "auth != null && (!data.exists() || data.child('creatorId').val() === auth.uid)"
+      }
+    },
+    
+    "test_attempts": {
+       "$uid": {
+         ".read": "auth.uid === $uid",
+         ".write": "auth.uid === $uid"       
+       }
+    },
+    
+    "attempts": {
+       "$testId": {
+         "$uid": {
+           ".read": "auth.uid === $uid || root.child('tests').child($testId).child('creatorId').val() === auth.uid",
+           ".write": "auth.uid === $uid && !data.exists()"
+         }
+       }
+    }
+  }
+}

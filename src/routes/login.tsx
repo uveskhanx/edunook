@@ -51,41 +51,33 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      let loginEmail = identifier.trim();
+      const cleanUsername = identifier.toLowerCase().trim();
 
-      // SMART LOGIN: If not an email, lookup username
-      if (!loginEmail.includes('@')) {
-        const foundEmail = await DbService.getEmailByUsername(loginEmail);
-        if (!foundEmail) {
-          setError('Account not found');
-          setLoading(false);
-          return;
-        }
-        loginEmail = foundEmail;
+      // 1. Lookup UID connected to this username
+      const uid = await DbService.getUidByUsername(cleanUsername);
+      if (!uid) {
+        throw new Error('auth/user-not-found');
       }
 
-      const userCredential = await signInWithEmailAndPassword(auth, loginEmail, password);
-      const user = userCredential.user;
-
-      // EMAIL VERIFICATION CHECK
-      if (!user.emailVerified) {
-        setNeedsVerification(true);
-        setError('Please verify your email first');
-        setLoading(false);
-        // We sign out because we don't want them in the app yet
-        // await auth.signOut(); 
-        return;
+      // 2. Retrieve their mapped email (Legacy real email OR Modern virtual email)
+      const profile = await DbService.getProfile(uid);
+      if (!profile || !profile.email) {
+        throw new Error('auth/user-not-found');
       }
+
+      const profileEmail = profile.email;
+
+      await signInWithEmailAndPassword(auth, profileEmail, password);
 
       // Success!
       toast.success('Welcome back!');
       navigate({ to: '/home' });
     } catch (err: any) {
       console.error('Login Error:', err);
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-        setError('Account not found');
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.message === 'auth/user-not-found') {
+        setError('Invalid username or password');
       } else if (err.code === 'auth/wrong-password') {
-        setError('Wrong password');
+        setError('Invalid username or password');
       } else if (err.code === 'auth/network-request-failed') {
         setError('Network error, try again');
       } else {
@@ -166,16 +158,15 @@ function LoginPage() {
             </AnimatePresence>
 
             <div className="space-y-5">
-              {/* Email or Username Info */}
               <div className="space-y-2 group">
-                <label className="text-xs font-bold text-muted-foreground ml-1">Email or Username</label>
+                <label className="text-xs font-bold text-muted-foreground ml-1">Username</label>
                 <div className="relative">
                   <AtSign className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                   <input
                     type="text"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="example@email.com"
+                    placeholder="Enter your username"
                     autoFocus
                     autoComplete="username"
                     onKeyDown={(e) => e.key === 'Enter' && passwordRef.current?.focus()}

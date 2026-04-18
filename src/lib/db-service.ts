@@ -132,25 +132,7 @@ let cachedAllProfiles: Profile[] | null = null;
 export const DbService = {
   // Helpers
   async ensureUsernameMapLoaded(): Promise<Record<string, string>> {
-    if (reverseUsernameMapCache) return reverseUsernameMapCache;
-    try {
-      const snap = await get(ref(db, 'usernames'));
-      if (snap.exists()) {
-        const data = snap.val();
-        const mapping: Record<string, string> = {};
-        Object.keys(data).forEach(username => {
-          if (typeof data[username] === 'string') {
-            mapping[data[username]] = username; // UID -> username
-          }
-        });
-        reverseUsernameMapCache = mapping;
-        return mapping;
-      }
-      return {};
-    } catch (err) {
-      console.warn('[DbService] Failed to load username map:', err);
-      return {};
-    }
+     return {}; // Removed aggressive offline caching
   },
 
   clearProfileCache(uid?: string) {
@@ -158,7 +140,6 @@ export const DbService = {
       delete profileCache[uid];
     } else {
       profileCache = {};
-      reverseUsernameMapCache = null;
     }
   },
 
@@ -177,22 +158,6 @@ export const DbService = {
       ]);
 
       if (!userSnap.exists() && !profSnap.exists()) {
-        // Fallback: Check the memory-cached reverse map instead of doing a network fetch
-        const map = await this.ensureUsernameMapLoaded();
-        const reservedName = map[uid];
-        
-        if (reservedName) {
-          const partial: Profile = {
-            uid,
-            username: reservedName,
-            fullName: reservedName, // Use username as fullName fallback
-            email: '',
-            role: 'student',
-            createdAt: new Date().toISOString()
-          };
-          profileCache[uid] = partial;
-          return partial;
-        }
         return null;
       }
 

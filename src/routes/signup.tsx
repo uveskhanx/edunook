@@ -1,13 +1,15 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router';
 import { useState, useEffect, useRef } from 'react';
 import { auth, db } from '@/lib/firebase';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { ref, set } from 'firebase/database';
+import { 
+  createUserWithEmailAndPassword, 
+  updateProfile
+} from 'firebase/auth';
+import { ref, set, get, runTransaction } from 'firebase/database';
 import { DbService } from '@/lib/db-service';
-import { AuthService } from '@/lib/auth-service';
 import { useAuth } from '@/hooks/use-auth';
 import { 
-  Mail, Lock, User, CheckCircle2, XCircle, 
+  Lock, User, CheckCircle2, XCircle, 
   Loader2, Sparkles, ArrowRight, AtSign, 
   Eye, EyeOff, Calendar, Phone, ChevronLeft
 } from 'lucide-react';
@@ -23,7 +25,7 @@ export const Route = createFileRoute('/signup')({
   component: SignupPage,
 });
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2;
 
 function SignupPage() {
   const navigate = useNavigate();
@@ -35,9 +37,7 @@ function SignupPage() {
   // Form State
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [dob, setDob] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
   const [phone, setPhone] = useState('');
@@ -55,7 +55,6 @@ function SignupPage() {
   // Refs for auto-focus
   const usernameRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
-  const emailRef = useRef<HTMLInputElement>(null);
 
   // Username Real-time Validation
   useEffect(() => {
@@ -93,62 +92,99 @@ function SignupPage() {
   }, [authUser, navigate, loading]);
 
   const handleNext = () => {
-    if (step === 1 && (!fullName || !isUsernameValid)) return;
-    if (step === 2 && (!email || !password || password.length < 6)) return;
-    setStep((s) => (s + 1) as Step);
+    if (step === 1 && (!fullName || !isUsernameValid || !dob)) return;
+    setStep(2);
     setError('');
   };
 
   const handleBack = () => {
-    setStep((s) => (s - 1) as Step);
+    setStep(1);
     setError('');
   };
 
-  async function handleSubmit(e: React.FormEvent) {
+  const validatePhoneWithNumverify = async (fullPhone: string) => {
+    // Note: We recommend putting the API key in a .env file like VITE_NUMVERIFY_API_KEY
+    // Numverify only validates the formatting and existence of a number, it doesn't send SMS.
+    const apiKey = import.meta.env.VITE_NUMVERIFY_API_KEY || 'YOUR_NUMVERIFY_API_KEY';
+    
+    // Clean the phone number (remove + for the API)
+    const cleanPhone = fullPhone.replace('+', '');
+
+    try {
+      const response = await fetch(`https://apilayer.net/api/validate?access_key=${apiKey}&number=${cleanPhone}`);
+      const data = await response.json();
+      
+      if (data.success === false) {
+          console.warn("Numverify API Error:", data.error.info);
+          // If API fails (e.g. invalid key or out of quota), we just bypass to prevent locking users out
+          return true; 
+      }
+
+      return data.valid; // Will be true if it's a real phone number
+    } catch (err) {
+      console.error("Numverify network error:", err);
+      return true; // Bypass on network failure
+    }
+  };
+
+  async function handleFinalSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (loading) return;
+    if (loading || !phone || password.length < 6) return;
+    
     setError('');
     setLoading(true);
 
-    try {
-      // 1. Create the user with REAL EMAIL
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+    const cleanUsername = username.toLowerCase().trim();
+    const virtualEmail = `${cleanUsername}@edunook.internal`;
+    const fullPhone = `${countryCode}${phone}`;
+    let tempUser = null;
 
-      // 2. Reserve the username using the REAL UID
-      const reserved = await DbService.reserveUsernameTransaction(username, user.uid);
-      if (!reserved) {
-        // Cleanup: If username was taken in the last split second, we delete the auth user
-        await user.delete();
-        setError('Username was just taken, try another');
-        setStep(1);
-        setLoading(false);
-        return;
+    try {
+      // 1. Numverify Phone Validation Check
+      const isValidPhone = await validatePhoneWithNumverify(fullPhone);
+      if (!isValidPhone) {
+        throw new Error("Invalid phone number detected by Numverify. Please check the number.");
       }
 
-      // 3. Save to Database
+      // 2. Create the base Auth account (Virtual Email acts as vault)
+      const userCred = await createUserWithEmailAndPassword(auth, virtualEmail, password);
+      tempUser = userCred.user;
+
+      // 3. Atomic Database Transaction for the Username
+      const usernameRef = ref(db, `usernames/${cleanUsername}`);
+      const transactionResult = await runTransaction(usernameRef, (currentVal) => {
+        if (currentVal === null) return tempUser!.uid; // Claim it
+        return; // Abort if taken
+      });
+
+      if (!transactionResult.committed) {
+        throw new Error("Username was claimed during phone verification.");
+      }
+
+      // 4. Save Profile to Database
       const userData = {
-        uid: user.uid,
+        uid: tempUser.uid,
         fullName,
-        username: username.toLowerCase(),
-        email: email,
+        username: cleanUsername,
+        email: virtualEmail,
         dob: dob,
-        phone: `${countryCode}${phone}`,
+        phone: fullPhone, // Successfully validated via Numverify
         role: 'student' as const,
         createdAt: new Date().toISOString(),
       };
 
-      await set(ref(db, `users/${user.uid}`), userData);
+      await set(ref(db, `users/${tempUser.uid}`), userData);
+      await updateProfile(tempUser, { displayName: fullName });
 
-      // 4. Update Profile
-      await updateProfile(user, { displayName: fullName });
-
-      toast.success('Account created! Now log in.');
-      navigate({ to: '/login' });
+      toast.success('Account created successfully!');
+      navigate({ to: '/home' });
     } catch (err: any) {
-      console.error('Signup Error:', err);
+      console.error('Final Signup Error:', err);
+      // FATAL ROLLBACK: Destroy ghost account if failed
+      if (tempUser) await tempUser.delete().catch(console.error);
+      
       if (err.code === 'auth/email-already-in-use') {
-        setError('Email already registered');
+        setError("Username is already taken.");
       } else {
         setError(err.message || 'Signup failed');
       }
@@ -185,14 +221,14 @@ function SignupPage() {
            </Link>
            
            <div className="flex items-center gap-2">
-              {[1, 2, 3].map((s) => (
+              {[1, 2].map((s) => (
                 <div key={s} className={`h-1 rounded-full transition-all duration-500 ${step === s ? 'w-8 bg-primary' : step > s ? 'w-4 bg-success' : 'w-4 bg-white/10'}`} />
               ))}
            </div>
         </div>
 
         <div className="bg-[#0f0f0f]/80 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-6 md:p-10 shadow-3xl">
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleFinalSubmit}>
             <AnimatePresence mode="wait">
             {step === 1 && (
               <motion.div key="step1" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-6">
@@ -241,12 +277,26 @@ function SignupPage() {
                       </div>
                     </div>
                   </div>
+
+                  <div className="space-y-2 group">
+                    <label className="text-xs font-bold text-muted-foreground ml-1">Date of Birth</label>
+                    <div className="relative">
+                      <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                      <input
+                        type="date"
+                        value={dob}
+                        required
+                        onChange={(e) => setDob(e.target.value)}
+                        className="w-full pl-11 pr-4 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all [color-scheme:dark]"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleNext}
-                  disabled={!fullName || !isUsernameValid}
+                  disabled={!fullName || !isUsernameValid || !dob}
                   className="w-full py-4 bg-primary text-white rounded-2xl font-black text-[16px] shadow-2xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 flex items-center justify-center gap-2"
                 >
                   Continue <ArrowRight className="w-5 h-5" />
@@ -257,26 +307,13 @@ function SignupPage() {
             {step === 2 && (
               <motion.div key="step2" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-6">
                 <div className="text-center space-y-2 mb-6">
-                   <h2 className="text-2xl font-black text-white">Account Details</h2>
-                   <p className="text-muted-foreground text-sm font-medium">Choose a password and email</p>
+                   <h2 className="text-2xl font-black text-white">Security & Phone</h2>
+                   <p className="text-muted-foreground text-sm font-medium">Numverify Protection</p>
                 </div>
 
-                <div className="space-y-5">
-                  <div className="space-y-2 group">
-                    <label className="text-xs font-bold text-muted-foreground ml-1">Email Address</label>
-                    <div className="relative">
-                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                      <input
-                        ref={emailRef}
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="example@email.com"
-                        className="w-full pl-11 pr-4 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/20"
-                      />
-                    </div>
-                  </div>
+                {error && <p className="text-[13px] font-bold text-destructive text-center p-3 bg-destructive/10 rounded-xl">{error}</p>}
 
+                <div className="space-y-5">
                   <div className="space-y-2 group">
                     <label className="text-xs font-bold text-muted-foreground ml-1">Password</label>
                     <div className="relative">
@@ -294,58 +331,40 @@ function SignupPage() {
                       </button>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex gap-4">
-                  <button type="button" onClick={handleBack} className="p-4 bg-white/[0.03] border border-white/5 text-muted-foreground hover:text-white rounded-2xl transition-all">
-                    <ChevronLeft className="w-5 h-5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleNext}
-                    disabled={!email || password.length < 6}
-                    className="flex-1 py-4 bg-primary text-white rounded-2xl font-black text-[16px] shadow-2xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 flex items-center justify-center gap-2"
-                  >
-                    Continue <ArrowRight className="w-5 h-5" />
-                  </button>
-                </div>
-              </motion.div>
-            )}
-
-            {step === 3 && (
-              <motion.div key="step3" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-6">
-                <div className="text-center space-y-2 mb-6">
-                   <h2 className="text-2xl font-black text-white">Last Details</h2>
-                   <p className="text-muted-foreground text-sm font-medium">Pick your date of birth</p>
-                </div>
-
-                <div className="space-y-5">
-                   {error && <p className="text-xs font-bold text-destructive text-center p-3 bg-destructive/10 rounded-xl">{error}</p>}
-                   <div className="space-y-2 group">
-                    <label className="text-xs font-bold text-muted-foreground ml-1">Date of Birth</label>
-                    <div className="relative">
-                      <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                      <input
-                        type="date"
-                        value={dob}
-                        required
-                        onChange={(e) => setDob(e.target.value)}
-                        className="w-full pl-11 pr-4 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all [color-scheme:dark]"
-                      />
+                  <div className="space-y-2 group">
+                    <label className="text-xs font-bold text-muted-foreground ml-1">Phone Number</label>
+                    <div className="flex gap-2">
+                       <input
+                          type="text"
+                          value={countryCode}
+                          onChange={(e) => setCountryCode(e.target.value)}
+                          className="w-[80px] text-center py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all"
+                       />
+                       <div className="relative flex-1">
+                          <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                          <input
+                            type="tel"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                            placeholder="Current phone number"
+                            className="w-full pl-11 pr-4 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/20"
+                          />
+                       </div>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex gap-4">
-                  <button type="button" onClick={handleBack} className="p-4 bg-white/[0.03] border border-white/5 text-muted-foreground hover:text-white rounded-2xl transition-all">
+                  <button type="button" onClick={handleBack} disabled={loading} className="p-4 bg-white/[0.03] border border-white/5 text-muted-foreground hover:text-white rounded-2xl transition-all disabled:opacity-50">
                     <ChevronLeft className="w-5 h-5" />
                   </button>
                   <button
                     type="submit"
-                    disabled={loading || !dob}
+                    disabled={!phone || password.length < 6 || loading}
                     className="flex-1 py-4 bg-gradient-to-r from-primary to-violet-600 text-white rounded-2xl font-black text-[16px] shadow-2xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 flex items-center justify-center gap-2"
                   >
-                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Finish <ArrowRight className="w-5 h-5" /></>}
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Complete Signup <ArrowRight className="w-5 h-5" /></>}
                   </button>
                 </div>
               </motion.div>

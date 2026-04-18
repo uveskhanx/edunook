@@ -181,89 +181,93 @@ export function Layout({ children, hideNavigation }: { children: React.ReactNode
             <Sparkles className="w-7 h-7 text-primary" />
           </Link>
 
-          {/* Persistent Search Bar with Collapsible Mobile View */}
-          <div ref={containerRef} className={`flex-1 max-w-[600px] group relative ${isMobileSearchOpen ? 'fixed inset-x-0 top-0 h-[72px] bg-[#050505] z-[70] px-6 flex items-center md:relative md:inset-auto md:h-auto md:bg-transparent md:px-0' : 'contents md:block'}`}>
-             <form onSubmit={handleSearch} className={`relative z-10 w-full ${!isMobileSearchOpen && 'hidden md:block'}`}>
-               <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors">
-                  <SearchIcon className="w-5 h-5" />
-               </div>
-               <input
-                  ref={searchRef}
-                  type="text"
-                  value={searchValue}
-                  onFocus={() => setShowSuggestions(true)}
-                  onChange={(e) => {
-                    setSearchValue(e.target.value);
-                    setShowSuggestions(true);
-                  }}
-                  placeholder="Search courses..."
-                  className="w-full pl-12 pr-12 py-3 bg-[#121212] border border-white/10 rounded-full text-[14px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 focus:bg-[#1a1a1a] transition-all placeholder:text-muted-foreground/20"
-               />
-               
-               <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                 <AnimatePresence>
-                   {searchValue && (
-                     <motion.button
-                       initial={{ opacity: 0, scale: 0.8 }}
-                       animate={{ opacity: 1, scale: 1 }}
-                       exit={{ opacity: 0, scale: 0.8 }}
-                       type="button"
-                       onClick={clearSearch}
-                       className="p-1 rounded-full hover:bg-white/10 text-muted-foreground hover:text-white transition-colors"
-                     >
-                       <X className="w-4 h-4" />
-                     </motion.button>
-                   )}
-                 </AnimatePresence>
+          {/* Search Bar - Only show on home page for courses */}
+          {(location.pathname === '/home' || location.pathname === '/') ? (
+            <div ref={containerRef} className={`flex-1 max-w-[600px] group relative ${isMobileSearchOpen ? 'fixed inset-x-0 top-0 h-[72px] bg-[#050505] z-[70] px-6 flex items-center md:relative md:inset-auto md:h-auto md:bg-transparent md:px-0' : 'contents md:block'}`}>
+               <form onSubmit={handleSearch} className={`relative z-10 w-full ${!isMobileSearchOpen && 'hidden md:block'}`}>
+                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors">
+                    <SearchIcon className="w-5 h-5" />
+                 </div>
+                 <input
+                    ref={searchRef}
+                    type="text"
+                    value={searchValue}
+                    onFocus={() => setShowSuggestions(true)}
+                    onChange={(e) => {
+                      setSearchValue(e.target.value);
+                      setShowSuggestions(true);
+                    }}
+                    placeholder="Search courses..."
+                    className="w-full pl-12 pr-12 py-3 bg-[#121212] border border-white/10 rounded-full text-[14px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 focus:bg-[#1a1a1a] transition-all placeholder:text-muted-foreground/20"
+                 />
                  
-                 {isMobileSearchOpen && (
-                   <button 
-                     type="button"
-                     onClick={() => setIsMobileSearchOpen(false)}
-                     className="md:hidden p-1 text-muted-foreground hover:text-white"
-                   >
-                     <X className="w-5 h-5" />
-                   </button>
-                 )}
-               </div>
-             </form>
-
-             {/* Mobile Search Trigger */}
-             {!isMobileSearchOpen && (
-               <button 
-                 onClick={() => setIsMobileSearchOpen(true)}
-                 className="md:hidden p-2 text-muted-foreground hover:text-white bg-[#121212] border border-white/10 rounded-xl"
-               >
-                 <SearchIcon className="w-5 h-5" />
-               </button>
-             )}
-
-             {/* Suggestions Dropdown */}
-             <AnimatePresence>
-                {showSuggestions && suggestions.length > 0 && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="absolute top-full left-0 right-0 mt-2 bg-[#121212] border border-white/10 rounded-2xl shadow-[0_20px_40px_rgba(0,0,0,0.6)] overflow-hidden z-[60]"
-                  >
-                    {suggestions.map((item, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => {
-                          handleSearch(item);
-                          setIsMobileSearchOpen(false);
-                        }}
-                        className="w-full text-left px-5 py-3.5 hover:bg-white/5 text-[14px] font-medium text-muted-foreground hover:text-white transition-colors flex items-center gap-3"
-                      >
-                        <SearchIcon className="w-4 h-4 opacity-30" />
-                        {item}
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-             </AnimatePresence>
-          </div>
+                 <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                   <AnimatePresence>
+                     {searchValue && (
+                       <motion.button
+                         initial={{ opacity: 0, scale: 0.8 }}
+                         animate={{ opacity: 1, scale: 1 }}
+                         exit={{ opacity: 0, scale: 0.8 }}
+                         type="button"
+                         onClick={clearSearch}
+                         className="p-1 rounded-full hover:bg-white/10 text-muted-foreground hover:text-white transition-colors"
+                       >
+                         <X className="w-4 h-4" />
+                       </motion.button>
+                     )}
+                   </AnimatePresence>
+                   
+                   {isMobileSearchOpen && (
+                     <button 
+                       type="button"
+                       onClick={() => setIsMobileSearchOpen(false)}
+                       className="md:hidden p-1 text-muted-foreground hover:text-white"
+                     >
+                       <X className="w-5 h-5" />
+                     </button>
+                   )}
+                 </div>
+               </form>
+  
+               {/* Mobile Search Trigger */}
+               {!isMobileSearchOpen && (
+                 <button 
+                   onClick={() => setIsMobileSearchOpen(true)}
+                   className="md:hidden p-2 text-muted-foreground hover:text-white bg-[#121212] border border-white/10 rounded-xl"
+                 >
+                   <SearchIcon className="w-5 h-5" />
+                 </button>
+               )}
+  
+               {/* Suggestions Dropdown */}
+               <AnimatePresence>
+                  {showSuggestions && suggestions.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="absolute top-full left-0 right-0 mt-2 bg-[#121212] border border-white/10 rounded-2xl shadow-[0_20px_40px_rgba(0,0,0,0.6)] overflow-hidden z-[60]"
+                    >
+                      {suggestions.map((item, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => {
+                            handleSearch(item);
+                            setIsMobileSearchOpen(false);
+                          }}
+                          className="w-full text-left px-5 py-3.5 hover:bg-white/5 text-[14px] font-medium text-muted-foreground hover:text-white transition-colors flex items-center gap-3"
+                        >
+                          <SearchIcon className="w-4 h-4 opacity-30" />
+                          {item}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+               </AnimatePresence>
+            </div>
+          ) : (
+            <div className="flex-1" />
+          )}
 
           {/* Header Action Icons */}
           <div className="flex items-center gap-2 md:gap-4 shrink-0">

@@ -52,11 +52,7 @@ function ProfilePage() {
         // 1. Resolve UID
         let uid = await DbService.getUidByUsername(username);
         
-        // 2. Fallback: Check if the segment itself is a UID (for legacy support)
-        if (!uid) {
-          const profileDirect = await DbService.getProfile(username);
-          if (profileDirect) uid = username;
-        }
+        // UID guessing fallback removed per requirement
 
         if (!uid) {
           setLoading(false);

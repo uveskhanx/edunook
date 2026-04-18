@@ -80,7 +80,11 @@ function CreateCoursePage() {
     try {
       let thumbnailUrl: string | null = null;
       if (thumbnail) {
-        thumbnailUrl = await DbService.uploadThumbnail(user.id, thumbnail);
+        try {
+          thumbnailUrl = await DbService.uploadThumbnail(user.id, thumbnail);
+        } catch (err: any) {
+          throw new Error('Failed to upload course cover art. Please check connection and try again.');
+        }
       }
 
       const slug = DbService.slugify(title);
@@ -99,11 +103,15 @@ function CreateCoursePage() {
         let videoUrl: string | undefined;
 
         if (ch.type === 'video' && ch.file) {
-          videoUrl = await DbService.uploadVideo(user.id, courseId, ch.file, i);
+          try {
+            videoUrl = await DbService.uploadVideo(user.id, courseId, ch.file, i);
+          } catch (err: any) {
+            throw new Error(`Upload failed for chapter ${i + 1} video. Course is saved partially, please edit. `);
+          }
         }
 
         await DbService.addChapter(courseId, {
-          title: ch.title || `Chapter ${i + 1}`,
+          title: ch.title?.trim() || `Chapter ${i + 1}`,
           type: ch.type,
           ...(videoUrl && { videoUrl }),
           ...(ch.pageUrl && { pageUrl: ch.pageUrl }),
@@ -112,8 +120,7 @@ function CreateCoursePage() {
         });
       }
 
-      const slugGenerated = DbService.slugify(title);
-      navigate({ to: '/course/$slug', params: { slug: slugGenerated } });
+      navigate({ to: '/course/$slug', params: { slug: slug } });
     } catch (err: any) {
       setError(err.message || 'Failed to create course');
     } finally {
@@ -165,7 +172,7 @@ function CreateCoursePage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-16">
             <div className="lg:col-span-2 space-y-12">
               {/* Module 1: Core Foundation */}
-              <section className="p-10 bg-card/30 backdrop-blur-3xl border border-white/5 rounded-[3rem] shadow-2xl relative">
+              <section className="p-10 bg-[#121212] border border-white/5 rounded-[3rem] shadow-xl relative">
                 <div className="flex items-center gap-4 mb-10">
                    <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-primary font-black border border-white/10">01</div>
                    <h3 className="text-2xl font-black tracking-tight">Core Foundation</h3>
@@ -210,7 +217,7 @@ function CreateCoursePage() {
               </section>
 
               {/* Module 2: Chapters (Advanced) */}
-              <section className="p-10 bg-card/30 backdrop-blur-3xl border border-white/5 rounded-[3rem] shadow-2xl relative">
+              <section className="p-10 bg-[#121212] border border-white/5 rounded-[3rem] shadow-xl relative">
                 <div className="flex items-center justify-between mb-10">
                    <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-primary font-black border border-white/10">02</div>
@@ -313,7 +320,7 @@ function CreateCoursePage() {
 
             <aside className="space-y-12">
               {/* Module 3: Visual Identity */}
-              <section className="p-10 bg-card/30 backdrop-blur-3xl border border-white/5 rounded-[3rem] shadow-2xl">
+              <section className="p-10 bg-[#121212] border border-white/5 rounded-[3rem] shadow-xl">
                 <h3 className="text-[10px] font-black text-primary uppercase tracking-[0.3em] mb-10 text-center">Visual Identity</h3>
                 <label className="relative block aspect-[16/9] rounded-3xl overflow-hidden border-2 border-dashed border-white/10 cursor-pointer group hover:border-primary/50 transition-all">
                    {thumbnail ? (

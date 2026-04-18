@@ -61,10 +61,12 @@ function TestsPage() {
     DbService.getGlobalStats().then(setGlobalStats);
   }, [user]);
 
-  const filteredTests = tests.filter(t => 
-    t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredTests = tests.filter(t => {
+    const q = searchQuery.toLowerCase();
+    const titleMatch = (t.title || '').toLowerCase().includes(q);
+    const descMatch = (t.description || '').toLowerCase().includes(q);
+    return titleMatch || descMatch;
+  });
 
   const startQuiz = (test: TestRow) => {
     if (!user) {
@@ -80,8 +82,8 @@ function TestsPage() {
     <Layout>
       <div className="relative overflow-hidden min-h-screen">
         {/* Massive Background Decor */}
-        <div className="absolute top-0 right-[-10%] w-[60%] h-[40%] bg-primary/5 rounded-full blur-[200px] pointer-events-none" />
-        <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-accent/5 rounded-full blur-[180px] pointer-events-none" />
+        <div className="absolute top-[20%] left-[-10%] w-[50%] h-[50%] bg-primary/10 rounded-full blur-[100px] pointer-events-none" />
+        <div className="absolute bottom-[20%] right-[-10%] w-[50%] h-[50%] bg-accent/10 rounded-full blur-[100px] pointer-events-none" />
 
         <div className="max-w-[1600px] mx-auto px-6 md:px-12 py-16 md:py-24 space-y-24 md:space-y-32 relative z-10">
           
