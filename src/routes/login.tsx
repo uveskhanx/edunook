@@ -135,10 +135,15 @@ function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#050505] px-6 py-8 md:py-12 relative overflow-hidden">
-      {/* Premium Background Effects */}
-      <div className="absolute top-0 left-0 w-full h-full -z-10">
-         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/10 rounded-full blur-[120px]" />
-         <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-violet-500/10 rounded-full blur-[120px]" />
+      {/* Premium Professional Mesh Background */}
+      <div className="absolute inset-0 -z-10 overflow-hidden">
+        {/* Base Mesh */}
+        <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-primary/20 rounded-full blur-[160px] animate-pulse duration-[10s]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-violet-600/15 rounded-full blur-[160px] animate-pulse duration-[8s]" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[80%] bg-accent/5 rounded-full blur-[200px]" />
+        
+        {/* Noise Overlay for texture */}
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
       </div>
 
       <motion.div 
@@ -155,7 +160,7 @@ function LoginPage() {
            </Link>
         </div>
 
-        <div className="bg-[#0f0f0f]/80 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-6 md:p-10 shadow-3xl">
+        <div className="bg-[#0f0f0f]/40 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-6 md:p-10 shadow-[0_0_80px_rgba(0,0,0,0.5)] ring-1 ring-white/5">
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="text-center space-y-2 mb-8">
               <h1 className="text-2xl font-black text-white">Welcome Back</h1>
@@ -225,6 +230,7 @@ function LoginPage() {
                   <button 
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white transition-colors"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

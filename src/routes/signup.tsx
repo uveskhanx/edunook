@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { differenceInMonths, parseISO, isFuture, format } from 'date-fns';
 
 export const Route = createFileRoute('/signup')({
   head: () => ({
@@ -45,6 +46,7 @@ function SignupPage() {
   // UI State
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [dobError, setDobError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   
   // Validation States
@@ -92,9 +94,24 @@ function SignupPage() {
   }, [authUser, navigate, loading]);
 
   const handleNext = () => {
-    if (step === 1 && (!fullName || !isUsernameValid || !dob)) return;
+    if (step === 1) {
+      if (!fullName || !isUsernameValid || !dob) return;
+      
+      const birthDate = parseISO(dob);
+      if (isFuture(birthDate)) {
+        setDobError('Invalid date');
+        return;
+      }
+      
+      const months = differenceInMonths(new Date(), birthDate);
+      if (months < 42) { // 3.5 years = 42 months
+        setDobError('Minimum age requirement is 3.5 years');
+        return;
+      }
+    }
     setStep(2);
     setError('');
+    setDobError('');
   };
 
   const handleBack = () => {
@@ -201,10 +218,15 @@ function SignupPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#050505] px-6 py-8 md:py-12 relative overflow-hidden">
-      {/* Premium Background Effects */}
-      <div className="absolute top-0 left-0 w-full h-full -z-10">
-         <div className="absolute top-[20%] left-[-10%] w-[50%] h-[50%] bg-primary/10 rounded-full blur-[120px]" />
-         <div className="absolute bottom-[20%] right-[-10%] w-[50%] h-[50%] bg-violet-600/10 rounded-full blur-[120px]" />
+      {/* Premium Professional Mesh Background */}
+      <div className="absolute inset-0 -z-10 overflow-hidden">
+        {/* Base Mesh */}
+        <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-primary/20 rounded-full blur-[160px] animate-pulse duration-[10s]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-violet-600/15 rounded-full blur-[160px] animate-pulse duration-[8s]" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[80%] bg-accent/5 rounded-full blur-[200px]" />
+        
+        {/* Noise Overlay for texture */}
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
       </div>
 
       <motion.div 
@@ -227,7 +249,7 @@ function SignupPage() {
            </div>
         </div>
 
-        <div className="bg-[#0f0f0f]/80 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-6 md:p-10 shadow-3xl">
+        <div className="bg-[#0f0f0f]/40 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-6 md:p-10 shadow-[0_0_80px_rgba(0,0,0,0.5)] ring-1 ring-white/5">
           <form onSubmit={handleFinalSubmit}>
             <AnimatePresence mode="wait">
             {step === 1 && (
@@ -279,15 +301,23 @@ function SignupPage() {
                   </div>
 
                   <div className="space-y-2 group">
-                    <label className="text-xs font-bold text-muted-foreground ml-1">Date of Birth</label>
+                    <div className="flex justify-between items-center ml-1">
+                      <label className="text-xs font-bold text-muted-foreground">Date of Birth</label>
+                      {dobError && <span className="text-[10px] font-black text-destructive uppercase tracking-wider">{dobError}</span>}
+                    </div>
                     <div className="relative">
-                      <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                      <Calendar className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${dobError ? 'text-destructive' : 'text-muted-foreground group-focus-within:text-primary'}`} />
                       <input
                         type="date"
                         value={dob}
                         required
-                        onChange={(e) => setDob(e.target.value)}
-                        className="w-full pl-11 pr-4 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all [color-scheme:dark]"
+                        onChange={(e) => {
+                          setDob(e.target.value);
+                          setDobError('');
+                        }}
+                        className={`w-full pl-11 pr-4 py-4 bg-white/[0.03] border rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 transition-all [color-scheme:dark] ${
+                          dobError ? 'border-destructive/40 focus:ring-destructive/40' : 'border-white/5 focus:ring-primary/40'
+                        }`}
                       />
                     </div>
                   </div>
@@ -326,7 +356,12 @@ function SignupPage() {
                         placeholder="At least 6 characters"
                         className="w-full pl-11 pr-12 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/20"
                       />
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white transition-colors">
+                      <button 
+                        type="button" 
+                        onClick={() => setShowPassword(!showPassword)} 
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white transition-colors"
+                      >
                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
@@ -356,7 +391,13 @@ function SignupPage() {
                 </div>
 
                 <div className="flex gap-4">
-                  <button type="button" onClick={handleBack} disabled={loading} className="p-4 bg-white/[0.03] border border-white/5 text-muted-foreground hover:text-white rounded-2xl transition-all disabled:opacity-50">
+                  <button 
+                    type="button" 
+                    onClick={handleBack} 
+                    disabled={loading} 
+                    aria-label="Go back to previous step"
+                    className="p-4 bg-white/[0.03] border border-white/5 text-muted-foreground hover:text-white rounded-2xl transition-all disabled:opacity-50"
+                  >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
                   <button

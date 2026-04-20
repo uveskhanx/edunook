@@ -5,6 +5,7 @@ import { Search as SearchIcon, User as UserIcon, ArrowRight, Sparkles, LayoutGri
 import { Layout } from '@/components/Layout';
 import { CourseCard } from '@/components/CourseCard';
 import { motion, AnimatePresence } from 'framer-motion';
+import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 
 export const Route = createFileRoute('/search')({
   head: () => ({
@@ -105,7 +106,11 @@ function SearchPage() {
               className="flex-1 bg-transparent text-base font-bold placeholder:text-muted-foreground/30 focus:outline-none"
             />
             {isSearching && (
-              <button onClick={() => setQuery('')} className="text-xs font-black text-primary uppercase tracking-widest hover:underline">
+              <button 
+                onClick={() => setQuery('')} 
+                aria-label="Clear search"
+                className="text-xs font-black text-primary uppercase tracking-widest hover:underline"
+              >
                 Clear
               </button>
             )}
@@ -134,12 +139,14 @@ function SearchPage() {
                     <Link
                       to="/$username"
                       params={{ username: profile.username }}
+                      aria-label={`View ${profile.fullName}'s profile`}
                       className="block p-6 bg-[#0f0f0f] border border-white/5 rounded-2xl hover:border-primary/30 transition-all duration-300 overflow-hidden"
                     >
                       <div className="relative flex flex-col items-center text-center space-y-4">
                         <div className="relative">
                           {profile.avatarUrl ? (
-                            <img src={profile.avatarUrl} alt={profile.fullName}
+                            <img src={optimizeCloudinaryUrl(profile.avatarUrl, 160)} alt={profile.fullName}
+                              loading="lazy"
                               className="w-20 h-20 rounded-full border-2 border-white/10 object-cover" />
                           ) : (
                             <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center border-2 border-primary/20">
@@ -241,6 +248,7 @@ function SearchPage() {
                       key={creator.uid}
                       to="/$username"
                       params={{ username: creator.username }}
+                      aria-label={`View ${creator.fullName}'s profile`}
                       className="group block p-4 bg-[#0f0f0f] border border-white/5 rounded-2xl hover:border-primary/30 transition-all text-center relative"
                     >
                       {idx < 3 && (
@@ -250,7 +258,7 @@ function SearchPage() {
                       )}
                       <div className="w-14 h-14 rounded-full bg-white/5 overflow-hidden border border-white/10 mx-auto mb-3 group-hover:border-primary/50 group-hover:scale-105 transition-all">
                         {creator.avatarUrl ? (
-                          <img src={creator.avatarUrl} className="w-full h-full object-cover" alt={creator.fullName} />
+                          <img src={optimizeCloudinaryUrl(creator.avatarUrl, 120)} className="w-full h-full object-cover" alt={creator.fullName} loading="lazy" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center bg-primary/10">
                             <UserIcon className="w-6 h-6 text-primary" />

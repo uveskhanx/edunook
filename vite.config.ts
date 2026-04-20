@@ -10,18 +10,29 @@ export default defineConfig({
   vite: {
     build: {
       target: 'es2020',
-      minify: 'terser',
+      minify: 'esbuild',
       rollupOptions: {
         output: {
-          manualChunks: {
-            'vendor-react': ['react', 'react-dom'],
-            'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/database'],
-            'vendor-motion': ['framer-motion'],
-            'vendor-router': ['@tanstack/react-router'],
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
+                return 'vendor-react';
+              }
+              if (id.includes('firebase')) {
+                return 'vendor-firebase';
+              }
+              if (id.includes('framer-motion')) {
+                return 'vendor-motion';
+              }
+              if (id.includes('lucide-react') || id.includes('recharts')) {
+                return 'vendor-ui';
+              }
+              return 'vendor';
+            }
           },
         },
       },
-      chunkSizeWarningLimit: 600,
+      chunkSizeWarningLimit: 800,
     },
   },
 });

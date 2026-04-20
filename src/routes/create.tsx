@@ -292,6 +292,7 @@ function CreateCoursePage() {
                             <span className="flex items-center gap-1.5">{getChapterIcon(ch.type)} {ch.type}</span>
                           </div>
                           <button type="button" onClick={() => removeChapter(i)} 
+                            aria-label={`Remove chapter ${i + 1}`}
                             className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-all">
                             <X className="w-5 h-5" />
                           </button>
@@ -304,7 +305,9 @@ function CreateCoursePage() {
                               <div className="flex items-center gap-3 px-4 py-3 bg-primary/5 border border-primary/10 rounded-xl">
                                 <VideoIcon className="w-4 h-4 text-primary" />
                                 <span className="text-sm font-medium text-white truncate">{ch.file.name}</span>
-                                <button type="button" onClick={() => updateChapter(i, { file: undefined })} className="text-muted-foreground hover:text-destructive ml-auto">
+                                <button type="button" onClick={() => updateChapter(i, { file: undefined })} 
+                                  aria-label="Remove uploaded video"
+                                  className="text-muted-foreground hover:text-destructive ml-auto">
                                   <X className="w-4 h-4" />
                                 </button>
                               </div>
@@ -343,6 +346,7 @@ function CreateCoursePage() {
                   {/* Add Chapter Buttons */}
                   <div className="grid grid-cols-3 gap-3 pt-4">
                     <button type="button" onClick={() => addChapter('video')}
+                      aria-label="Add video chapter"
                       className="flex flex-col items-center gap-3 p-6 border-2 border-dashed border-white/10 rounded-2xl cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all group">
                       <div className="p-3 bg-primary/10 text-primary rounded-xl group-hover:scale-110 transition-transform">
                         <VideoIcon className="w-5 h-5" />
@@ -350,6 +354,7 @@ function CreateCoursePage() {
                       <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground group-hover:text-white">Video</span>
                     </button>
                     <button type="button" onClick={() => addChapter('link')}
+                      aria-label="Add webpage chapter"
                       className="flex flex-col items-center gap-3 p-6 border-2 border-dashed border-white/10 rounded-2xl cursor-pointer hover:border-accent/50 hover:bg-accent/5 transition-all group">
                       <div className="p-3 bg-accent/10 text-accent rounded-xl group-hover:scale-110 transition-transform">
                         <LinkIcon className="w-5 h-5" />
@@ -357,6 +362,7 @@ function CreateCoursePage() {
                       <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground group-hover:text-white">Webpage</span>
                     </button>
                     <button type="button" onClick={() => addChapter('quiz')}
+                      aria-label="Add quiz chapter"
                       className="flex flex-col items-center gap-3 p-6 border-2 border-dashed border-white/10 rounded-2xl cursor-pointer hover:border-amber-400/50 hover:bg-amber-400/5 transition-all group">
                       <div className="p-3 bg-amber-400/10 text-amber-400 rounded-xl group-hover:scale-110 transition-transform">
                         <FileQuestion className="w-5 h-5" />

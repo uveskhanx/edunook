@@ -38,22 +38,20 @@ export function Layout({ children, hideNavigation, showSettings }: { children: R
     setSearchValue(searchParams.q || '');
   }, [searchParams.q]);
 
-  // Load indexing data for suggestions
-  useEffect(() => {
-    async function loadIndex() {
-      try {
-        const courses = await DbService.getCourses({ isPublished: true });
-        const items = new Set<string>();
-        courses.forEach((c: any) => {
-          items.add(c.title);
-        });
-        setAllSearchItems(Array.from(items));
-      } catch (err) {
-        console.error('Index load failed', err);
-      }
+  // Load indexing data for suggestions lazily
+  const loadSuggestionsIndex = async () => {
+    if (allSearchItems.length > 0) return;
+    try {
+      const courses = await DbService.getCourses({ isPublished: true });
+      const items = new Set<string>();
+      courses.forEach((c: any) => {
+        items.add(c.title);
+      });
+      setAllSearchItems(Array.from(items));
+    } catch (err) {
+      console.error('Index load failed', err);
     }
-    loadIndex();
-  }, []);
+  };
 
   // Filter suggestions
   useEffect(() => {
@@ -61,6 +59,7 @@ export function Layout({ children, hideNavigation, showSettings }: { children: R
       setSuggestions([]);
       return;
     }
+    loadSuggestionsIndex(); // Lazy load index on interaction
     const q = searchValue.toLowerCase();
     const filtered = allSearchItems
       .filter(item => item.toLowerCase().includes(q))
@@ -157,10 +156,14 @@ export function Layout({ children, hideNavigation, showSettings }: { children: R
                     <p className="text-[10px] text-muted-foreground truncate uppercase tracking-[0.2em] font-black opacity-50">@{dbUser?.username || 'student'}</p>
                  </div>
                </div>
-               <button onClick={signOut} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[11px] font-black text-white bg-white/5 hover:bg-destructive/10 hover:text-destructive transition-all">
-                <LogOut className="w-4 h-4" />
-                <span>SIGN OUT</span>
-              </button>
+                <button 
+                  onClick={signOut} 
+                  aria-label="Sign out"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[11px] font-black text-white bg-white/5 hover:bg-destructive/10 hover:text-destructive transition-all"
+                >
+                 <LogOut className="w-4 h-4" />
+                 <span>SIGN OUT</span>
+               </button>
             </div>
           ) : (
             <Link to="/login" className="flex items-center justify-center w-full py-4 bg-primary text-white rounded-2xl font-black shadow-lg shadow-primary/20">
@@ -177,7 +180,7 @@ export function Layout({ children, hideNavigation, showSettings }: { children: R
         {!hideNavigation && (
           <header className="sticky top-0 z-50 h-[72px] bg-[#050505]/95 backdrop-blur-xl border-b border-white/5 px-6 md:px-10 flex items-center justify-between gap-6">
           {/* Mobile Logo */}
-          <Link to="/" className="md:hidden flex-shrink-0">
+          <Link to="/" className="md:hidden flex-shrink-0" aria-label="EduNook Home">
             <Sparkles className="w-7 h-7 text-primary" />
           </Link>
 
@@ -204,39 +207,42 @@ export function Layout({ children, hideNavigation, showSettings }: { children: R
                  <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
                    <AnimatePresence>
                      {searchValue && (
-                       <motion.button
-                         initial={{ opacity: 0, scale: 0.8 }}
-                         animate={{ opacity: 1, scale: 1 }}
-                         exit={{ opacity: 0, scale: 0.8 }}
-                         type="button"
-                         onClick={clearSearch}
-                         className="p-1 rounded-full hover:bg-white/10 text-muted-foreground hover:text-white transition-colors"
-                       >
-                         <X className="w-4 h-4" />
-                       </motion.button>
+                        <motion.button
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          type="button"
+                          onClick={clearSearch}
+                          aria-label="Clear search"
+                          className="p-1 rounded-full hover:bg-white/10 text-muted-foreground hover:text-white transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </motion.button>
                      )}
                    </AnimatePresence>
                    
                    {isMobileSearchOpen && (
-                     <button 
-                       type="button"
-                       onClick={() => setIsMobileSearchOpen(false)}
-                       className="md:hidden p-1 text-muted-foreground hover:text-white"
-                     >
-                       <X className="w-5 h-5" />
-                     </button>
+                      <button 
+                        type="button"
+                        onClick={() => setIsMobileSearchOpen(false)}
+                        aria-label="Close mobile search"
+                        className="md:hidden p-1 text-muted-foreground hover:text-white"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
                    )}
                  </div>
                </form>
   
                {/* Mobile Search Trigger */}
                {!isMobileSearchOpen && (
-                 <button 
-                   onClick={() => setIsMobileSearchOpen(true)}
-                   className="md:hidden p-2 text-muted-foreground hover:text-white bg-[#121212] border border-white/10 rounded-xl"
-                 >
-                   <SearchIcon className="w-5 h-5" />
-                 </button>
+                  <button 
+                    onClick={() => setIsMobileSearchOpen(true)}
+                    aria-label="Open search"
+                    className="md:hidden p-2 text-muted-foreground hover:text-white bg-[#121212] border border-white/10 rounded-xl"
+                  >
+                    <SearchIcon className="w-5 h-5" />
+                  </button>
                )}
   
                {/* Suggestions Dropdown */}

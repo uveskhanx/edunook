@@ -9,6 +9,7 @@ import {
   Sparkles, Crown, Star, ArrowRight, Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 
 export const Route = createFileRoute('/explore')({
   head: () => ({
@@ -226,6 +227,7 @@ function ExplorePage() {
                         <Link
                           to="/$username"
                           params={{ username: creator.username }}
+                          aria-label={`View ${creator.fullName}'s profile`}
                           className="group block p-6 bg-[#0f0f0f] border border-white/5 rounded-2xl hover:border-primary/30 hover:bg-[#121212] transition-all duration-300 text-center relative overflow-hidden"
                         >
                           {/* Rank badge for top 3 */}
@@ -242,7 +244,7 @@ function ExplorePage() {
                           <div className="relative mx-auto mb-4">
                             <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-white/5 overflow-hidden border-2 border-white/10 mx-auto group-hover:border-primary/50 transition-all group-hover:scale-105">
                               {creator.avatarUrl ? (
-                                <img src={creator.avatarUrl} className="w-full h-full object-cover" alt={creator.fullName} />
+                                <img src={optimizeCloudinaryUrl(creator.avatarUrl, 160)} className="w-full h-full object-cover" alt={creator.fullName} loading="lazy" />
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary font-black text-xl">
                                   {creator.fullName?.[0]?.toUpperCase() || 'E'}

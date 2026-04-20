@@ -61,10 +61,7 @@ export const Route = createRootRoute({
       {
         rel: "preconnect",
         href: "https://res.cloudinary.com",
-      },
-      {
-        rel: "dns-prefetch",
-        href: "https://firebaseio.com",
+        crossOrigin: "anonymous",
       },
     ],
   }),
@@ -78,22 +75,36 @@ function RootShell({ children }: { children: React.ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
+        {/* Security & Isolation Meta Tags (Fixed prop names for React) */}
+        <meta httpEquiv="Cross-Origin-Opener-Policy" content="same-origin" />
+        <meta httpEquiv="Cross-Origin-Embedder-Policy" content="require-corp" />
+        
+        {/* Resource Hints */}
+        <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+        <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
+        <link rel="dns-prefetch" href="https://res.cloudinary.com" />
+
+        <link
+          rel="preload"
+          as="style"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+        />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+          media="print"
+          onLoad={(e) => { e.currentTarget.media = 'all' }}
+        />
+        <noscript>
+          <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+          />
+        </noscript>
       </head>
       <body className="bg-[#050505] text-white antialiased">
         {children}
         <Scripts />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                var link = document.createElement('link');
-                link.rel = 'stylesheet';
-                link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap';
-                document.head.appendChild(link);
-              })();
-            `,
-          }}
-        />
       </body>
     </html>
   );
