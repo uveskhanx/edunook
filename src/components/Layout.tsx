@@ -11,7 +11,7 @@ import { useState, useRef, useEffect } from 'react';
 
 // We'll generate navItems dynamically inside Layout to include uid
 
-export function Layout({ children, hideNavigation, hideMobileNav, showSettings }: { children: React.ReactNode; hideNavigation?: boolean; hideMobileNav?: boolean; showSettings?: boolean }) {
+export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, showSettings }: { children: React.ReactNode; hideNavigation?: boolean; hideMobileNav?: boolean; hideHeader?: boolean; showSettings?: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
   const searchParams = useSearch({ strict: false }) as { q?: string };
@@ -177,7 +177,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, showSettings }
       {/* Main Container */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Global Header */}
-        {!hideNavigation && (
+        {!hideNavigation && !hideHeader && (
           <header className="sticky top-0 z-50 h-[72px] bg-[#050505]/95 backdrop-blur-xl border-b border-white/5 px-6 md:px-10 flex items-center justify-between gap-6">
           {/* Mobile Logo */}
           <Link to="/" className="md:hidden flex-shrink-0" aria-label="EduNook Home">
@@ -314,7 +314,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, showSettings }
         )}
 
         {/* Page Content */}
-        <main className="flex-1 pb-24 md:pb-0">
+        <main className={`flex-1 flex flex-col ${(!hideNavigation && !hideMobileNav) ? 'pb-[72px] md:pb-0' : ''}`}>
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
@@ -322,7 +322,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, showSettings }
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className="w-full h-full"
+              className="flex-1 flex flex-col"
             >
               {children}
             </motion.div>

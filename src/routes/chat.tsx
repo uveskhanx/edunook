@@ -112,33 +112,39 @@ function ChatPage() {
     if (activeChat && user) {
       // Production Grade Security Fix: Verify user is a participant
       const verifyAccess = async () => {
-         const chatSnapshot = await DbService.getChatMetadata(activeChat.chatId);
-         if (chatSnapshot && chatSnapshot.users) {
-            if (!chatSnapshot.users[user.id]) {
-               console.warn("Unauthorized access attempt to chat:", activeChat.chatId);
-               navigate({ to: '/home' });
-               return;
-            }
+         try {
+           const chatSnapshot = await DbService.getChatMetadata(activeChat.chatId);
+           if (chatSnapshot && chatSnapshot.users) {
+              if (!chatSnapshot.users[user.id]) {
+                 console.warn("Unauthorized access attempt to chat:", activeChat.chatId);
+                 navigate({ to: '/home' });
+                 return;
+              }
+           }
+           
+           const unsubMsgs = DbService.subscribeToMessages(activeChat.chatId, (msgs) => {
+             setMessages(msgs);
+             setTimeout(scrollToBottom, 500);
+           });
+
+           const unsubTyping = DbService.subscribeToTyping(activeChat.chatId, (typingMap) => {
+              setTypingUsers(typingMap);
+           });
+
+           const unsubPresence = DbService.subscribeToPresence(activeChat.profile.uid, (presence) => {
+              setRecipientPresence(presence);
+           });
+
+           return () => {
+              unsubMsgs();
+              unsubTyping();
+              unsubPresence();
+           };
+         } catch (error) {
+           console.error("Failed to verify access or subscribe to chat:", error);
+           navigate({ to: '/chat', replace: true });
+           return () => {};
          }
-         
-         const unsubMsgs = DbService.subscribeToMessages(activeChat.chatId, (msgs) => {
-           setMessages(msgs);
-           setTimeout(scrollToBottom, 500);
-         });
-
-         const unsubTyping = DbService.subscribeToTyping(activeChat.chatId, (typingMap) => {
-            setTypingUsers(typingMap);
-         });
-
-         const unsubPresence = DbService.subscribeToPresence(activeChat.profile.uid, (presence) => {
-            setRecipientPresence(presence);
-         });
-
-         return () => {
-            unsubMsgs();
-            unsubTyping();
-            unsubPresence();
-         };
       };
       
       let cleanup: (() => void) | undefined;
@@ -188,8 +194,8 @@ function ChatPage() {
   }
 
   return (
-    <Layout hideMobileNav={!!activeChat}>
-      <div className="flex bg-[#050505] h-screen overflow-hidden">
+    <Layout hideMobileNav={!!activeChat} hideHeader={true}>
+      <div className="flex-1 flex bg-[#050505] h-full w-full overflow-hidden relative">
         {/* Sidebar: Message Threads */}
         <aside className={`w-full md:w-96 flex flex-col bg-black/40 backdrop-blur-3xl border-r border-white/5 transition-all ${activeChat ? 'hidden md:flex' : 'flex'}`}>
           <div className="p-8 space-y-8">
@@ -372,7 +378,7 @@ function ChatPage() {
               </header>
 
               {/* Message Feed (Chronological Flow) */}
-              <div className="flex-1 overflow-y-auto px-4 py-8 md:px-12 md:py-10 space-y-4 pb-48 relative scroll-smooth">
+              <div className="flex-1 overflow-y-auto px-4 py-8 md:px-12 md:py-10 space-y-4 pb-32 md:pb-48 relative scroll-smooth flex flex-col">
                  <AnimatePresence initial={false}>
                     {messages.length > 0 ? (
                       messages.map((msg, i) => {
@@ -472,7 +478,7 @@ function ChatPage() {
               </div>
 
               {/* Input Terminal (Slim & Modern) */}
-              <div className="absolute bottom-6 left-4 right-4 md:left-8 md:right-8 z-30">
+              <div className="absolute bottom-4 md:bottom-6 left-4 right-4 md:left-8 md:right-8 z-30">
                 <form 
                   onSubmit={handleSendMessage}
                   className="p-1 px-4 bg-[#121212]/80 backdrop-blur-3xl border border-white/10 rounded-[2rem] shadow-2xl flex items-center gap-2 group transition-all"

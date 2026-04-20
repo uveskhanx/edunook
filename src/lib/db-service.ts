@@ -502,46 +502,63 @@ export const DbService = {
     const settingsRef = ref(db, `user_settings/${userId}`);
     
     return onValue(userChatsRef, async (snapshot) => {
-      const settingsSnap = await get(settingsRef);
-      const settings = settingsSnap.exists() ? settingsSnap.val() : {};
-      const pinned = settings.pinned || {};
-      const muted = settings.muted || {};
+      let pinned: Record<string, boolean> = {};
+      let muted: Record<string, boolean> = {};
+
+      try {
+        const settingsSnap = await get(settingsRef);
+        const settings = settingsSnap.exists() ? settingsSnap.val() : {};
+        pinned = settings.pinned || {};
+        muted = settings.muted || {};
+      } catch (err) {
+        console.warn("Could not load user settings (check Firebase rules):", err);
+      }
 
       if (snapshot.exists()) {
         const chatIdsMap = snapshot.val();
         const chatIds = Object.keys(chatIdsMap);
         
-        const myChats = await Promise.all(chatIds.map(async (id) => {
-          const chatSnapshot = await get(ref(db, `chats/${id}`));
-          if (!chatSnapshot.exists()) return null;
+        try {
+          const myChats = await Promise.all(chatIds.map(async (id) => {
+            try {
+              const chatSnapshot = await get(ref(db, `chats/${id}`));
+              if (!chatSnapshot.exists()) return null;
+              
+              const chat = chatSnapshot.val();
+              const users = chat.users || {};
+              const participants = Object.keys(users);
+              const otherId = participants.find(uid => uid !== userId);
+              if (!otherId) return null;
+              
+              const profile = await this.getProfile(otherId);
+              return profile ? { 
+                ...profile, 
+                chatId: id, 
+                lastMessage: chat.lastMessage, 
+                updatedAt: chat.updatedAt,
+                lastSenderId: chat.lastSenderId,
+                unreadCount: chat.unreadCounts?.[userId] || 0,
+                isPinned: !!pinned[id],
+                isMuted: !!muted[id]
+              } : null;
+            } catch (innerErr) {
+              console.warn(`Failed to process chat metadata for ${id}:`, innerErr);
+              return null;
+            }
+          }));
           
-          const chat = chatSnapshot.val();
-          const users = chat.users || {};
-          const participants = Object.keys(users);
-          const otherId = participants.find(uid => uid !== userId);
-          if (!otherId) return null;
-          
-          const profile = await this.getProfile(otherId);
-          return profile ? { 
-            ...profile, 
-            chatId: id, 
-            lastMessage: chat.lastMessage, 
-            updatedAt: chat.updatedAt,
-            lastSenderId: chat.lastSenderId,
-            unreadCount: chat.unreadCounts?.[userId] || 0,
-            isPinned: !!pinned[id],
-            isMuted: !!muted[id]
-          } : null;
-        }));
-        
-        const filtered = myChats.filter(c => c !== null) as any[];
-        // Sort: Pins first, then updated at
-        filtered.sort((a, b) => {
-           if (a.isPinned && !b.isPinned) return -1;
-           if (!a.isPinned && b.isPinned) return 1;
-           return (b.updatedAt || '').localeCompare(a.updatedAt || '');
-        });
-        callback(filtered);
+          const filtered = myChats.filter(c => c !== null) as any[];
+          // Sort: Pins first, then updated at
+          filtered.sort((a, b) => {
+             if (a.isPinned && !b.isPinned) return -1;
+             if (!a.isPinned && b.isPinned) return 1;
+             return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+          });
+          callback(filtered);
+        } catch (err) {
+          console.error("Critical error processing chats list:", err);
+          callback([]);
+        }
       } else {
         callback([]);
       }
