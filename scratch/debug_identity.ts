@@ -1,16 +1,16 @@
 
-import { db } from './src/lib/firebase';
+import { db } from '../src/lib/firebase';
 import { ref, get } from 'firebase/database';
 
 async function debugData() {
   const snapshot = await get(ref(db, 'courses'));
   if (snapshot.exists()) {
-    const courses = snapshot.val();
+    const courses: Record<string, any> = snapshot.val();
     const targeted = ['last time sending', 'last working', 'final testing yaar'];
 
     console.log('--- TARGETED COURSES RAW DATA ---');
     for (const key in courses) {
-      if (targeted.some(t =\u003e courses[key].title?.toLowerCase().includes(t.toLowerCase()))) {
+      if (targeted.some(t => courses[key].title?.toLowerCase().includes(t.toLowerCase()))) {
         console.log(`Course ID: ${key}`);
         console.log(JSON.stringify(courses[key], null, 2));
 

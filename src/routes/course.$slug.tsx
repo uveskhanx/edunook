@@ -4,6 +4,7 @@ import { DbService, Course, Video, Chapter, Profile } from '@/lib/db-service';
 import { Layout } from '@/components/Layout';
 import { Play, FileText, CheckCircle, ChevronRight, User, BookOpen, Clock, Sparkles, MessageCircle, Share2, Award, Zap, Link as LinkIcon, FileQuestion, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 
 export const Route = createFileRoute('/course/$slug')({
   head: ({ params }) => ({
@@ -196,8 +197,8 @@ function CourseViewPage() {
                     </div>
                 </div>
                 <div className="flex items-center gap-4">
-                   <button className="p-2 text-muted-foreground hover:text-white transition-colors"><Share2 className="w-5 h-5" /></button>
-                   <button className="p-2 text-muted-foreground hover:text-white transition-colors"><MessageCircle className="w-5 h-5" /></button>
+                   <button aria-label="Share course" className="p-2 text-muted-foreground hover:text-white transition-colors"><Share2 className="w-5 h-5" /></button>
+                   <button aria-label="Discuss course" className="p-2 text-muted-foreground hover:text-white transition-colors"><MessageCircle className="w-5 h-5" /></button>
                 </div>
              </div>
           </div>
@@ -216,7 +217,7 @@ function CourseViewPage() {
                 <div className="flex items-center gap-4">
                     <Link to="/$username" params={{ username: course.profiles?.username || '' }} className="flex items-center gap-3 p-1.5 pr-6 bg-white/5 border border-white/5 rounded-2xl hover:bg-white/10 transition-all group">
                         <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/20 flex items-center justify-center text-primary font-black overflow-hidden relative">
-                            {course.profiles?.avatarUrl ? <img src={course.profiles.avatarUrl} className="w-full h-full object-cover" /> : course.profiles?.fullName?.[0]}
+                            {course.profiles?.avatarUrl ? <img src={optimizeCloudinaryUrl(course.profiles.avatarUrl, 80)} className="w-full h-full object-cover" alt={course.profiles?.fullName || 'Creator avatar'} loading="lazy" /> : course.profiles?.fullName?.[0]}
                         </div>
                         <div className="flex flex-col">
                             <span className="text-xs font-black text-white group-hover:text-primary transition-colors">{course.profiles?.fullName}</span>

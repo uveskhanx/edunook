@@ -3,6 +3,7 @@ import { Play, User, Clock, Sparkles, Eye } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/use-auth';
 import { formatRelativeTime } from '@/lib/time';
+import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 
 interface CourseCardProps {
   course: {
@@ -51,8 +52,10 @@ export function CourseCard({ course }: CourseCardProps) {
         <div className="relative aspect-video rounded-[1.5rem] overflow-hidden bg-[#121212] border border-white/5 transition-all duration-500 group-hover:border-primary/50 group-hover:shadow-[0_0_20px_rgba(59,130,246,0.15)]">
           {course.thumbnailUrl ? (
             <img 
-              src={course.thumbnailUrl} 
+              src={optimizeCloudinaryUrl(course.thumbnailUrl, 480)} 
               alt={course.title}
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
             />
           ) : (
@@ -81,7 +84,7 @@ export function CourseCard({ course }: CourseCardProps) {
           <div className="flex-shrink-0">
              <div className="w-10 h-10 rounded-full bg-white/5 border border-white/5 overflow-hidden">
                 {course.profiles?.avatarUrl ? (
-                  <img src={course.profiles.avatarUrl} alt="" className="w-full h-full object-cover" />
+                  <img src={optimizeCloudinaryUrl(course.profiles.avatarUrl, 80)} alt="" loading="lazy" className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-[10px] font-black text-primary bg-primary/10">
                     {course.profiles?.fullName?.[0].toUpperCase() || 'E'}

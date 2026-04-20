@@ -5,9 +5,10 @@ import { useAuth } from '@/hooks/use-auth';
 import { Layout } from '@/components/Layout';
 import { CourseCard } from '@/components/CourseCard';
 import { ProfileSkeleton } from '@/components/SkeletonLoader';
-import { Camera, Package, Loader2, Edit2, X, Sparkles, Trophy, MessageCircle, UserPlus, UserCheck } from 'lucide-react';
+import { Camera, Package, Loader2, Edit2, X, Sparkles, Trophy, MessageCircle, UserPlus, UserCheck, Settings, Plus, Music, Wand2, Type, Sticker, ChevronRight, Video } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 
 export const Route = createFileRoute('/$username')({
   head: () => ({
@@ -34,6 +35,62 @@ function ProfilePage() {
   const [editBio, setEditBio] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  // Highlight Upload State
+  const [isAddingHighlight, setIsAddingHighlight] = useState(false);
+  const [highlightFile, setHighlightFile] = useState<File | null>(null);
+  const [highlightPreviewUrl, setHighlightPreviewUrl] = useState<string | null>(null);
+  const [highlightType, setHighlightType] = useState<'image' | 'video'>('image');
+  const [highlightTitle, setHighlightTitle] = useState('');
+  const [uploadingHighlight, setUploadingHighlight] = useState(false);
+
+  const handleHighlightSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setHighlightFile(file);
+      setHighlightPreviewUrl(URL.createObjectURL(file));
+      setHighlightType(file.type.startsWith('video/') ? 'video' : 'image');
+      setHighlightTitle('New Highlight');
+      setIsAddingHighlight(true);
+    }
+    // reset input
+    e.target.value = '';
+  };
+
+  const uploadHighlight = async () => {
+    if (!user || !highlightFile) return;
+    setUploadingHighlight(true);
+    try {
+      toast.loading(`Uploading ${highlightType}...`, { id: 'hl-upload' });
+      // Uses the storage bucket generically
+      const url = await DbService.uploadAvatar(user.id, highlightFile); 
+
+      const newHighlight = {
+         title: highlightTitle,
+         coverImage: url,
+         type: 'update' as const,
+      };
+
+      const id = await DbService.addHighlight(user.id, newHighlight);
+      setHighlights(prev => [{ id, ...newHighlight }, ...prev]);
+      
+      setIsAddingHighlight(false);
+      setHighlightFile(null);
+      setHighlightPreviewUrl(null);
+      toast.success("Highlight Added!", { id: 'hl-upload' });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to add highlight", { id: 'hl-upload' });
+    } finally {
+      setUploadingHighlight(false);
+    }
+  };
+
+  const cancelHighlight = () => {
+    setIsAddingHighlight(false);
+    setHighlightFile(null);
+    setHighlightPreviewUrl(null);
+  };
 
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -200,89 +257,89 @@ function ProfilePage() {
   }
 
   return (
-    <Layout>
-      <div className="max-w-[1200px] mx-auto px-4 md:px-10 py-12">
+    <Layout showSettings={isOwnProfile}>
+      <div className="max-w-[800px] mx-auto px-4 md:px-8 py-10 mb-12 md:mb-0 w-full overflow-visible">
         
-        {/* Instagram Style Header Centered */}
-        <section className="flex flex-col items-center text-center max-w-2xl mx-auto space-y-6 pt-4 pb-16 relative">
-           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-primary/10 rounded-full blur-[100px] -z-10" />
+        {/* Main Wrapper matching the user's wireframe structure */}
+        <div className="bg-[#121212]/80 backdrop-blur-3xl border border-white/10 rounded-[3rem] p-4 md:p-8 shadow-2xl relative w-full">
+          
+          {/* Background Glow layer with hidden overflow so it doesn't break out, keeping container visible */}
+          <div className="absolute inset-0 rounded-[3rem] overflow-hidden pointer-events-none -z-10">
+             <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px]" />
+          </div>
 
-           {/* Avatar Area */}
-           <div className="relative mx-auto mt-4 group">
-              <div className="absolute -inset-1.5 bg-gradient-to-br from-primary via-accent to-violet-600 rounded-full opacity-40 group-hover:opacity-60 transition-opacity blur-md" />
-              <div className="relative w-36 h-36 md:w-48 md:h-48 rounded-full bg-[#121212] border-[6px] border-[#050505] overflow-hidden shadow-2xl flex-shrink-0 z-10 transition-transform group-hover:scale-[1.02]">
-                 {profile.avatarUrl ? (
-                   <img src={profile.avatarUrl} className="w-full h-full object-cover" alt="Avatar" />
-                 ) : (
-                   <div className="w-full h-full flex items-center justify-center bg-white/5">
-                     <span className="text-5xl md:text-6xl font-black text-primary/50">
-                        {profile.fullName?.[0]?.toUpperCase()}
-                     </span>
-                   </div>
-                 )}
-                 {isOwnProfile && (
-                   <label className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 opacity-0 hover:opacity-100 transition-opacity cursor-pointer">
-                      {uploadingAvatar ? (
-                         <Loader2 className="w-8 h-8 text-white animate-spin" />
-                      ) : (
-                         <Camera className="w-8 h-8 text-white" />
-                      )}
-                      <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
-                   </label>
-                 )}
-              </div>
-              {/* Explicit Edit Icon Badge (only if own profile) */}
-              {isOwnProfile && (
-                <label className="absolute bottom-2 right-2 md:bottom-3 md:right-3 w-10 h-10 md:w-12 md:h-12 bg-white text-black rounded-full shadow-xl flex items-center justify-center z-20 cursor-pointer hover:scale-110 active:scale-95 transition-transform">
-                    <Edit2 className="w-4 h-4 md:w-5 md:h-5" />
-                    <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
-                </label>
-              )}
-           </div>
+          {/* 2. All Information Box */}
+          <section className="relative flex flex-col items-center bg-white/[0.02] border border-white/10 rounded-[2.5rem] p-8 mb-6 shadow-xl">
+             {/* Avatar Area */}
+             <div className="relative mx-auto group mb-6">
+                <div className="absolute -inset-1.5 bg-gradient-to-br from-primary via-accent to-violet-600 rounded-full opacity-30 group-hover:opacity-50 transition-opacity blur-md" />
+                <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-full bg-[#050505] border-[4px] border-[#121212] overflow-hidden flex-shrink-0 z-10 transition-transform group-hover:scale-105">
+                   {profile.avatarUrl ? (
+                     <img src={optimizeCloudinaryUrl(profile.avatarUrl, 320)} className="w-full h-full object-cover" alt="Avatar" />
+                   ) : (
+                     <div className="w-full h-full flex items-center justify-center bg-white/5">
+                       <span className="text-5xl font-black text-primary/50">
+                          {profile.fullName?.[0]?.toUpperCase()}
+                       </span>
+                     </div>
+                   )}
+                   {isOwnProfile && (
+                     <label className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 opacity-0 hover:opacity-100 transition-opacity cursor-pointer">
+                        {uploadingAvatar ? (
+                           <Loader2 className="w-8 h-8 text-white animate-spin" />
+                        ) : (
+                           <Camera className="w-8 h-8 text-white" />
+                        )}
+                        <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
+                     </label>
+                   )}
+                </div>
+             </div>
 
-           {/* User Meta */}
-           <div className="space-y-4">
-              <div className="space-y-1">
-                 <h1 className="text-3xl md:text-4xl font-black text-white">{profile.fullName}</h1>
-                 <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest opacity-70">
+             {/* User Meta */}
+             <div className="text-center space-y-2 mb-6">
+                 <h1 className="text-3xl font-black text-white">{profile.fullName}</h1>
+                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-[0.2em] opacity-70">
                     @{profile.username}
                  </p>
-              </div>
+             </div>
 
-               <div className="flex items-center justify-center gap-6 text-white pt-2">
+             {/* Stats */}
+             <div className="flex items-center justify-center gap-8 text-white mb-6 w-full max-w-sm border-y border-white/5 py-4">
                  <div className="flex flex-col items-center">
                     <span className="text-xl font-black">{courses.length}</span>
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Courses</span>
+                    <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-bold">Courses</span>
                  </div>
                  <div className="flex flex-col items-center cursor-pointer hover:opacity-80 transition-opacity">
                     <span className="text-xl font-black">{followersCount}</span>
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Followers</span>
+                    <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-bold">Followers</span>
                  </div>
                  <div className="flex flex-col items-center cursor-pointer hover:opacity-80 transition-opacity">
                     <span className="text-xl font-black">{followingCount}</span>
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Following</span>
+                    <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-bold">Following</span>
                  </div>
-              </div>
+             </div>
 
-              {isOwnProfile && (
-                <div className="flex flex-col items-center gap-1 mt-6 p-4 bg-white/[0.02] border border-white/5 rounded-2xl w-full max-w-sm mx-auto">
-                   <p className="text-[10px] uppercase font-black tracking-widest text-primary opacity-80 mb-2">Private Intel</p>
-                   {profile.email && <p className="text-xs text-muted-foreground font-medium"><span className="text-white">Email:</span> {profile.email}</p>}
-                   {profile.phone && <p className="text-xs text-muted-foreground font-medium"><span className="text-white">Phone:</span> {profile.phone}</p>}
-                   {profile.dob && <p className="text-xs text-muted-foreground font-medium"><span className="text-white">Birthday:</span> {profile.dob}</p>}
-                   <p className="text-[10px] font-mono text-muted-foreground mt-2 opacity-50 select-all">UID: {profile.uid}</p>
-                </div>
-              )}
-
-              <p className="text-sm font-medium text-white/80 max-w-md mx-auto leading-relaxed whitespace-pre-wrap px-4 py-4">
+             {/* Bio */}
+             <p className="text-[14px] font-medium text-white/80 max-w-md text-center leading-relaxed whitespace-pre-wrap mb-8 px-4">
                 {profile.bio || (isOwnProfile ? `Join me on EduNook` : `Dedicated to crafting high-impact learning experiences.`)}
-              </p>
+             </p>
 
-              <div className="flex items-center justify-center gap-3">
+             {/* Private Intel (Own Profile Only) */}
+             {isOwnProfile && (
+               <div className="flex flex-col items-center gap-1.5 mb-8 p-5 bg-black/20 border border-white/5 rounded-2xl w-full max-w-sm text-center">
+                  <p className="text-[10px] uppercase font-black tracking-widest text-primary opacity-80 mb-1">Private Info</p>
+                  {profile.email && <p className="text-xs text-muted-foreground font-medium"><span className="text-white">Email:</span> {profile.email}</p>}
+                  {profile.phone && <p className="text-xs text-muted-foreground font-medium"><span className="text-white">Phone:</span> {profile.phone}</p>}
+               </div>
+             )}
+
+             {/* Edit / Follow Buttons at the Bottom of All Info */}
+             <div className="w-full max-w-xs flex gap-3 justify-center mt-auto">
                 {isOwnProfile ? (
                   <button 
                     onClick={() => setIsEditing(true)}
-                    className="px-6 py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl text-[13px] font-black text-white transition-all inline-flex items-center gap-2"
+                    className="w-full py-4 bg-white/5 border border-white/10 hover:bg-white/10 rounded-2xl text-[14px] font-black text-white transition-all flex items-center justify-center gap-2"
                   >
                     <Edit2 className="w-4 h-4" /> Edit Profile
                   </button>
@@ -291,77 +348,40 @@ function ProfilePage() {
                     <button
                       onClick={handleFollow}
                       disabled={followLoading}
-                      className={`px-6 py-2.5 rounded-xl text-[13px] font-black transition-all inline-flex items-center gap-2 ${
-                        isFollowing 
-                          ? 'bg-white/5 border border-white/10 text-white hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30'
-                          : 'bg-primary text-white shadow-lg shadow-primary/20 hover:scale-105 active:scale-95'
-                      }`}
+                      className={`flex-1 py-3.5 rounded-2xl text-[13px] font-black transition-all flex flex-col items-center justify-center gap-1 
+                        ${isFollowing 
+                           ? 'bg-white/5 border border-white/10 text-white hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30'
+                           : 'bg-primary text-white shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98]'
+                        }`}
                     >
-                      {followLoading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : isFollowing ? (
-                        <><UserCheck className="w-4 h-4" /> Following</>
-                      ) : (
-                        <><UserPlus className="w-4 h-4" /> Follow</>
-                      )}
+                      {followLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : isFollowing ? <><UserCheck className="w-4 h-4" /> Following</> : <><UserPlus className="w-4 h-4" /> Follow</>}
                     </button>
                     <Link 
                       to="/chat"
                       search={{ chatWith: resolvedUid || '' }}
-                      className="px-6 py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl text-[13px] font-black text-white transition-all inline-flex items-center gap-2"
+                      className="flex-1 py-3.5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-2xl text-[13px] font-black text-white transition-all flex flex-col items-center justify-center gap-1"
                     >
                       <MessageCircle className="w-4 h-4" /> Message
                     </Link>
                   </>
                 )}
-              </div>
-           </div>
-        </section>
+             </div>
+          </section>
 
-        {/* Highlights Section */}
-        <section className="mb-12">
-            <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-primary mb-6 ml-2 md:mx-auto md:max-w-max text-center flex items-center gap-2">
-               <Sparkles className="w-3 h-3" /> Highlights
-            </h2>
-            <div className="flex items-center gap-6 overflow-x-auto no-scrollbar pb-6 px-2 w-full md:justify-center">
-                {highlights.length > 0 ? highlights.map(highlight => (
-                  <motion.div 
-                    key={highlight.id}
-                    whileHover={{ scale: 1.05, y: -2 }}
-                    className="flex flex-col items-center gap-3 cursor-pointer shrink-0"
-                  >
-                     <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-[#121212] flex items-center justify-center border-2 border-white/5 p-1 relative group">
-                        <div className="absolute inset-0 rounded-full border border-primary/30 scale-[1.05] opacity-0 group-hover:opacity-100 transition-all" />
-                        <div className="w-full h-full rounded-full overflow-hidden bg-white/5">
-                           {highlight.coverImage ? (
-                             <img src={highlight.coverImage} className="w-full h-full object-cover" alt={highlight.title} />
-                           ) : (
-                             <Sparkles className="w-8 h-8 text-white/20 m-auto mt-6 md:mt-8" />
-                           )}
-                        </div>
-                     </div>
-                     <span className="text-[11px] font-bold text-white max-w-[80px] text-center truncate">
-                        {highlight.title}
-                     </span>
-                  </motion.div>
-                )) : (
-                  <div className="w-full flex items-center justify-center p-8 bg-[#121212] border border-white/5 rounded-3xl">
-                     <p className="text-sm font-medium text-muted-foreground">No highlights yet.</p>
-                  </div>
-                )}
+          {/* 3. Achievements Section */}
+          <section className="mb-6 bg-white/[0.02] border border-white/10 rounded-[2.5rem] p-6 lg:p-8 shadow-xl">
+            <div className="flex items-center gap-3 mb-6 pl-2">
+               <div className="p-2 bg-accent/20 text-accent rounded-xl">
+                  <Trophy className="w-4 h-4" />
+               </div>
+               <h2 className="text-[12px] font-black uppercase tracking-[0.2em] text-white">Achievements</h2>
             </div>
-        </section>
-
-        {/* Achievements Section */}
-        <section className="mb-16">
-            <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-accent mb-6 ml-2 md:mx-auto md:max-w-max text-center">
-               Trophies
-            </h2>
-            <div className="flex items-center gap-4 overflow-x-auto no-scrollbar pb-4 px-2 w-full md:justify-center">
+            
+            <div className="flex flex-wrap items-center gap-4 w-full">
                 {achievements.length > 0 ? achievements.map(achievement => (
-                  <div key={achievement.id} className="flex items-center gap-3 shrink-0 px-5 py-3.5 bg-[#121212] border border-white/5 rounded-2xl group">
-                     <div className="w-8 h-8 rounded-full bg-accent/10 text-accent flex items-center justify-center group-hover:scale-110 transition-transform">
-                        {achievement.icon === 'trophy' ? <Trophy className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+                  <div key={achievement.id} className="flex items-center gap-3 px-5 py-4 bg-[#050505] border border-white/5 rounded-2xl flex-1 min-w-[200px]">
+                     <div className="w-10 h-10 rounded-full bg-accent/10 text-accent flex items-center justify-center">
+                        <Trophy className="w-5 h-5" />
                      </div>
                      <div className="flex flex-col">
                         <span className="text-[13px] font-bold text-white whitespace-nowrap">{achievement.title}</span>
@@ -371,40 +391,172 @@ function ProfilePage() {
                      </div>
                   </div>
                 )) : (
-                  <div className="w-full flex items-center justify-center p-8 bg-[#121212] border border-white/5 rounded-3xl">
-                     <p className="text-sm font-medium text-muted-foreground">No achievements unlocked.</p>
+                  <div className="w-full flex items-center justify-center py-6">
+                     <p className="text-sm font-medium text-muted-foreground opacity-70">No achievements unlocked yet.</p>
                   </div>
                 )}
             </div>
-        </section>
+          </section>
 
-        {/* Divider */}
-        <div className="w-full h-px bg-white/5 max-w-4xl mx-auto mb-16 relative">
-          <div className="absolute left-1/2 -top-3 -translate-x-1/2 flex items-center justify-center w-6 h-6 bg-[#050505] text-white/20">
-             <Package className="w-4 h-4" />
-          </div>
+          {/* 4. Highlights Section */}
+          <section className="mb-6 bg-white/[0.02] border border-white/10 rounded-[2.5rem] p-6 lg:p-8 shadow-xl">
+             <div className="flex items-center gap-3 mb-6 pl-2">
+                <div className="p-2 bg-primary/20 text-primary rounded-xl">
+                   <Sparkles className="w-4 h-4" />
+                </div>
+                <h2 className="text-[12px] font-black uppercase tracking-[0.2em] text-white">Highlights</h2>
+             </div>
+
+             <div className="flex items-center gap-6 overflow-x-auto no-scrollbar pb-4 -mx-2 px-2 w-full">
+                {/* Visual Group from Image: highlights on left, plus button on right */}
+                
+                {highlights.map(highlight => (
+                  <motion.div 
+                    key={highlight.id}
+                    whileHover={{ scale: 1.05, y: -2 }}
+                    className="flex flex-col items-center gap-3 cursor-pointer shrink-0"
+                  >
+                     <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-[#050505] flex items-center justify-center border-[3px] border-white/10 relative group">
+                        <div className="absolute inset-0 rounded-full border border-primary/50 scale-[1.05] opacity-0 group-hover:opacity-100 transition-all" />
+                        <div className="w-full h-full rounded-full overflow-hidden bg-white/5">
+                           {highlight.coverImage ? (
+                             <img src={optimizeCloudinaryUrl(highlight.coverImage, 160)} className="w-full h-full object-cover" alt={highlight.title} loading="lazy" />
+                           ) : (
+                             <Sparkles className="w-6 h-6 text-white/20 m-auto mt-5 md:mt-7" />
+                           )}
+                        </div>
+                     </div>
+                     <span className="text-[11px] font-bold text-white max-w-[70px] text-center truncate">
+                        {highlight.title}
+                     </span>
+                  </motion.div>
+                ))}
+
+                {highlights.length === 0 && !isOwnProfile && (
+                   <p className="text-sm font-medium text-muted-foreground opacity-70 ml-4 py-4">No highlights to show.</p>
+                )}
+
+                {/* Adding margin-left auto pushes this rigidly to the right if there are items, creating the left-right separation */}
+                {isOwnProfile && (
+                  <motion.div 
+                    whileHover={{ scale: 1.05 }}
+                    className={`flex flex-col items-center gap-3 shrink-0 ${highlights.length > 0 ? 'ml-auto pl-6 border-l border-white/10' : ''}`}
+                  >
+                     <label className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-white/5 border-2 border-white/20 border-dashed hover:border-primary hover:bg-primary/10 flex items-center justify-center text-white/50 hover:text-primary transition-all group shadow-sm cursor-pointer">
+                        <Plus className="w-6 h-6 group-hover:scale-125 transition-transform" />
+                        <input type="file" accept="image/*,video/*" className="hidden" onChange={handleHighlightSelect} disabled={uploadingHighlight} />
+                     </label>
+                     <span className="text-[11px] font-bold text-muted-foreground w-max ">
+                       <div className="flex w-16 text-center whitespace-normal justify-center overflow-visible mx-2">Add more highlight</div>
+                     </span>
+                  </motion.div>
+                )}
+             </div>
+          </section>
+
+          {/* 5. Courses Section */}
+          <section className="bg-white/[0.02] border border-white/10 rounded-[2.5rem] p-6 lg:p-8 shadow-xl">
+             <div className="flex items-center gap-3 mb-6 pl-2">
+                <div className="p-2 bg-violet-500/20 text-violet-400 rounded-xl">
+                   <Package className="w-4 h-4" />
+                </div>
+                <h2 className="text-[12px] font-black uppercase tracking-[0.2em] text-white">Courses</h2>
+             </div>
+
+             {courses.length > 0 ? (
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {courses.map(course => (
+                     <div key={course.id} className="relative group">
+                       <CourseCard course={{...course, profiles: profile}} />
+                     </div>
+                  ))}
+               </div>
+             ) : (
+               <div className="py-12 text-center bg-[#050505] rounded-[2rem] border border-white/5 flex flex-col items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-muted-foreground mb-4">
+                     <Package className="w-5 h-5 opacity-40" />
+                  </div>
+                  <h3 className="text-base font-black text-white">No courses</h3>
+                  <p className="text-xs font-medium text-muted-foreground mt-1">
+                    {isOwnProfile ? "Ready to create yours?" : "Nothing published yet."}
+                  </p>
+               </div>
+             )}
+          </section>
+
         </div>
 
-        {/* Course Grid Area */}
-        <section className="space-y-8 max-w-[1400px] mx-auto">
-           {courses.length > 0 ? (
-             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {courses.map(course => <CourseCard key={course.id} course={{...course, profiles: profile}} />)}
-             </div>
-           ) : (
-             <div className="py-24 text-center space-y-6 max-w-sm mx-auto bg-[#121212] rounded-[2rem] border border-white/5 p-8">
-                <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 mx-auto flex items-center justify-center text-muted-foreground">
-                   <Package className="w-8 h-8 opacity-40" />
-                </div>
-                <div className="space-y-2">
-                   <h3 className="text-lg font-black text-white">No courses yet</h3>
-                   <p className="text-[13px] font-medium text-muted-foreground">
-                     {isOwnProfile ? "Ready to share your knowledge with the world?" : "This user hasn't published any courses."}
-                   </p>
-                </div>
-             </div>
-           )}
-        </section>
+        {/* Instagram Highlight Creator Modal (Preview Section) */}
+        <AnimatePresence>
+          {isAddingHighlight && highlightPreviewUrl && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/95 backdrop-blur-xl">
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.9, y: 50 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 50 }}
+                  className="relative w-full h-full md:max-w-md md:h-[90vh] bg-[#050505] overflow-hidden md:rounded-[3rem] md:border md:border-white/10 shadow-[0_0_100px_rgba(0,0,0,0.8)] flex flex-col"
+                >
+                   {/* Top Header / Tools */}
+                   <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between p-4 bg-gradient-to-b from-black/80 to-transparent pt-12 md:pt-6">
+                      <button onClick={cancelHighlight} disabled={uploadingHighlight} className="p-3 rounded-full bg-black/40 text-white backdrop-blur-xl hover:bg-white/20 transition-all">
+                         <X className="w-6 h-6" />
+                      </button>
+                      
+                      <div className="flex items-center gap-4 px-2">
+                         <button className="p-2.5 rounded-full bg-black/40 text-white backdrop-blur-xl hover:scale-110 active:scale-95 transition-all outline-none">
+                            <Type className="w-6 h-6" />
+                         </button>
+                         <button className="p-2.5 rounded-full bg-black/40 text-white backdrop-blur-xl hover:scale-110 active:scale-95 transition-all outline-none">
+                            <Sticker className="w-6 h-6" />
+                         </button>
+                         <button className="p-2.5 rounded-full bg-black/40 text-white backdrop-blur-xl hover:scale-110 active:scale-95 transition-all outline-none">
+                            <Wand2 className="w-6 h-6" />
+                         </button>
+                         <button className="p-2.5 rounded-full bg-black/40 text-white backdrop-blur-xl hover:scale-110 active:scale-95 transition-all outline-none">
+                            <Music className="w-6 h-6" />
+                         </button>
+                      </div>
+                   </div>
+
+                   {/* Media Preview Area */}
+                   <div className="flex-1 w-full h-full relative bg-zinc-900 flex items-center justify-center overflow-hidden">
+                      {highlightType === 'video' ? (
+                         <video src={highlightPreviewUrl} className="w-full h-full object-cover" autoPlay loop playsInline />
+                      ) : (
+                         <img src={highlightPreviewUrl} className="w-full h-full object-cover" alt="Previewing" />
+                      )}
+                      
+                      {/* Fake Interactive Overlays to simulate UX */}
+                      <div className="absolute inset-0 border-[1.5px] border-white/20 m-4 rounded-[2.5rem] pointer-events-none" />
+                   </div>
+
+                   {/* Bottom Footer / Publisher Action */}
+                   <div className="absolute bottom-0 inset-x-0 z-20 p-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent pb-8 md:pb-6">
+                      <div className="flex items-center justify-between gap-4">
+                         <input 
+                           type="text"
+                           value={highlightTitle}
+                           onChange={(e) => setHighlightTitle(e.target.value)}
+                           className="flex-1 w-full bg-black/40 border border-white/10 rounded-full px-5 py-3.5 text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 backdrop-blur-xl shadow-lg placeholder:text-white/50"
+                           placeholder="Highlight Name..."
+                           disabled={uploadingHighlight}
+                           maxLength={15}
+                         />
+                         
+                         <button 
+                            onClick={uploadHighlight}
+                            disabled={uploadingHighlight || !highlightTitle.trim()}
+                            className="px-6 py-3.5 bg-white text-black rounded-full font-black text-[14px] flex shrink-0 items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-xl disabled:opacity-50"
+                         >
+                            {uploadingHighlight ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Your Story'}
+                            {!uploadingHighlight && <ChevronRight className="w-4 h-4 ml-1" />}
+                         </button>
+                      </div>
+                   </div>
+                </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
         {/* Edit Profile Modal */}
         <AnimatePresence>

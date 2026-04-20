@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { DbService } from '@/lib/db-service';
 import { useAuth } from '@/hooks/use-auth';
 import { Layout } from '@/components/Layout';
-import { Upload, Plus, X, Loader2, BookOpen, DollarSign, Tag, Video as VideoIcon, Sparkles, LayoutGrid, CheckCircle2, Link as LinkIcon, FileQuestion, GripVertical } from 'lucide-react';
+import { Upload, Plus, X, Loader2, BookOpen, DollarSign, Tag, Video as VideoIcon, Sparkles, LayoutGrid, CheckCircle2, Link as LinkIcon, FileQuestion, GripVertical, Clock, ShieldAlert, Infinity } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const Route = createFileRoute('/create')({
@@ -35,6 +35,8 @@ function CreateCoursePage() {
   const [category, setCategory] = useState('general');
   const [thumbnail, setThumbnail] = useState<File | null>(null);
   const [chapters, setChapters] = useState<ChapterDraft[]>([]);
+  const [hasExpiry, setHasExpiry] = useState(false);
+  const [expiresInDays, setExpiresInDays] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -95,6 +97,7 @@ function CreateCoursePage() {
         price: parseFloat(price) || 0,
         category,
         thumbnailUrl,
+        expiresInDays: hasExpiry && expiresInDays ? parseInt(expiresInDays, 10) : null,
       });
 
       // Save chapters
@@ -216,11 +219,58 @@ function CreateCoursePage() {
                 </div>
               </section>
 
-              {/* Module 2: Chapters (Advanced) */}
+              {/* Module 2: Access Licensing */}
+              <section className="p-10 bg-[#121212] border border-white/5 rounded-[3rem] shadow-xl relative">
+                <div className="flex items-center gap-4 mb-10">
+                   <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-primary font-black border border-white/10">02</div>
+                   <h3 className="text-2xl font-black tracking-tight">Access Licensing</h3>
+                </div>
+
+                <div className="space-y-8">
+                  <div className="flex flex-col md:flex-row gap-6">
+                    <button 
+                      type="button" 
+                      onClick={() => { setHasExpiry(false); setExpiresInDays(''); }}
+                      className={`flex-1 p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-3 ${!hasExpiry ? 'border-primary bg-primary/10' : 'border-white/5 bg-background/50 hover:bg-white/5'}`}
+                    >
+                       <Infinity className={`w-8 h-8 ${!hasExpiry ? 'text-primary' : 'text-muted-foreground'}`} />
+                       <span className={`font-black tracking-widest uppercase text-[10px] ${!hasExpiry ? 'text-primary' : 'text-muted-foreground'}`}>Lifetime Access</span>
+                    </button>
+                    
+                    <button 
+                      type="button" 
+                      onClick={() => setHasExpiry(true)}
+                      className={`flex-1 p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-3 ${hasExpiry ? 'border-amber-400 bg-amber-400/10' : 'border-white/5 bg-background/50 hover:bg-white/5'}`}
+                    >
+                       <Clock className={`w-8 h-8 ${hasExpiry ? 'text-amber-400' : 'text-muted-foreground'}`} />
+                       <span className={`font-black tracking-widest uppercase text-[10px] ${hasExpiry ? 'text-amber-400' : 'text-muted-foreground'}`}>Limited Time</span>
+                    </button>
+                  </div>
+
+                  <AnimatePresence>
+                    {hasExpiry && (
+                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                        <div className="pt-2">
+                          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground ml-2">Validity Duration (Days)</label>
+                          <div className="relative group mt-3">
+                            <ShieldAlert className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-amber-500/50 group-focus-within:text-amber-400 transition-colors" />
+                            <input type="number" min="1" max="3650" value={expiresInDays} onChange={e => setExpiresInDays(e.target.value)} required={hasExpiry}
+                              className="w-full pl-16 pr-8 py-5 bg-amber-400/5 border border-amber-400/20 rounded-2xl text-amber-400 font-black text-lg focus:outline-none focus:ring-4 focus:ring-amber-400/20 transition-all placeholder:text-amber-400/30"
+                              placeholder="e.g. 30 for one month" />
+                            <div className="absolute top-full mt-2 left-2 right-2 text-xs text-amber-500/70 font-medium">After this period from purchase, access will automatically expire and revoke.</div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </section>
+
+              {/* Module 3: Chapters (Advanced) */}
               <section className="p-10 bg-[#121212] border border-white/5 rounded-[3rem] shadow-xl relative">
                 <div className="flex items-center justify-between mb-10">
                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-primary font-black border border-white/10">02</div>
+                      <div className="w-10 h-10 rounded-2xl bg-white/5 flex items-center justify-center text-primary font-black border border-white/10">03</div>
                       <h3 className="text-2xl font-black tracking-tight">Chapters</h3>
                    </div>
                    <span className="px-4 py-2 bg-primary/10 text-primary border border-primary/20 rounded-2xl text-[10px] font-black uppercase tracking-widest">{chapters.length} Chapters</span>
@@ -356,6 +406,13 @@ function CreateCoursePage() {
                       <CheckCircle2 className="w-5 h-5 text-primary" />
                       <span>Video + Link + Quiz chapters</span>
                    </div>
+                   
+                   {hasExpiry && expiresInDays && (
+                     <div className="flex items-center gap-3 text-xs font-bold text-amber-600">
+                        <Clock className="w-5 h-5" />
+                        <span>Expires {expiresInDays} days after purchase</span>
+                     </div>
+                   )}
                 </div>
                 
                 <button type="submit" disabled={loading}

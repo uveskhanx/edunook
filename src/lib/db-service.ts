@@ -1,6 +1,5 @@
 import { ref, get, set, push, update, onValue, query, orderByChild, equalTo, remove, runTransaction } from 'firebase/database';
-import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from './firebase';
+import { db } from './firebase';
 
 // Types
 export interface Profile {
@@ -30,6 +29,7 @@ export interface Course {
   createdAt: string;
   creatorName?: string;
   publisherName?: string;
+  expiresInDays?: number | null;
 }
 
 export interface Message {
@@ -237,6 +237,13 @@ export const DbService = {
     return highlights.reverse();
   },
 
+  async addHighlight(uid: string, highlight: Omit<Highlight, 'id'>): Promise<string> {
+    const highlightsRef = ref(db, `users/${uid}/highlights`);
+    const newRef = push(highlightsRef);
+    await set(newRef, highlight);
+    return newRef.key!;
+  },
+
   async scaffoldPremiumProfileData(uid: string): Promise<void> {
     // No longer generating mock data.
     // Users start with a clean profile to maintain data integrity.
@@ -292,11 +299,9 @@ export const DbService = {
   },
 
   async uploadAvatar(uid: string, file: File): Promise<string> {
-    const ext = file.name.split('.').pop();
-    const path = `avatars/${uid}.${Date.now()}.${ext}`;
-    const avatarRef = sRef(storage, path);
-    await uploadBytes(avatarRef, file);
-    return getDownloadURL(avatarRef);
+    const { uploadToCloudinary } = await import('./cloudinary');
+    const result = await uploadToCloudinary(file, `edunook/avatars/${uid}`);
+    return result.secure_url;
   },
 
   // Utilities
@@ -395,6 +400,7 @@ export const DbService = {
       isPublished: true,
       views: 0,
       createdAt: new Date().toISOString(),
+      expiresInDays: data.expiresInDays || null,
     };
 
     const updates: Record<string, any> = {};

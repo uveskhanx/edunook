@@ -6,4 +6,23 @@
 // You can pass additional config via defineConfig({ vite: { ... } }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-export default defineConfig();
+export default defineConfig({
+  vite: {
+    build: {
+      target: 'es2020',
+      minify: 'terser',
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom'],
+            'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/database'],
+            'vendor-motion': ['framer-motion'],
+            'vendor-router': ['@tanstack/react-router'],
+          },
+        },
+      },
+      chunkSizeWarningLimit: 600,
+    },
+  },
+});
+

@@ -42,11 +42,29 @@ export const Route = createRootRoute({
       { property: "og:description", content: "Learn and teach with EduNook. Browse courses, create content, and connect with educators." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "theme-color", content: "#050505" },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
+      },
+      {
+        rel: "preconnect",
+        href: "https://fonts.googleapis.com",
+      },
+      {
+        rel: "preconnect",
+        href: "https://fonts.gstatic.com",
+        crossOrigin: "anonymous",
+      },
+      {
+        rel: "preconnect",
+        href: "https://res.cloudinary.com",
+      },
+      {
+        rel: "dns-prefetch",
+        href: "https://firebaseio.com",
       },
     ],
   }),
@@ -61,9 +79,21 @@ function RootShell({ children }: { children: React.ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="bg-[#050505] text-white antialiased">
         {children}
         <Scripts />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                var link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap';
+                document.head.appendChild(link);
+              })();
+            `,
+          }}
+        />
       </body>
     </html>
   );

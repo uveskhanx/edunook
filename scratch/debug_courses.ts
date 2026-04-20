@@ -1,10 +1,10 @@
 
-import { db } from './src/lib/firebase';
+import { db } from '../src/lib/firebase';
 import { ref, get } from 'firebase/database';
 
 async function debug() {
   const snapshot = await get(ref(db, 'courses'));
-  const courses = snapshot.val();
+  const courses: any = snapshot.val();
   for (const id in courses) {
     const c = courses[id];
     if (['last time sending', 'last working', 'final testing yaar'].some(t => c.title?.includes(t))) {

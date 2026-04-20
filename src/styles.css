@@ -148,6 +148,7 @@
     );
     background-size: 200% 100%;
     animation: shimmer 2s infinite linear;
+    will-change: background-position;
   }
 
   @keyframes shimmer {
@@ -249,7 +250,7 @@
   .glass-card:hover {
     background: rgba(255, 255, 255, 0.05);
     border-color: rgba(255, 255, 255, 0.2);
-    transform: translateY(-2px);
+    transform: translateY(-2px) translateZ(0);
   }
 
   .glass-input {
@@ -274,10 +275,11 @@
 
   .floating {
     animation: floating 3s ease-in-out infinite;
+    will-change: transform;
   }
 
   @keyframes floating {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
+    0%, 100% { transform: translateY(0) translateZ(0); }
+    50% { transform: translateY(-10px) translateZ(0); }
   }
 }

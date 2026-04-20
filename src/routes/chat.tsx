@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { Layout } from '@/components/Layout';
 import { Send, User as UserIcon, Loader2, Search, MessageSquare, ArrowLeft, ShieldCheck, Sparkles, MoreVertical, Paperclip } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 
 export const Route = createFileRoute('/chat')({
   head: () => ({
@@ -166,7 +167,7 @@ function ChatPage() {
                       <div className="relative">
                         <div className="w-12 h-12 rounded-2xl bg-white/5 overflow-hidden border border-white/10 group-hover:scale-105 transition-transform">
                           {conv.avatarUrl ? (
-                            <img src={conv.avatarUrl} className="w-full h-full object-cover" alt={conv.fullName} />
+                            <img src={optimizeCloudinaryUrl(conv.avatarUrl, 96)} className="w-full h-full object-cover" alt={conv.fullName} loading="lazy" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary">
                                <UserIcon className="w-6 h-6" />
@@ -216,12 +217,12 @@ function ChatPage() {
               {/* Header Interface */}
               <header className="p-6 md:p-8 flex items-center justify-between bg-black/40 backdrop-blur-3xl border-b border-white/5 z-20">
                 <div className="flex items-center gap-6">
-                  <button onClick={() => setActiveChat(null)} className="md:hidden p-3 bg-white/5 rounded-2xl border border-white/5">
+                  <button aria-label="Go back" onClick={() => setActiveChat(null)} className="md:hidden p-3 bg-white/5 rounded-2xl border border-white/5">
                     <ArrowLeft className="w-6 h-6 text-white" />
                   </button>
                   <Link to="/$username" params={{ username: activeChat.profile.username }} className="group flex items-center gap-4">
                     <div className="w-12 h-12 rounded-[1.25rem] bg-card border border-white/10 overflow-hidden shadow-2xl group-hover:border-primary/50 transition-all">
-                       {activeChat.profile.avatarUrl ? <img src={activeChat.profile.avatarUrl} className="w-full h-full object-cover" /> : <UserIcon className="w-12 h-12 p-3 text-muted-foreground opacity-20" />}
+                       {activeChat.profile.avatarUrl ? <img src={activeChat.profile.avatarUrl} className="w-full h-full object-cover" alt={activeChat.profile.fullName} /> : <UserIcon className="w-12 h-12 p-3 text-muted-foreground opacity-20" />}
                     </div>
                     <div>
                        <div className="flex items-center gap-2">
@@ -240,7 +241,7 @@ function ChatPage() {
                       <Sparkles className="w-4 h-4" />
                       <span className="text-[10px] font-black uppercase tracking-widest">Premium Node</span>
                    </div>
-                   <button className="p-3 text-muted-foreground hover:text-white transition-colors bg-white/5 rounded-2xl"><MoreVertical className="w-5 h-5" /></button>
+                   <button aria-label="More options" className="p-3 text-muted-foreground hover:text-white transition-colors bg-white/5 rounded-2xl"><MoreVertical className="w-5 h-5" /></button>
                 </div>
               </header>
 
@@ -292,7 +293,7 @@ function ChatPage() {
                   onSubmit={handleSendMessage}
                   className="p-3 bg-card/60 backdrop-blur-3xl border border-white/10 rounded-[3rem] shadow-2xl flex items-center gap-2 group focus-within:ring-4 focus-within:ring-primary/10 transition-all"
                 >
-                  <button type="button" className="p-4 text-muted-foreground hover:text-primary transition-colors bg-white/5 rounded-full">
+                  <button type="button" aria-label="Attach file" className="p-4 text-muted-foreground hover:text-primary transition-colors bg-white/5 rounded-full">
                      <Paperclip className="w-6 h-6" />
                   </button>
                   <input

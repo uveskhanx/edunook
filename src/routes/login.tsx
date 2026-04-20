@@ -102,15 +102,34 @@ function LoginPage() {
   };
 
   const handleForgotPassword = async () => {
-    if (!identifier.includes('@')) {
-      toast.error('Please enter your email address first');
+    if (!identifier) {
+      toast.error('Please enter your username first to reset your password');
       return;
     }
+    
+    const toastId = toast.loading('Locating your account...');
     try {
-      await sendPasswordResetEmail(auth, identifier);
-      toast.success('Password reset link sent to your email');
+      const cleanUsername = identifier.toLowerCase().trim();
+      
+      // Look up UID by Username
+      const uid = await DbService.getUidByUsername(cleanUsername);
+      if (!uid) {
+        toast.error('No account found with this username.', { id: toastId });
+        return;
+      }
+      
+      // Get the hidden Profile Email
+      const profile = await DbService.getProfile(uid);
+      if (!profile || !profile.email) {
+        toast.error('Could not find a recovery address for this account', { id: toastId });
+        return;
+      }
+
+      await sendPasswordResetEmail(auth, profile.email);
+      toast.success('Recovery link sent successfully!', { id: toastId });
     } catch (err: any) {
-      toast.error('Error sending reset link');
+      console.error(err);
+      toast.error('Failed to send reset link. Please try again.', { id: toastId });
     }
   };
 
@@ -169,8 +188,12 @@ function LoginPage() {
                     placeholder="Enter your username"
                     autoFocus
                     autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    disabled={loading}
                     onKeyDown={(e) => e.key === 'Enter' && passwordRef.current?.focus()}
-                    className="w-full pl-11 pr-4 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/20"
+                    className="w-full pl-11 pr-4 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/20 disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -196,7 +219,8 @@ function LoginPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter your password"
                     autoComplete="current-password"
-                    className="w-full pl-11 pr-12 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/20"
+                    disabled={loading}
+                    className="w-full pl-11 pr-12 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/20 disabled:opacity-50"
                   />
                   <button 
                     type="button"

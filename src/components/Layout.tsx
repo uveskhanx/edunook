@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate, useSearch } from '@tanstack/react-route
 import { 
   Home, Search as SearchIcon, PlusCircle, 
   ClipboardList, User, MessageCircle, LogOut, 
-  Sparkles, Bell, X, Filter
+  Sparkles, Bell, X, Filter, Settings
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { DbService } from '@/lib/db-service';
@@ -11,7 +11,7 @@ import { useState, useRef, useEffect } from 'react';
 
 // We'll generate navItems dynamically inside Layout to include uid
 
-export function Layout({ children, hideNavigation }: { children: React.ReactNode; hideNavigation?: boolean }) {
+export function Layout({ children, hideNavigation, showSettings }: { children: React.ReactNode; hideNavigation?: boolean; showSettings?: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
   const searchParams = useSearch({ strict: false }) as { q?: string };
@@ -272,7 +272,8 @@ export function Layout({ children, hideNavigation }: { children: React.ReactNode
           {/* Header Action Icons */}
           <div className="flex items-center gap-2 md:gap-4 shrink-0">
             <Link 
-              to={user ? '/chat' : '/login' as any} 
+              to={user ? '/chat' : '/login' as any}
+              aria-label="Messages"
               className="p-2 md:p-3 bg-[#121212] border border-white/10 rounded-xl md:rounded-2xl text-muted-foreground hover:text-white hover:border-primary/50 transition-all group"
             >
               <MessageCircle className="w-5 h-5 group-hover:scale-110 transition-transform" />
@@ -281,6 +282,7 @@ export function Layout({ children, hideNavigation }: { children: React.ReactNode
             {/* Notification Bell with Badge */}
             <Link
               to={user ? '/notifications' as any : '/login'}
+              aria-label="Notifications"
               className="relative p-2 md:p-3 bg-[#121212] border border-white/10 rounded-xl md:rounded-2xl text-muted-foreground hover:text-white hover:border-accent/50 transition-all cursor-pointer group"
             >
                <Bell className="w-5 h-5 group-hover:scale-110 transition-transform" />
@@ -290,6 +292,17 @@ export function Layout({ children, hideNavigation }: { children: React.ReactNode
                  </span>
                )}
             </Link>
+
+            {/* Settings */}
+            {showSettings && (
+              <Link
+                to={'/settings' as any}
+                aria-label="Settings"
+                className="p-2 md:p-3 bg-[#121212] border border-white/10 rounded-xl md:rounded-2xl text-muted-foreground hover:text-white hover:border-primary/50 transition-all cursor-pointer group"
+              >
+                 <Settings className="w-5 h-5 group-hover:rotate-45 transition-transform duration-300" />
+              </Link>
+            )}
           </div>
         </header>
         )}
@@ -320,6 +333,7 @@ export function Layout({ children, hideNavigation }: { children: React.ReactNode
                   <Link
                     key={item.label}
                     to={item.to as any}
+                    aria-label={item.label}
                     className={`flex items-center justify-center w-14 h-14 rounded-full transition-all relative ${
                       isActive ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-muted-foreground'
                     }`}
