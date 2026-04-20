@@ -11,7 +11,7 @@ import { useState, useRef, useEffect } from 'react';
 
 // We'll generate navItems dynamically inside Layout to include uid
 
-export function Layout({ children, hideNavigation, showSettings }: { children: React.ReactNode; hideNavigation?: boolean; showSettings?: boolean }) {
+export function Layout({ children, hideNavigation, hideMobileNav, showSettings }: { children: React.ReactNode; hideNavigation?: boolean; hideMobileNav?: boolean; showSettings?: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
   const searchParams = useSearch({ strict: false }) as { q?: string };
@@ -330,7 +330,7 @@ export function Layout({ children, hideNavigation, showSettings }: { children: R
         </main>
 
         {/* Mobile Bottom Nav */}
-        {!hideNavigation && (
+        {!hideNavigation && !hideMobileNav && (
           <nav className="md:hidden fixed bottom-6 left-6 right-6 z-50">
             <div className="flex items-center justify-around h-[72px] px-2 bg-[#121212]/90 backdrop-blur-2xl border border-white/10 rounded-full shadow-[0_20px_40px_rgba(0,0,0,0.5)]">
               {navItems.map((item) => {

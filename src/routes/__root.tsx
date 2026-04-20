@@ -34,7 +34,7 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" },
       { title: "EduNook — Modern Education Platform" },
       { name: "description", content: "Learn and teach with EduNook. Browse courses, create content, and connect with educators." },
       { name: "author", content: "EduNook" },

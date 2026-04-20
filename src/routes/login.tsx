@@ -134,16 +134,22 @@ function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#050505] px-6 py-8 md:py-12 relative overflow-hidden">
-      {/* Premium Professional Mesh Background */}
+    <div 
+      className="min-h-screen flex items-center justify-center px-6 py-8 md:py-12 relative overflow-hidden"
+      style={{ background: '#020202' }}
+    >
+      {/* Maximum Premium "Living Aurora" Background */}
       <div className="absolute inset-0 -z-10 overflow-hidden">
-        {/* Base Mesh */}
-        <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-primary/20 rounded-full blur-[160px] animate-pulse duration-[10s]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-violet-600/15 rounded-full blur-[160px] animate-pulse duration-[8s]" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[80%] bg-accent/5 rounded-full blur-[200px]" />
+        {/* Animated Aurora Blooms - High Opacity for maximum visibility */}
+        <div className="absolute top-[-20%] left-[-10%] w-[80%] h-[70%] bg-[#4f46e5]/40 rounded-full blur-[140px] animate-pulse duration-[12s]" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[80%] h-[70%] bg-[#06b6d4]/40 rounded-full blur-[140px] animate-pulse duration-[15s] delay-700" />
+        <div className="absolute top-[20%] right-[10%] w-[50%] h-[50%] bg-[#9333ea]/30 rounded-full blur-[120px] animate-pulse duration-[18s]" />
         
-        {/* Noise Overlay for texture */}
-        <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+        {/* Structural Glow */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100%] h-[100%] bg-primary/10 rounded-full blur-[200px]" />
+        
+        {/* Subtle Noise Texture */}
+        <div className="absolute inset-0 opacity-[0.04] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
       </div>
 
       <motion.div 
@@ -160,7 +166,12 @@ function LoginPage() {
            </Link>
         </div>
 
-        <div className="bg-[#0f0f0f]/40 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-6 md:p-10 shadow-[0_0_80px_rgba(0,0,0,0.5)] ring-1 ring-white/5">
+        <div 
+          className="backdrop-blur-[40px] rounded-[3.5rem] p-6 md:p-10 shadow-[0_0_100px_rgba(79,70,229,0.15)] border border-white/20 ring-1 ring-white/10 transition-all duration-500"
+          style={{
+            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%)'
+          }}
+        >
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="text-center space-y-2 mb-8">
               <h1 className="text-2xl font-black text-white">Welcome Back</h1>
@@ -198,7 +209,7 @@ function LoginPage() {
                     spellCheck="false"
                     disabled={loading}
                     onKeyDown={(e) => e.key === 'Enter' && passwordRef.current?.focus()}
-                    className="w-full pl-11 pr-4 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/20 disabled:opacity-50"
+                    className="w-full pl-11 pr-4 py-4 bg-white/[0.04] border border-white/10 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 focus:shadow-[0_0_20px_rgba(59,130,246,0.15)] transition-all placeholder:text-muted-foreground/20 disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -243,7 +254,7 @@ function LoginPage() {
               <button
                 type="submit"
                 disabled={loading || !identifier || !password}
-                className="w-full py-4 bg-gradient-to-r from-primary to-violet-600 text-white rounded-2xl font-black text-[16px] shadow-2xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 flex items-center justify-center gap-2 group"
+                className="w-full py-4 bg-gradient-to-r from-[#4f46e5] via-[#7c3aed] to-[#c026d3] text-white rounded-2xl font-black text-[16px] shadow-2xl shadow-primary/30 hover:shadow-primary/50 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 flex items-center justify-center gap-2 group"
               >
                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
                   <>Log In <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>

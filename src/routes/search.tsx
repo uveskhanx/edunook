@@ -118,52 +118,57 @@ function SearchPage() {
         </div>
 
         {isSearching ? (
-          /* ===== SEARCH RESULTS ===== */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          /* ===== SEARCH RESULTS (Instagram Style List) ===== */
+          <div className="flex flex-col">
             <AnimatePresence mode="popLayout">
               {loading ? (
-                 [1, 2, 3].map(i => (
-                    <div key={i} className="h-64 rounded-2xl bg-white/5 shimmer opacity-20" />
+                 [1, 2, 3, 4, 5].map(i => (
+                    <div key={i} className="w-full h-16 mb-2 rounded-2xl bg-white/5 shimmer opacity-20" />
                  ))
               ) : results.length > 0 ? (
                 results.map((profile, i) => (
                   <motion.div
                     key={profile.uid}
                     layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ delay: i * 0.04 }}
-                    className="group relative"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ delay: i * 0.02 }}
+                    className="group"
                   >
                     <Link
                       to="/$username"
                       params={{ username: profile.username }}
                       aria-label={`View ${profile.fullName}'s profile`}
-                      className="block p-6 bg-[#0f0f0f] border border-white/5 rounded-2xl hover:border-primary/30 transition-all duration-300 overflow-hidden"
+                      className="flex items-center gap-4 w-full p-4 hover:bg-white/[0.03] active:bg-white/[0.05] border-b border-white/[0.03] transition-all"
                     >
-                      <div className="relative flex flex-col items-center text-center space-y-4">
-                        <div className="relative">
-                          {profile.avatarUrl ? (
-                            <img src={optimizeCloudinaryUrl(profile.avatarUrl, 160)} alt={profile.fullName}
-                              loading="lazy"
-                              className="w-20 h-20 rounded-full border-2 border-white/10 object-cover" />
-                          ) : (
-                            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center border-2 border-primary/20">
-                              <UserIcon className="w-8 h-8 text-primary" />
-                            </div>
-                          )}
+                      {/* Avatar Left */}
+                      <div className="flex-shrink-0">
+                        {profile.avatarUrl ? (
+                          <img src={optimizeCloudinaryUrl(profile.avatarUrl, 100)} alt={profile.fullName}
+                            loading="lazy"
+                            className="w-12 h-12 rounded-full border border-white/10 object-cover group-hover:border-primary/50 transition-colors" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 group-hover:border-primary/50 transition-colors">
+                            <UserIcon className="w-5 h-5 text-primary" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Identity Middle */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                           <h3 className="text-sm font-black text-white truncate">{profile.fullName}</h3>
+                           {profile.role === 'admin' && <Crown className="w-3 h-3 text-amber-400 fill-amber-400" />}
                         </div>
-                        <div className="space-y-1">
-                          <h3 className="text-base font-black text-white">{profile.fullName}</h3>
-                          <p className="text-xs font-bold text-primary tracking-widest uppercase opacity-60">@{profile.username}</p>
-                        </div>
-                        <p className="text-xs text-muted-foreground line-clamp-2 font-medium opacity-80">
-                          {profile.bio || "Learning and growing on EduNook."}
-                        </p>
-                        <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white group-hover:bg-primary group-hover:shadow-primary/20 transition-all">
-                           View Profile <ArrowRight className="w-3 h-3" />
-                        </div>
+                        <p className="text-xs font-bold text-muted-foreground truncate">@{profile.username}</p>
+                      </div>
+
+                      {/* Action Right (Optional but sleek) */}
+                      <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <div className="p-2 bg-primary/10 rounded-lg">
+                            <ArrowRight className="w-4 h-4 text-primary" />
+                         </div>
                       </div>
                     </Link>
                   </motion.div>

@@ -1,4 +1,8 @@
-import { ref, get, set, push, update, onValue, query, orderByChild, equalTo, remove, runTransaction } from 'firebase/database';
+import { 
+  ref, get, set, push, update, onValue, 
+  query, orderByChild, equalTo, remove, 
+  runTransaction, onDisconnect, serverTimestamp 
+} from 'firebase/database';
 import { db } from './firebase';
 
 // Types
@@ -122,6 +126,13 @@ export interface Chat {
   participants: string[];
   lastMessage?: string;
   updatedAt: string;
+  unreadCounts?: Record<string, number>;
+  typing?: Record<string, boolean>;
+}
+
+export interface Presence {
+  status: 'online' | 'offline';
+  lastSeen: string | object;
 }
 
 let profileCache: Record<string, Profile> = {};
@@ -325,25 +336,34 @@ export const DbService = {
   async searchProfiles(queryText: string): Promise<Profile[]> {
     if (!queryText || !queryText.trim()) return [];
     
+    // Ensure cache is populated
     if (!cachedAllProfiles) {
-      // Search both users and profiles and merge
-      const [uSnap, pSnap] = await Promise.all([
-        get(ref(db, 'users')),
-        get(ref(db, 'profiles'))
-      ]);
-      
-      const users = uSnap.exists() ? Object.values(uSnap.val()) as Profile[] : [];
-      const profiles = pSnap.exists() ? Object.values(pSnap.val()) as Profile[] : [];
-      
-      const all = [...users, ...profiles];
-      cachedAllProfiles = Array.from(new Map(all.map(p => [p.uid, p])).values());
+      try {
+        const [uSnap, pSnap] = await Promise.all([
+          get(ref(db, 'users')),
+          get(ref(db, 'profiles'))
+        ]);
+        
+        const users = uSnap.exists() ? Object.entries(uSnap.val()).map(([uid, data]: any) => ({ ...data, uid })) : [];
+        const profiles = pSnap.exists() ? Object.entries(pSnap.val()).map(([uid, data]: any) => ({ ...data, uid })) : [];
+        
+        const all = [...users, ...profiles];
+        // Deduplicate by UID
+        cachedAllProfiles = Array.from(new Map(all.map(p => [p.uid, p])).values());
+      } catch (err) {
+        console.error('[DbService] Failed to load search cache:', err);
+        return [];
+      }
     }
     
     const lower = queryText.trim().toLowerCase();
-    return cachedAllProfiles.filter(p => 
-      p.username.toLowerCase().includes(lower) || 
-      p.fullName.toLowerCase().includes(lower)
-    );
+    
+    // Perform search
+    return cachedAllProfiles.filter(p => {
+      const username = (p.username || '').toLowerCase();
+      const fullName = (p.fullName || '').toLowerCase();
+      return username.includes(lower) || fullName.includes(lower);
+    }).slice(0, 50); // Limit results for performance
   },
 
   // Courses
@@ -477,16 +497,20 @@ export const DbService = {
   },
 
   // Chat Subscriptions
-  subscribeToUserConversations(userId: string, callback: (convs: (Profile & { chatId: string; lastMessage?: string; updatedAt?: string })[]) => void) {
+  subscribeToUserConversations(userId: string, callback: (convs: (Profile & { chatId: string; lastMessage?: string; updatedAt?: string; lastSenderId?: string; unreadCount?: number; isPinned?: boolean; isMuted?: boolean })[]) => void) {
     const userChatsRef = ref(db, `user_chats/${userId}`);
+    const settingsRef = ref(db, `user_settings/${userId}`);
     
-    // Listen to the list of chat IDs for the current user
     return onValue(userChatsRef, async (snapshot) => {
+      const settingsSnap = await get(settingsRef);
+      const settings = settingsSnap.exists() ? settingsSnap.val() : {};
+      const pinned = settings.pinned || {};
+      const muted = settings.muted || {};
+
       if (snapshot.exists()) {
         const chatIdsMap = snapshot.val();
         const chatIds = Object.keys(chatIdsMap);
         
-        // Use Promise.all to fetch metadata for each chat in the index
         const myChats = await Promise.all(chatIds.map(async (id) => {
           const chatSnapshot = await get(ref(db, `chats/${id}`));
           if (!chatSnapshot.exists()) return null;
@@ -502,13 +526,21 @@ export const DbService = {
             ...profile, 
             chatId: id, 
             lastMessage: chat.lastMessage, 
-            updatedAt: chat.updatedAt 
+            updatedAt: chat.updatedAt,
+            lastSenderId: chat.lastSenderId,
+            unreadCount: chat.unreadCounts?.[userId] || 0,
+            isPinned: !!pinned[id],
+            isMuted: !!muted[id]
           } : null;
         }));
         
         const filtered = myChats.filter(c => c !== null) as any[];
-        // Sort by updatedAt desc
-        filtered.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+        // Sort: Pins first, then updated at
+        filtered.sort((a, b) => {
+           if (a.isPinned && !b.isPinned) return -1;
+           if (!a.isPinned && b.isPinned) return 1;
+           return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+        });
         callback(filtered);
       } else {
         callback([]);
@@ -531,8 +563,10 @@ export const DbService = {
 
   async sendMessage(chatId: string, senderId: string, text: string): Promise<void> {
     const now = new Date().toISOString();
-    
-    // 1. Save message to messages/chatId with 'seen' flag
+    const participants = chatId.split('_');
+    const receiverId = participants.find(p => p !== senderId);
+
+    // 1. Save message
     const messagesRef = ref(db, `messages/${chatId}`);
     const newMessageRef = push(messagesRef);
     await set(newMessageRef, {
@@ -542,22 +576,19 @@ export const DbService = {
       seen: false
     });
 
-    // 2. Update chat metadata in chats/chatId
-    await update(ref(db, `chats/${chatId}`), {
-      lastMessage: text,
-      updatedAt: now,
-    });
+    // 2. Update chat metadata and increment unread for receiver
+    const updates: Record<string, any> = {};
+    updates[`chats/${chatId}/lastMessage`] = text;
+    updates[`chats/${chatId}/updatedAt`] = now;
+    updates[`chats/${chatId}/lastSenderId`] = senderId;
+    
+    await update(ref(db), updates);
 
-    // 3. Create message notification for the receiver
-    const participants = chatId.split('_');
-    const receiverId = participants.find(p => p !== senderId);
+    // Increment unread count via transaction
     if (receiverId) {
-      await this.createNotification(receiverId, {
-        type: 'message',
-        fromUid: senderId,
-        text: 'sent you a message',
-        createdAt: now,
-        seen: false,
+      const unreadRef = ref(db, `chats/${chatId}/unreadCounts/${receiverId}`);
+      await runTransaction(unreadRef, (count) => {
+        return (count || 0) + 1;
       });
     }
   },
@@ -590,6 +621,67 @@ export const DbService = {
     }
     
     return chatId;
+  },
+
+  async togglePin(userId: string, chatId: string, isPinned: boolean): Promise<void> {
+    const pinRef = ref(db, `user_settings/${userId}/pinned/${chatId}`);
+    await set(pinRef, isPinned ? true : null);
+  },
+
+  async toggleMute(userId: string, chatId: string, isMuted: boolean): Promise<void> {
+    const muteRef = ref(db, `user_settings/${userId}/muted/${chatId}`);
+    await set(muteRef, isMuted ? true : null);
+  },
+
+  async markAsRead(chatId: string, userId: string): Promise<void> {
+    const chatRef = ref(db, `chats/${chatId}/unreadCounts/${userId}`);
+    await set(chatRef, 0);
+  },
+
+  async setTypingStatus(chatId: string, userId: string, isTyping: boolean): Promise<void> {
+    const typingRef = ref(db, `chats/${chatId}/typing/${userId}`);
+    await set(typingRef, isTyping);
+    
+    // Automatically clear after a while if the app crashes
+    if (isTyping) {
+      onDisconnect(typingRef).set(false);
+    }
+  },
+
+  updatePresence(userId: string) {
+    const userPresenceRef = ref(db, `presence/${userId}`);
+    const connectedRef = ref(db, '.info/connected');
+
+    onValue(connectedRef, (snap) => {
+      if (snap.val() === true) {
+        // We are connected (or reconnected)!
+        // When I disconnect, update the last time I was seen online
+        onDisconnect(userPresenceRef).set({
+          status: 'offline',
+          lastSeen: serverTimestamp()
+        });
+
+        // The app is currently running, set to online
+        set(userPresenceRef, {
+          status: 'online',
+          lastSeen: serverTimestamp()
+        });
+      }
+    });
+  },
+
+  subscribeToPresence(userId: string, callback: (presence: Presence | null) => void) {
+    const userPresenceRef = ref(db, `presence/${userId}`);
+    return onValue(userPresenceRef, (snapshot) => {
+      callback(snapshot.exists() ? snapshot.val() : null);
+    });
+  },
+
+  subscribeToTyping(chatId: string, callback: (typing: Record<string, boolean>) => void) {
+    const typingRef = ref(db, `chats/${chatId}/typing`);
+    return onValue(typingRef, (snapshot) => {
+      callback(snapshot.exists() ? snapshot.val() : {});
+    });
   },
 
   async getChatMetadata(chatId: string): Promise<{ users: Record<string, boolean>; lastMessage?: string; updatedAt?: string } | null> {
