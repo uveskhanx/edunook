@@ -1,5 +1,5 @@
 import { 
-  ref, get, set, push, update, onValue, 
+  ref, get, set, push, update, onValue, off,
   query, orderByChild, equalTo, remove, 
   runTransaction, onDisconnect, serverTimestamp 
 } from 'firebase/database';
@@ -501,81 +501,154 @@ export const DbService = {
     const userChatsRef = ref(db, `user_chats/${userId}`);
     const settingsRef = ref(db, `user_settings/${userId}`);
     
-    return onValue(userChatsRef, async (snapshot) => {
-      let pinned: Record<string, boolean> = {};
-      let muted: Record<string, boolean> = {};
+    // Cache snapshots to re-process cleanly
+    let latestChatsSnapshot: any = null;
+    let latestSettings: { pinned: Record<string, boolean>; muted: Record<string, boolean>; deletedChats: Record<string, string> } = { pinned: {}, muted: {}, deletedChats: {} };
+    let processing = false;
+    let needsUpdate = false;
 
-      try {
-        const settingsSnap = await get(settingsRef);
-        const settings = settingsSnap.exists() ? settingsSnap.val() : {};
-        pinned = settings.pinned || {};
-        muted = settings.muted || {};
-      } catch (err) {
-        console.warn("Could not load user settings (check Firebase rules):", err);
+    const processConversations = async () => {
+      if (processing) {
+        needsUpdate = true;
+        return;
       }
-
-      if (snapshot.exists()) {
+      
+      processing = true;
+      needsUpdate = false;
+      
+      try {
+        const snapshot = latestChatsSnapshot;
+        const { pinned, muted, deletedChats } = latestSettings;
+        
+        if (!snapshot || !snapshot.exists()) {
+          callback([]);
+          return;
+        }
+        
         const chatIdsMap = snapshot.val();
         const chatIds = Object.keys(chatIdsMap);
         
-        try {
-          const myChats = await Promise.all(chatIds.map(async (id) => {
-            try {
-              const chatSnapshot = await get(ref(db, `chats/${id}`));
-              if (!chatSnapshot.exists()) return null;
-              
-              const chat = chatSnapshot.val();
-              const users = chat.users || {};
-              const participants = Object.keys(users);
-              const otherId = participants.find(uid => uid !== userId);
-              if (!otherId) return null;
-              
-              const profile = await this.getProfile(otherId);
-              return profile ? { 
-                ...profile, 
-                chatId: id, 
-                lastMessage: chat.lastMessage, 
-                updatedAt: chat.updatedAt,
-                lastSenderId: chat.lastSenderId,
-                unreadCount: chat.unreadCounts?.[userId] || 0,
-                isPinned: !!pinned[id],
-                isMuted: !!muted[id]
-              } : null;
-            } catch (innerErr) {
-              console.warn(`Failed to process chat metadata for ${id}:`, innerErr);
-              return null;
-            }
-          }));
-          
-          const filtered = myChats.filter(c => c !== null) as any[];
-          // Sort: Pins first, then updated at
-          filtered.sort((a, b) => {
-             if (a.isPinned && !b.isPinned) return -1;
-             if (!a.isPinned && b.isPinned) return 1;
-             return (b.updatedAt || '').localeCompare(a.updatedAt || '');
-          });
-          callback(filtered);
-        } catch (err) {
-          console.error("Critical error processing chats list:", err);
-          callback([]);
-        }
-      } else {
+        const myChats = await Promise.all(chatIds.map(async (id) => {
+          try {
+            const chatSnapshot = await get(ref(db, `chats/${id}`));
+            if (!chatSnapshot.exists()) return null;
+            
+            const chat = chatSnapshot.val();
+            const users = chat.users || {};
+            const participants = Object.keys(users);
+            const otherId = participants.find(uid => uid !== userId);
+            if (!otherId) return null;
+            
+            const profile = await this.getProfile(otherId);
+            return profile ? { 
+              ...profile, 
+              chatId: id, 
+              lastMessage: chat.lastMessage, 
+              updatedAt: chat.updatedAt,
+              lastSenderId: chat.lastSenderId,
+              unreadCount: chat.unreadCounts?.[userId] || 0,
+              isPinned: !!pinned[id],
+              isMuted: !!muted[id]
+            } : null;
+          } catch (innerErr) {
+            console.warn(`Failed to process chat metadata for ${id}:`, innerErr);
+            return null;
+          }
+        }));
+        
+        const filtered = myChats.filter(c => {
+           if (c === null) return false;
+           const deletedAt = deletedChats[c.chatId];
+           if (deletedAt && c.updatedAt && c.updatedAt <= deletedAt) {
+               return false;
+           }
+           return true;
+        }) as any[];
+        
+        filtered.sort((a, b) => {
+           if (a.isPinned && !b.isPinned) return -1;
+           if (!a.isPinned && b.isPinned) return 1;
+           return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+        });
+        
+        callback(filtered);
+      } catch (err) {
+        console.error("Critical error processing chats list:", err);
         callback([]);
+      } finally {
+        processing = false;
+        // If an update was requested while we were busy, run it now
+        if (needsUpdate) {
+          processConversations();
+        }
+      }
+    };
+
+    const unsubChats = onValue(userChatsRef, (snapshot) => {
+      latestChatsSnapshot = snapshot;
+      processConversations();
+    });
+
+    const unsubSettings = onValue(settingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const settings = snapshot.val();
+        latestSettings = {
+          pinned: settings.pinned || {},
+          muted: settings.muted || {},
+          deletedChats: settings.deletedChats || {},
+        };
+      } else {
+        latestSettings = { pinned: {}, muted: {}, deletedChats: {} };
+      }
+      if (latestChatsSnapshot) {
+        processConversations();
       }
     });
+
+    return () => {
+      unsubChats();
+      unsubSettings();
+    };
   },
 
-  subscribeToMessages(chatId: string, callback: (messages: Message[]) => void) {
+  subscribeToMessages(chatId: string, userId: string, callback: (messages: Message[]) => void) {
     const messagesRef = ref(db, `messages/${chatId}`);
-    return onValue(messagesRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        const msgList = Object.keys(data).map(id => ({ ...data[id], id }));
+    const settingsRef = ref(db, `user_settings/${userId}/deletedChats/${chatId}`);
+    
+    let deletedAtThreshold: string | null = null;
+    let latestMessagesSnapshot: any = null;
+
+    const processMessages = () => {
+      if (latestMessagesSnapshot && latestMessagesSnapshot.exists()) {
+        const data = latestMessagesSnapshot.val();
+        let msgList = Object.keys(data).map(id => ({ ...data[id], id }));
+        
+        if (deletedAtThreshold) {
+          msgList = msgList.filter(msg => msg.createdAt > deletedAtThreshold!);
+        }
+        
         callback(msgList.sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
       } else {
         callback([]);
       }
+    };
+
+    // Listen to raw messages
+    const unsubMsgs = onValue(messagesRef, (snapshot) => {
+      latestMessagesSnapshot = snapshot;
+      processMessages();
     });
+
+    // Listen to deletion threshold in real-time
+    const unsubSettings = onValue(settingsRef, (snap) => {
+      deletedAtThreshold = snap.exists() ? snap.val() : null;
+      processMessages();
+    });
+    
+    return () => {
+       unsubMsgs();
+       unsubSettings();
+    };
   },
 
   async sendMessage(chatId: string, senderId: string, text: string): Promise<void> {
@@ -648,6 +721,18 @@ export const DbService = {
   async toggleMute(userId: string, chatId: string, isMuted: boolean): Promise<void> {
     const muteRef = ref(db, `user_settings/${userId}/muted/${chatId}`);
     await set(muteRef, isMuted ? true : null);
+  },
+
+  async deleteChat(userId: string, chatId: string): Promise<void> {
+    const settingsRef = ref(db, `user_settings/${userId}`);
+    try {
+      // Record exact ISO deletion timestamp to truncate past message feed local-only
+      await update(settingsRef, {
+        [`deletedChats/${chatId}`]: new Date().toISOString()
+      });
+    } catch (err) {
+      console.warn("Failed to delete chat locally:", err);
+    }
   },
 
   async markAsRead(chatId: string, userId: string): Promise<void> {

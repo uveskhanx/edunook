@@ -14,6 +14,13 @@
       }
     },
 
+    "user_settings": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+
     "usernames": {
       ".read": "true",
       "$username": {
@@ -116,6 +123,13 @@
            ".write": "auth.uid === $uid && !data.exists()"
          }
        }
+    },
+
+    "presence": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
     }
   }
 }

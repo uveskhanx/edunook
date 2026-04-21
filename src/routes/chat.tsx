@@ -3,7 +3,8 @@ import { useEffect, useState, useRef } from 'react';
 import { DbService, Profile, Message } from '@/lib/db-service';
 import { useAuth } from '@/hooks/use-auth';
 import { Layout } from '@/components/Layout';
-import { Send, User as UserIcon, Loader2, Search, MessageSquare, ArrowLeft, ShieldCheck, Sparkles, MoreVertical, Paperclip, Pin, VolumeX } from 'lucide-react';
+import { Send, User as UserIcon, Loader2, Search, MessageSquare, ArrowLeft, ShieldCheck, Sparkles, MoreVertical, Paperclip, Pin, VolumeX, MoreHorizontal, Trash2 } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence, useScroll, useSpring } from 'framer-motion';
 import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 import { differenceInMinutes, formatDistanceToNow, format } from 'date-fns';
@@ -16,7 +17,7 @@ export const Route = createFileRoute('/chat')({
 });
 
 function ChatPage() {
-  const searchParams = useSearch({ strict: false }) as { chatWith?: string };
+  const searchParams = useSearch({ strict: false }) as { c?: string; chatWith?: string };
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   
@@ -33,6 +34,7 @@ function ChatPage() {
   const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({});
   const [recipientPresence, setRecipientPresence] = useState<any>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   // Security Verification
   useEffect(() => {
@@ -89,24 +91,29 @@ function ChatPage() {
 
   useEffect(() => {
     async function initDirectChat() {
-      if (searchParams.chatWith && user && !loading) {
+      const targetUid = searchParams.c || searchParams.chatWith;
+      if (targetUid && user && !loading) {
         try {
-          // Use getOrCreateChat to ensure the node exists with correct structure
-          const chatId = await DbService.getOrCreateChat(user.id, searchParams.chatWith);
-          const profile = await DbService.getProfile(searchParams.chatWith);
+          const chatId = await DbService.getOrCreateChat(user.id, targetUid);
+          const profile = await DbService.getProfile(targetUid);
           
-          if (profile) {
+          if (profile && (!activeChat || activeChat.profile.uid !== profile.uid)) {
             setActiveChat({ profile, chatId });
           }
         } catch (err) {
           console.error("Could not init direct chat", err);
         }
-        // Purge parameter from URL so normal navigation restores cleanly
-        navigate({ to: '/chat', replace: true });
+        
+        // If it was the legacy 'chatWith', upgrade it to 'c'
+        if (searchParams.chatWith) {
+           navigate({ to: '/chat', search: { c: targetUid }, replace: true });
+        }
+      } else if (!targetUid && activeChat) {
+         setActiveChat(null);
       }
     }
     initDirectChat();
-  }, [searchParams.chatWith, user, loading, navigate]);
+  }, [searchParams.c, searchParams.chatWith, user, loading]);
 
   useEffect(() => {
     if (activeChat && user) {
@@ -121,19 +128,34 @@ function ChatPage() {
                  return;
               }
            }
-           
-           const unsubMsgs = DbService.subscribeToMessages(activeChat.chatId, (msgs) => {
-             setMessages(msgs);
-             setTimeout(scrollToBottom, 500);
-           });
+           let unsubMsgs = () => {};
+           let unsubTyping = () => {};
+           let unsubPresence = () => {};
 
-           const unsubTyping = DbService.subscribeToTyping(activeChat.chatId, (typingMap) => {
-              setTypingUsers(typingMap);
-           });
+           try {
+             unsubMsgs = DbService.subscribeToMessages(activeChat.chatId, user.id, (msgs) => {
+               setMessages(msgs);
+               setTimeout(scrollToBottom, 500);
+             });
+           } catch (e) {
+             console.warn("Failed to subscribe to messages", e);
+           }
 
-           const unsubPresence = DbService.subscribeToPresence(activeChat.profile.uid, (presence) => {
-              setRecipientPresence(presence);
-           });
+           try {
+             unsubTyping = DbService.subscribeToTyping(activeChat.chatId, (typingMap) => {
+                setTypingUsers(typingMap);
+             });
+           } catch (e) {
+             console.warn("Failed to subscribe to typing", e);
+           }
+
+           try {
+             unsubPresence = DbService.subscribeToPresence(activeChat.profile.uid, (presence) => {
+                setRecipientPresence(presence);
+             });
+           } catch (e) {
+             console.warn("Failed to subscribe to presence", e);
+           }
 
            return () => {
               unsubMsgs();
@@ -141,8 +163,8 @@ function ChatPage() {
               unsubPresence();
            };
          } catch (error) {
-           console.error("Failed to verify access or subscribe to chat:", error);
-           navigate({ to: '/chat', replace: true });
+           console.error("Critical error in chat initialization:", error);
+           // Only redirect out if it's a critical core failure, not a realtime index failure
            return () => {};
          }
       };
@@ -195,9 +217,9 @@ function ChatPage() {
 
   return (
     <Layout hideMobileNav={!!activeChat} hideHeader={true}>
-      <div className="flex-1 flex bg-[#050505] h-full w-full overflow-hidden relative">
+      <div className="flex-1 flex bg-[#050505] w-full h-[100dvh] max-h-[100dvh] overflow-hidden relative select-none md:select-auto [-webkit-touch-callout:none]">
         {/* Sidebar: Message Threads */}
-        <aside className={`w-full md:w-96 flex flex-col bg-black/40 backdrop-blur-3xl border-r border-white/5 transition-all ${activeChat ? 'hidden md:flex' : 'flex'}`}>
+        <aside className={`w-full md:w-96 flex flex-col bg-black/40 backdrop-blur-3xl border-r border-white/5 transition-all chat-scrollbar ${activeChat ? 'hidden md:flex' : 'flex'}`}>
           <div className="p-8 space-y-8">
             <div className="flex items-center justify-between">
                <h1 className="text-3xl font-black text-white tracking-tighter uppercase italic">Communications</h1>
@@ -210,7 +232,7 @@ function ChatPage() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
               <input
                 type="text"
-                placeholder="Search frequencies..."
+                placeholder="Search messages..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/5 rounded-2xl text-white text-sm font-bold focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all placeholder:text-muted-foreground/30"
@@ -218,19 +240,22 @@ function ChatPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 pb-32 md:pb-12 space-y-2">
+          <div className="flex-1 overflow-y-auto chat-scrollbar px-4 pb-32 md:pb-12 space-y-2 min-h-0">
             <AnimatePresence mode="popLayout">
               {/* Existing Conversations */}
               {conversations
                 .filter(c => c.fullName.toLowerCase().includes(searchQuery.toLowerCase()) || c.username.toLowerCase().includes(searchQuery.toLowerCase()))
                 .map((conv, idx) => (
-                  <motion.button
+                  <motion.div
+                    role="button"
+                    tabIndex={0}
                     layout
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     key={conv.uid}
-                    onClick={() => setActiveChat({ profile: conv, chatId: conv.chatId })}
-                    className={`w-full flex items-center gap-4 p-4 rounded-3xl transition-all group border ${
+                    onContextMenu={(e) => { e.preventDefault(); setOpenMenuId(conv.chatId); }}
+                    onClick={() => navigate({ to: '/chat', search: { c: conv.uid }})}
+                    className={`w-full flex items-center gap-4 p-4 rounded-3xl transition-all group border cursor-pointer ${
                       activeChat?.chatId === conv.chatId 
                         ? 'bg-primary/10 border-primary/20 shadow-xl' 
                         : 'border-transparent hover:bg-white/5'
@@ -276,18 +301,43 @@ function ChatPage() {
                           {conv.lastMessage || 'Start Signal...'}
                         </p>
                         
-                        {/* Action Hub (Hover only or specific trigger) */}
-                        <div className="hidden group-hover:flex items-center gap-1">
-                           <button 
-                             onClick={(e) => { e.stopPropagation(); DbService.togglePin(user!.id, conv.chatId, !(conv as any).isPinned); }}
-                             className="p-1 px-2 bg-white/5 rounded-md hover:bg-white/10 transition-colors"
-                           >
-                              <Pin className={`w-3 h-3 ${ (conv as any).isPinned ? 'text-primary' : 'text-muted-foreground'}`} />
-                           </button>
+                        {/* Hover Quick Actions Context Menu */}
+                        <div className={`items-center gap-1 ${openMenuId === conv.chatId ? 'flex' : 'hidden group-hover:flex'}`}>
+                           <DropdownMenu open={openMenuId === conv.chatId} onOpenChange={(isOpen) => setOpenMenuId(isOpen ? conv.chatId : null)}>
+                             <DropdownMenuTrigger asChild>
+                               <button 
+                                 onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === conv.chatId ? null : conv.chatId); }}
+                                 className="p-1.5 bg-white/5 rounded-md hover:bg-white/10 transition-colors"
+                               >
+                                  <MoreHorizontal className="w-4 h-4 text-white" />
+                               </button>
+                             </DropdownMenuTrigger>
+                             <DropdownMenuContent align="end" side="bottom" sideOffset={8} onClick={(e) => e.stopPropagation()} className="w-40 bg-black/90 border-white/10 backdrop-blur-3xl rounded-2xl p-2 shadow-2xl">
+                               <DropdownMenuItem 
+                                 onClick={(e) => { e.stopPropagation(); DbService.togglePin(user!.id, conv.chatId, !(conv as any).isPinned); setOpenMenuId(null); }}
+                                 className="cursor-pointer text-white font-medium focus:bg-white/10 focus:text-white rounded-xl py-2 flex items-center justify-between"
+                               >
+                                 {(conv as any).isPinned ? 'Unpin Chat' : 'Pin Chat'}
+                                 <Pin className="w-3.5 h-3.5 opacity-70" />
+                               </DropdownMenuItem>
+                               <DropdownMenuItem 
+                                 onClick={(e) => { 
+                                     e.stopPropagation(); 
+                                     DbService.deleteChat(user!.id, conv.chatId);
+                                     if (activeChat?.chatId === conv.chatId) setActiveChat(null);
+                                     setOpenMenuId(null);
+                                 }}
+                                 className="cursor-pointer text-rose-500 font-bold focus:bg-rose-500/10 focus:text-rose-500 rounded-xl py-2 mt-1 flex items-center justify-between shadow-[0_0_10px_rgba(244,63,94,0)] hover:shadow-[0_0_15px_rgba(244,63,94,0.2)] transition-all"
+                               >
+                                 Delete Chat
+                                 <Trash2 className="w-3.5 h-3.5 opacity-80" />
+                               </DropdownMenuItem>
+                             </DropdownMenuContent>
+                           </DropdownMenu>
                         </div>
                       </div>
                     </div>
-                  </motion.button>
+                  </motion.div>
                 ))}
 
               {/* Global Discovery Results */}
@@ -303,8 +353,7 @@ function ChatPage() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         onClick={async () => {
-                           const chatId = await DbService.getOrCreateChat(user!.id, result.uid);
-                           setActiveChat({ profile: result, chatId });
+                           navigate({ to: '/chat', search: { c: result.uid }});
                            setSearchQuery('');
                         }}
                         className="w-full flex items-center gap-4 p-4 rounded-3xl hover:bg-white/5 transition-all text-left"
@@ -327,8 +376,10 @@ function ChatPage() {
 
               {conversations.length === 0 && !searchQuery && (
                 <div className="py-24 text-center px-8 space-y-6 opacity-30">
-                   <MessageSquare className="w-12 h-12 mx-auto text-muted-foreground" />
-                   <p className="text-[10px] font-black uppercase tracking-[0.2em]">Zero Signals Detected</p>
+                   <div className="p-6 bg-white/5 rounded-full inline-block border border-white/10">
+                     <MessageSquare className="w-8 h-8 text-white" />
+                   </div>
+                   <p className="text-[12px] font-black uppercase tracking-[0.1em]">No Messages Found</p>
                 </div>
               )}
             </AnimatePresence>
@@ -336,13 +387,13 @@ function ChatPage() {
         </aside>
 
         {/* Main: Chat Viewbox */}
-        <main className={`flex-1 flex flex-col relative transition-all ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
+        <main className={`flex-1 flex flex-col relative transition-all min-h-0 min-w-0 ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
           {activeChat ? (
             <>
               {/* Header Interface */}
               <header className="p-4 md:p-6 flex items-center justify-between bg-black/60 backdrop-blur-3xl border-b border-white/5 z-20">
                 <div className="flex items-center gap-4">
-                  <button aria-label="Go back" onClick={() => setActiveChat(null)} className="md:hidden p-2.5 bg-white/5 rounded-2xl border border-white/5">
+                  <button aria-label="Go back" onClick={() => navigate({ to: '/chat', search: {} })} className="md:hidden p-2.5 bg-white/5 rounded-2xl border border-white/5">
                     <ArrowLeft className="w-5 h-5 text-white" />
                   </button>
                   <Link to="/$username" params={{ username: activeChat.profile.username }} className="group flex items-center gap-3">
@@ -378,7 +429,7 @@ function ChatPage() {
               </header>
 
               {/* Message Feed (Chronological Flow) */}
-              <div className="flex-1 overflow-y-auto px-4 py-8 md:px-12 md:py-10 space-y-4 pb-32 md:pb-48 relative scroll-smooth flex flex-col">
+              <div className="flex-1 overflow-y-auto chat-scrollbar px-4 py-8 md:px-12 md:py-10 space-y-4 pb-32 md:pb-48 relative scroll-smooth flex flex-col min-h-0">
                  <AnimatePresence initial={false}>
                     {messages.length > 0 ? (
                       messages.map((msg, i) => {
@@ -514,13 +565,18 @@ function ChatPage() {
                   <MessageSquare className="relative w-24 h-24 text-muted-foreground opacity-20" />
                </div>
                <div className="space-y-4 max-w-sm">
-                  <h2 className="text-4xl font-black tracking-tighter uppercase italic premium-gradient-text">Encrypted Hub.</h2>
-                  <p className="text-muted-foreground font-medium leading-relaxed">Select a secure frequency to commence mentorship dialog with your peers.</p>
+                  <h2 className="text-3xl font-black tracking-tighter uppercase italic text-white">Your Messages</h2>
+                  <p className="text-muted-foreground text-sm font-medium leading-relaxed">Send private messages and connect directly with your peers and mentors.</p>
                </div>
-               <div className="flex items-center gap-2 px-6 py-3 bg-white/5 rounded-2xl border border-white/10">
-                  <ShieldCheck className="w-4 h-4 text-primary" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Quantum Level Privacy</span>
-               </div>
+               <button 
+                  onClick={() => {
+                    const input = document.querySelector('input[placeholder="Search messages..."]') as HTMLInputElement;
+                    if (input) input.focus();
+                  }}
+                  className="px-8 py-3.5 bg-primary text-white font-black text-sm uppercase tracking-wider rounded-2xl hover:scale-105 transition-all shadow-[0_0_20px_var(--primary)]"
+               >
+                 Send Message
+               </button>
             </div>
           )}
         </main>
