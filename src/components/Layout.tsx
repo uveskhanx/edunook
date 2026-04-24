@@ -8,6 +8,8 @@ import { useAuth } from '@/hooks/use-auth';
 import { DbService } from '@/lib/db-service';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef, useEffect } from 'react';
+import { VerificationTick } from './VerificationTick';
+import { isPremium } from '@/lib/subscription-utils';
 
 // We'll generate navItems dynamically inside Layout to include uid
 
@@ -15,14 +17,16 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
   const location = useLocation();
   const navigate = useNavigate();
   const searchParams = useSearch({ strict: false }) as { q?: string };
-  const { user, dbUser, signOut } = useAuth();
+  const { user, dbUser, loading, signOut } = useAuth();
   
   const navItems = [
     { to: '/home', icon: Home, label: 'Home' },
     { to: '/search', icon: SearchIcon, label: 'Search' },
     { to: '/create', icon: PlusCircle, label: 'Create' },
+    { to: '/chat', icon: MessageCircle, label: 'Chat' },
+    { to: '/notifications', icon: Bell, label: 'Notifications' },
     { to: '/tests', icon: ClipboardList, label: 'Tests' },
-    { to: '/profile', icon: User, label: 'Profile' },
+    { to: '/settings', icon: Settings, label: 'Settings' },
   ] as const;
 
   const [searchValue, setSearchValue] = useState(searchParams.q || '');
@@ -106,28 +110,30 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-[#050505] text-foreground font-sans">
+    <div className="flex min-h-screen w-full bg-background text-foreground font-sans">
       {/* Desktop Sidebar (Left) */}
       {!hideNavigation && (
-        <aside className="hidden md:flex flex-col w-[280px] h-screen sticky top-0 left-0 bg-[#050505] border-r border-white/5 z-50">
+        <aside className="hidden md:flex flex-col w-[280px] h-screen sticky top-0 left-0 bg-background border-r border-border z-50">
         <div className="p-8">
           <Link to="/" className="flex items-center gap-3 group">
             <div className="w-10 h-10 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20 group-hover:scale-110 transition-transform">
               <Sparkles className="w-6 h-6 text-white" />
             </div>
-            <span className="text-2xl font-black tracking-tighter text-white uppercase">EduNook</span>
+            <span className="text-2xl font-black tracking-tighter text-foreground uppercase">EduNook</span>
           </Link>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1">
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto no-scrollbar py-2">
           {navItems.map((item) => {
-            const isActive = location.pathname === item.to || (item.to === '/home' && location.pathname === '/');
+            const isHome = item.to === '/home' && (location.pathname === '/' || location.pathname === '/home');
+            const isActive = isHome || (location.pathname === item.to && item.to !== '/home');
+            
             return (
               <Link
                 key={item.label}
                 to={item.to as any}
-                className={`relative flex items-center gap-4 px-5 py-4 rounded-2xl text-[14px] font-bold transition-all group overflow-hidden ${
-                  isActive ? 'text-white' : 'text-muted-foreground hover:text-white hover:bg-white/5'
+                className={`relative flex items-center gap-4 px-5 py-3.5 rounded-2xl text-[14px] font-bold transition-all group overflow-hidden ${
+                  isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted/5'
                 }`}
               >
                 {isActive && (
@@ -135,34 +141,78 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
                 )}
                 <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'opacity-70 group-hover:opacity-100'}`} />
                 <span>{item.label}</span>
+                {item.label === 'Notifications' && unseenCount > 0 && (
+                  <span className="ml-auto min-w-[20px] h-5 flex items-center justify-center px-1.5 bg-destructive text-white text-[10px] font-black rounded-full shadow-lg shadow-destructive/20">
+                    {unseenCount > 99 ? '99+' : unseenCount}
+                  </span>
+                )}
               </Link>
             );
           })}
         </nav>
 
-        <div className="p-6">
-          {user ? (
-            <div className="p-4 rounded-3xl bg-white/[0.03] border border-white/5 space-y-4">
-               <div className="flex items-center gap-3">
-                 {dbUser?.avatarUrl ? (
-                   <img src={dbUser.avatarUrl} className="w-10 h-10 rounded-xl object-cover border border-white/10" alt="Avatar" />
-                 ) : (
-                   <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary font-bold">
-                      {dbUser?.fullName?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || 'U'}
+        <div className="p-4 mt-auto border-t border-border bg-background/80 backdrop-blur-md">
+          {loading ? (
+             // Sidebar Loading Skeleton
+             <div className="flex items-center gap-3 p-3 rounded-3xl border border-border bg-card/50 animate-pulse">
+                <div className="w-10 h-10 rounded-xl bg-white/5" />
+                <div className="flex-1 space-y-2">
+                   <div className="h-3 w-24 bg-white/5 rounded" />
+                   <div className="h-2 w-16 bg-white/5 rounded opacity-50" />
+                </div>
+             </div>
+          ) : user ? (
+            <div className="space-y-3">
+               <Link 
+                  to={`/${dbUser?.username}` as any}
+                  className={`block p-3 rounded-3xl border transition-all group/profile-box ${
+                    location.pathname === `/${dbUser?.username}`
+                    ? 'bg-primary/10 border-primary/30'
+                    : 'bg-card border-border hover:border-primary/30 hover:bg-muted/50'
+                  }`}
+               >
+                 <div className="flex items-center gap-3">
+                   <div className="relative shrink-0">
+                      <div className="w-10 h-10 rounded-xl overflow-hidden border border-border group-hover/profile-box:border-primary/50 transition-colors">
+                        <img 
+                          src={dbUser?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${dbUser?.uid}`} 
+                          className="w-full h-full object-cover group-hover/profile-box:scale-105 transition-transform" 
+                          alt="Avatar" 
+                        />
+                      </div>
+                      {dbUser?.subscription?.planId === 'elite' && (
+                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center border-2 border-card shadow-lg">
+                          <Sparkles className="w-2 h-2 text-white fill-white" />
+                        </div>
+                      )}
                    </div>
-                 )}
-                 <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold truncate text-white">{dbUser?.fullName || user.email?.split('@')[0]}</p>
-                    <p className="text-[10px] text-muted-foreground truncate uppercase tracking-[0.2em] font-black opacity-50">@{dbUser?.username || 'student'}</p>
+                   <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1">
+                        <p className="text-[13px] font-black truncate text-foreground group-hover/profile-box:text-primary transition-colors">
+                          {dbUser?.fullName || user.email?.split('@')[0]}
+                        </p>
+                        <VerificationTick planId={dbUser?.subscription?.planId} size={14} />
+                      </div>
+                      <div className="flex items-center gap-1.5 overflow-hidden">
+                         <p className="text-[9px] text-muted-foreground truncate uppercase tracking-[0.15em] font-black opacity-50">@{dbUser?.username || 'student'}</p>
+                         {isPremium(dbUser?.subscription?.planId) && (
+                           <span className="text-[7px] font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded-full border border-primary/20 ml-auto whitespace-nowrap animate-pulse">SAVINGS ACTIVE</span>
+                         )}
+                         {!isPremium(dbUser?.subscription?.planId) && (
+                           <span className="text-[8px] font-black text-primary opacity-0 group-hover/profile-box:opacity-100 transition-opacity uppercase ml-auto whitespace-nowrap">View Profile</span>
+                         )}
+                      </div>
+                   </div>
                  </div>
-               </div>
+               </Link>
+
                 <button 
                   onClick={signOut} 
                   aria-label="Sign out"
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[11px] font-black text-white bg-white/5 hover:bg-destructive/10 hover:text-destructive transition-all"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl text-[10px] font-black text-muted-foreground hover:text-destructive bg-muted/30 hover:bg-destructive/10 transition-all border border-transparent hover:border-destructive/20"
                 >
-                 <LogOut className="w-4 h-4" />
-                 <span>SIGN OUT</span>
+                 <LogOut className="w-3.5 h-3.5" />
+                 <span>LOGOUT</span>
                </button>
             </div>
           ) : (
@@ -178,7 +228,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
       <div className="flex-1 flex flex-col min-w-0">
         {/* Global Header */}
         {!hideNavigation && !hideHeader && (
-          <header className="sticky top-0 z-50 h-[72px] bg-[#050505]/95 backdrop-blur-xl border-b border-white/5 px-6 md:px-10 flex items-center justify-between gap-6">
+          <header className="sticky top-0 z-50 h-[72px] bg-background/95 backdrop-blur-xl border-b border-border px-6 md:px-10 flex items-center justify-between gap-6">
           {/* Mobile Logo */}
           <Link to="/" className="md:hidden flex-shrink-0" aria-label="EduNook Home">
             <Sparkles className="w-7 h-7 text-primary" />
@@ -186,7 +236,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
 
           {/* Search Bar - Only show on home page for courses */}
           {(location.pathname === '/home' || location.pathname === '/') ? (
-            <div ref={containerRef} className={`flex-1 max-w-[600px] group relative ${isMobileSearchOpen ? 'fixed inset-x-0 top-0 h-[72px] bg-[#050505] z-[70] px-6 flex items-center md:relative md:inset-auto md:h-auto md:bg-transparent md:px-0' : 'contents md:block'}`}>
+            <div ref={containerRef} className={`flex-1 max-w-[600px] group relative ${isMobileSearchOpen ? 'fixed inset-x-0 top-0 h-[72px] bg-background z-[70] px-6 flex items-center md:relative md:inset-auto md:h-auto md:bg-transparent md:px-0' : 'contents md:block'}`}>
                <form onSubmit={handleSearch} className={`relative z-10 w-full ${!isMobileSearchOpen && 'hidden md:block'}`}>
                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors">
                     <SearchIcon className="w-5 h-5" />
@@ -201,7 +251,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
                       setShowSuggestions(true);
                     }}
                     placeholder="Search courses..."
-                    className="w-full pl-12 pr-12 py-3 bg-[#121212] border border-white/10 rounded-full text-[14px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 focus:bg-[#1a1a1a] transition-all placeholder:text-muted-foreground/20"
+                    className="w-full pl-12 pr-12 py-3 bg-card border border-border rounded-full text-[14px] text-foreground font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/40"
                  />
                  
                  <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -214,7 +264,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
                           type="button"
                           onClick={clearSearch}
                           aria-label="Clear search"
-                          className="p-1 rounded-full hover:bg-white/10 text-muted-foreground hover:text-white transition-colors"
+                          className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                         >
                           <X className="w-4 h-4" />
                         </motion.button>
@@ -226,7 +276,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
                         type="button"
                         onClick={() => setIsMobileSearchOpen(false)}
                         aria-label="Close mobile search"
-                        className="md:hidden p-1 text-muted-foreground hover:text-white"
+                        className="md:hidden p-1 text-muted-foreground hover:text-foreground"
                       >
                         <X className="w-5 h-5" />
                       </button>
@@ -239,7 +289,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
                   <button 
                     onClick={() => setIsMobileSearchOpen(true)}
                     aria-label="Open search"
-                    className="md:hidden p-2 text-muted-foreground hover:text-white bg-[#121212] border border-white/10 rounded-xl"
+                    className="md:hidden p-2 text-muted-foreground hover:text-foreground bg-card border border-border rounded-xl"
                   >
                     <SearchIcon className="w-5 h-5" />
                   </button>
@@ -252,7 +302,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
-                      className="absolute top-full left-0 right-0 mt-2 bg-[#121212] border border-white/10 rounded-2xl shadow-[0_20px_40px_rgba(0,0,0,0.6)] overflow-hidden z-[60]"
+                      className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-2xl shadow-xl overflow-hidden z-[60]"
                     >
                       {suggestions.map((item, idx) => (
                         <button
@@ -280,16 +330,16 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
             <Link 
               to={user ? '/chat' : '/login' as any}
               aria-label="Messages"
-              className="p-2 md:p-3 bg-[#121212] border border-white/10 rounded-xl md:rounded-2xl text-muted-foreground hover:text-white hover:border-primary/50 transition-all group"
+              className="md:hidden p-2 bg-card border border-border rounded-xl text-muted-foreground hover:text-primary hover:border-primary/50 transition-all group"
             >
               <MessageCircle className="w-5 h-5 group-hover:scale-110 transition-transform" />
             </Link>
             
-            {/* Notification Bell with Badge */}
+            {/* Notification Bell - Mobile Only */}
             <Link
               to={user ? '/notifications' as any : '/login'}
               aria-label="Notifications"
-              className="relative p-2 md:p-3 bg-[#121212] border border-white/10 rounded-xl md:rounded-2xl text-muted-foreground hover:text-white hover:border-accent/50 transition-all cursor-pointer group"
+              className="md:hidden relative p-2 bg-card border border-border rounded-xl text-muted-foreground hover:text-foreground hover:border-primary/50 transition-all cursor-pointer group"
             >
                <Bell className="w-5 h-5 group-hover:scale-110 transition-transform" />
                {unseenCount > 0 && (
@@ -298,13 +348,13 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
                  </span>
                )}
             </Link>
-
-            {/* Settings */}
+ 
+            {/* Settings - Mobile Only since it's in Desktop Sidebar */}
             {showSettings && (
               <Link
                 to={'/settings' as any}
                 aria-label="Settings"
-                className="p-2 md:p-3 bg-[#121212] border border-white/10 rounded-xl md:rounded-2xl text-muted-foreground hover:text-white hover:border-primary/50 transition-all cursor-pointer group"
+                className="md:hidden p-2 bg-card border border-border rounded-xl text-muted-foreground hover:text-foreground hover:border-primary/50 transition-all cursor-pointer group"
               >
                  <Settings className="w-5 h-5 group-hover:rotate-45 transition-transform duration-300" />
               </Link>
@@ -332,22 +382,47 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
         {/* Mobile Bottom Nav */}
         {!hideNavigation && !hideMobileNav && (
           <nav className="md:hidden fixed bottom-6 left-6 right-6 z-50">
-            <div className="flex items-center justify-around h-[72px] px-2 bg-[#121212]/90 backdrop-blur-2xl border border-white/10 rounded-full shadow-[0_20px_40px_rgba(0,0,0,0.5)]">
+            <div className="flex items-center justify-around h-[72px] px-2 bg-card/90 backdrop-blur-2xl border border-border rounded-full shadow-[0_20px_40px_rgba(0,0,0,0.3)]">
               {navItems.map((item) => {
-                const isActive = location.pathname === item.to || (item.to === '/home' && location.pathname === '/');
+                const isHome = item.to === '/home' && (location.pathname === '/' || location.pathname === '/home');
+                const isActive = isHome || (location.pathname === item.to && item.to !== '/home');
+                
+                // Only show Home, Search, Create, Tests on mobile bottom nav
+                if (['Settings', 'Chat', 'Notifications'].includes(item.label)) {
+                   return null;
+                }
+                
                 return (
                   <Link
                     key={item.label}
                     to={item.to as any}
                     aria-label={item.label}
-                    className={`flex items-center justify-center w-14 h-14 rounded-full transition-all relative ${
+                    className={`flex items-center justify-center w-12 h-12 rounded-full transition-all relative ${
                       isActive ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-muted-foreground'
                     }`}
                   >
-                    <item.icon className="w-6 h-6" />
+                    <item.icon className="w-5 h-5" />
                   </Link>
                 );
               })}
+
+              {/* Mobile Profile Entry */}
+              {loading ? (
+                <div className="w-12 h-12 rounded-full bg-white/5 animate-pulse flex items-center justify-center">
+                  <User className="w-5 h-5 text-muted-foreground/30" />
+                </div>
+              ) : dbUser ? (
+                <Link
+                  to={`/${dbUser.username}` as any}
+                  className={`flex items-center justify-center w-12 h-12 rounded-full transition-all relative ${
+                    location.pathname === `/${dbUser.username}` 
+                      ? 'bg-primary text-white shadow-lg shadow-primary/20' 
+                      : 'text-muted-foreground'
+                  }`}
+                >
+                  <User className="w-5 h-5" />
+                </Link>
+              ) : null}
             </div>
           </nav>
         )}

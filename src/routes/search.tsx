@@ -6,6 +6,7 @@ import { Layout } from '@/components/Layout';
 import { CourseCard } from '@/components/CourseCard';
 import { motion, AnimatePresence } from 'framer-motion';
 import { optimizeCloudinaryUrl } from '@/lib/image-utils';
+import { VerificationTick } from '@/components/VerificationTick';
 
 export const Route = createFileRoute('/search')({
   head: () => ({
@@ -159,6 +160,7 @@ function SearchPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                            <h3 className="text-sm font-black text-white truncate">{profile.fullName}</h3>
+                           <VerificationTick planId={profile.subscription?.planId} size={14} />
                            {profile.role === 'admin' && <Crown className="w-3 h-3 text-amber-400 fill-amber-400" />}
                         </div>
                         <p className="text-xs font-bold text-muted-foreground truncate">@{profile.username}</p>
@@ -270,7 +272,10 @@ function SearchPage() {
                           </div>
                         )}
                       </div>
-                      <h3 className="text-xs font-black text-white truncate group-hover:text-primary transition-colors">{creator.fullName}</h3>
+                      <h3 className="text-xs font-black text-white truncate group-hover:text-primary transition-colors flex items-center justify-center gap-1">
+                        {creator.fullName}
+                        <VerificationTick planId={creator.subscription?.planId} size={12} />
+                      </h3>
                       <p className="text-[10px] text-muted-foreground font-bold mt-0.5">
                         <span className="text-white">{creator.followersCount}</span> followers
                       </p>

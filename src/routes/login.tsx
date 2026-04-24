@@ -56,16 +56,19 @@ function LoginPage() {
       // 1. Lookup UID connected to this username
       const uid = await DbService.getUidByUsername(cleanUsername);
       if (!uid) {
+        console.warn(`[Login] Username "${cleanUsername}" not found in database index.`);
         throw new Error('auth/user-not-found');
       }
 
       // 2. Retrieve their mapped email (Legacy real email OR Modern virtual email)
       const profile = await DbService.getProfile(uid);
-      if (!profile || !profile.email) {
-        throw new Error('auth/user-not-found');
-      }
+      let profileEmail = profile?.email;
 
-      const profileEmail = profile.email;
+      if (!profileEmail) {
+        console.warn(`[Login] Profile for UID "${uid}" is missing or has no email. Attempting recovery via internal mapping...`);
+        // Self-Healing Fallback: Generate the virtual email if profile data is missing
+        profileEmail = AuthService.getInternalEmail(cleanUsername);
+      }
 
       await signInWithEmailAndPassword(auth, profileEmail, password);
 
@@ -148,8 +151,8 @@ function LoginPage() {
         {/* Structural Glow */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100%] h-[100%] bg-primary/10 rounded-full blur-[200px]" />
         
-        {/* Subtle Noise Texture */}
-        <div className="absolute inset-0 opacity-[0.04] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+        {/* Subtle Noise Texture fallback */}
+        <div className="absolute inset-0 opacity-[0.04] pointer-events-none mix-blend-overlay" />
       </div>
 
       <motion.div 

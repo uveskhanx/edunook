@@ -28,7 +28,7 @@ type TabType = 'All' | 'Free' | 'Paid';
 
 function HomePage() {
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
+  const { user, dbUser, loading: authLoading, refreshProfile } = useAuth();
   
   const searchParams = useSearch({ from: '/home' }) as { q?: string; tab?: TabType };
   
@@ -42,6 +42,17 @@ function HomePage() {
       navigate({ to: '/login' });
     }
   }, [user, authLoading, navigate]);
+
+  // If user is logged in but profile didn't load (stale session before scaffold fix),
+  // immediately re-resolve and backfill, then reload courses
+  useEffect(() => {
+    if (user && !authLoading && !dbUser) {
+      refreshProfile().then(() => {
+        // Reload courses after profile+backfill completes so publisherName appears
+        DbService.getCourses({ isPublished: true }).then(data => setCourses(data)).catch(() => {});
+      });
+    }
+  }, [user, authLoading, dbUser, refreshProfile]);
 
   // Load Data
   useEffect(() => {
@@ -92,8 +103,43 @@ function HomePage() {
       );
     }
 
+    // 3. Boost Elite and Edge courses if NO search query
+    if (!searchParams.q) {
+      list.sort((a, b) => {
+        const planA = a.profiles?.subscription?.planId || 'none';
+        const planB = b.profiles?.subscription?.planId || 'none';
+        
+        const score = (plan: string) => {
+          if (plan === 'elite') return 3;
+          if (plan === 'edge') return 2;
+          if (plan === 'spark') return 1;
+          return 0;
+        };
+
+        const scoreDiff = score(planB) - score(planA);
+        if (scoreDiff !== 0) return scoreDiff;
+        
+        // Secondary sort: most recent first
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+    }
+
+    // 4. Patch current user's own courses with their real name if publisherName is missing
+    if (dbUser?.fullName && user?.id) {
+      list = list.map(course => {
+        if (course.userId === user.id) {
+          return {
+            ...course,
+            publisherName: dbUser.fullName,
+            profiles: course.profiles ? { ...course.profiles, fullName: dbUser.fullName } : { fullName: dbUser.fullName } as any
+          };
+        }
+        return course;
+      });
+    }
+
     return list;
-  }, [courses, activeTab, searchParams.q]);
+  }, [courses, activeTab, searchParams.q, dbUser, user]);
 
   if (authLoading || (loading && !courses.length)) {
     return (
@@ -112,7 +158,7 @@ function HomePage() {
       <div className="max-w-[1600px] mx-auto">
         
         {/* Filter Tabs - Sticky below Header */}
-        <div className="sticky top-[72px] z-40 bg-[#050505]/90 backdrop-blur-xl px-4 md:px-10 py-4 border-b border-white/5">
+        <div className="sticky top-[72px] z-40 bg-background/90 backdrop-blur-xl px-4 md:px-10 py-4 border-b border-border">
            <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-1">
               {(['All', 'Free', 'Paid'] as TabType[]).map((tab) => (
                 <button
@@ -120,14 +166,14 @@ function HomePage() {
                   onClick={() => handleTabChange(tab)}
                   className={`relative px-6 py-2.5 rounded-xl text-sm font-black transition-all flex-shrink-0 ${
                     activeTab === tab 
-                      ? 'text-white' 
-                      : 'text-muted-foreground hover:text-white hover:bg-white/5'
+                      ? 'text-foreground' 
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/5'
                   }`}
                 >
                   {activeTab === tab && (
                     <motion.div 
                       layoutId="tab-pill" 
-                      className="absolute inset-0 bg-primary/20 border border-primary/20 rounded-xl" 
+                      className="absolute inset-0 bg-primary/10 border border-primary/20 rounded-xl" 
                     />
                   )}
                   {activeTab === tab && (
@@ -164,13 +210,13 @@ function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               className="py-32 flex flex-col items-center justify-center text-center space-y-8"
             >
-              <div className="w-24 h-24 rounded-full bg-white/5 flex items-center justify-center border border-white/5">
+              <div className="w-24 h-24 rounded-full bg-muted/20 flex items-center justify-center border border-border">
                 <Search className="w-10 h-10 text-muted-foreground opacity-20" />
               </div>
               <div className="space-y-3">
-                <h3 className="text-3xl font-black text-white uppercase tracking-tighter">No courses found</h3>
+                <h3 className="text-3xl font-black text-foreground uppercase tracking-tighter">No courses found</h3>
                 <p className="text-muted-foreground font-medium max-w-xs mx-auto">
-                  {searchParams.q 
+                   {searchParams.q 
                     ? `We couldn't find anything matching "${searchParams.q}". Try a different search.` 
                     : "No courses have been published yet. Be the first to share your knowledge!"}
                 </p>

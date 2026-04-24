@@ -10,7 +10,9 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TestsRouteImport } from './routes/tests'
+import { Route as SubscriptionRouteImport } from './routes/subscription'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ProfileRouteImport } from './routes/profile'
@@ -24,6 +26,7 @@ import { Route as ChatRouteImport } from './routes/chat'
 import { Route as UsernameRouteImport } from './routes/$username'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TestSlugRouteImport } from './routes/test.$slug'
+import { Route as SettingsChangePasswordRouteImport } from './routes/settings.change-password'
 import { Route as CourseSlugRouteImport } from './routes/course.$slug'
 
 const TestsRoute = TestsRouteImport.update({
@@ -31,9 +34,19 @@ const TestsRoute = TestsRouteImport.update({
   path: '/tests',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SubscriptionRoute = SubscriptionRouteImport.update({
+  id: '/subscription',
+  path: '/subscription',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SearchRoute = SearchRouteImport.update({
@@ -101,6 +114,11 @@ const TestSlugRoute = TestSlugRouteImport.update({
   path: '/test/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsChangePasswordRoute = SettingsChangePasswordRouteImport.update({
+  id: '/change-password',
+  path: '/change-password',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const CourseSlugRoute = CourseSlugRouteImport.update({
   id: '/course/$slug',
   path: '/course/$slug',
@@ -120,9 +138,12 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/reset-password': typeof ResetPasswordRoute
   '/search': typeof SearchRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/signup': typeof SignupRoute
+  '/subscription': typeof SubscriptionRoute
   '/tests': typeof TestsRoute
   '/course/$slug': typeof CourseSlugRoute
+  '/settings/change-password': typeof SettingsChangePasswordRoute
   '/test/$slug': typeof TestSlugRoute
 }
 export interface FileRoutesByTo {
@@ -138,9 +159,12 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/reset-password': typeof ResetPasswordRoute
   '/search': typeof SearchRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/signup': typeof SignupRoute
+  '/subscription': typeof SubscriptionRoute
   '/tests': typeof TestsRoute
   '/course/$slug': typeof CourseSlugRoute
+  '/settings/change-password': typeof SettingsChangePasswordRoute
   '/test/$slug': typeof TestSlugRoute
 }
 export interface FileRoutesById {
@@ -157,9 +181,12 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/reset-password': typeof ResetPasswordRoute
   '/search': typeof SearchRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/signup': typeof SignupRoute
+  '/subscription': typeof SubscriptionRoute
   '/tests': typeof TestsRoute
   '/course/$slug': typeof CourseSlugRoute
+  '/settings/change-password': typeof SettingsChangePasswordRoute
   '/test/$slug': typeof TestSlugRoute
 }
 export interface FileRouteTypes {
@@ -177,9 +204,12 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reset-password'
     | '/search'
+    | '/settings'
     | '/signup'
+    | '/subscription'
     | '/tests'
     | '/course/$slug'
+    | '/settings/change-password'
     | '/test/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -195,9 +225,12 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reset-password'
     | '/search'
+    | '/settings'
     | '/signup'
+    | '/subscription'
     | '/tests'
     | '/course/$slug'
+    | '/settings/change-password'
     | '/test/$slug'
   id:
     | '__root__'
@@ -213,9 +246,12 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reset-password'
     | '/search'
+    | '/settings'
     | '/signup'
+    | '/subscription'
     | '/tests'
     | '/course/$slug'
+    | '/settings/change-password'
     | '/test/$slug'
   fileRoutesById: FileRoutesById
 }
@@ -232,7 +268,9 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SearchRoute: typeof SearchRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
   SignupRoute: typeof SignupRoute
+  SubscriptionRoute: typeof SubscriptionRoute
   TestsRoute: typeof TestsRoute
   CourseSlugRoute: typeof CourseSlugRoute
   TestSlugRoute: typeof TestSlugRoute
@@ -247,11 +285,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TestsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/subscription': {
+      id: '/subscription'
+      path: '/subscription'
+      fullPath: '/subscription'
+      preLoaderRoute: typeof SubscriptionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/signup': {
       id: '/signup'
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/search': {
@@ -345,6 +397,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TestSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/change-password': {
+      id: '/settings/change-password'
+      path: '/change-password'
+      fullPath: '/settings/change-password'
+      preLoaderRoute: typeof SettingsChangePasswordRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/course/$slug': {
       id: '/course/$slug'
       path: '/course/$slug'
@@ -354,6 +413,18 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface SettingsRouteChildren {
+  SettingsChangePasswordRoute: typeof SettingsChangePasswordRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsChangePasswordRoute: SettingsChangePasswordRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -368,7 +439,9 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SearchRoute: SearchRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   SignupRoute: SignupRoute,
+  SubscriptionRoute: SubscriptionRoute,
   TestsRoute: TestsRoute,
   CourseSlugRoute: CourseSlugRoute,
   TestSlugRoute: TestSlugRoute,

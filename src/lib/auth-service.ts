@@ -10,7 +10,8 @@ import { sendPasswordResetAction } from './server/email-actions';
 
 export const AuthService = {
   getInternalEmail(username: string): string {
-    return `${username.toLowerCase()}@edunook.com`;
+    const cleanUsername = username.toLowerCase().trim();
+    return `${cleanUsername}@edunook.internal`;
   },
 
    async sendResetPasswordEmail(username: string): Promise<void> {

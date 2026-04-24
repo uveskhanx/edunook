@@ -3,7 +3,9 @@ import { useState, useEffect, useRef } from 'react';
 import { auth, db } from '@/lib/firebase';
 import { 
   createUserWithEmailAndPassword, 
-  updateProfile
+  updateProfile,
+  RecaptchaVerifier,
+  signInWithPhoneNumber
 } from 'firebase/auth';
 import { ref, set, get, runTransaction } from 'firebase/database';
 import { DbService } from '@/lib/db-service';
@@ -13,6 +15,7 @@ import {
   Loader2, Sparkles, ArrowRight, AtSign, 
   Eye, EyeOff, Calendar, Phone, ChevronLeft
 } from 'lucide-react';
+import { AuthService } from '@/lib/auth-service';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { differenceInMonths, parseISO, isFuture, format } from 'date-fns';
@@ -26,7 +29,7 @@ export const Route = createFileRoute('/signup')({
   component: SignupPage,
 });
 
-type Step = 1 | 2;
+type Step = 1 | 2 | 3;
 
 function SignupPage() {
   const navigate = useNavigate();
@@ -42,6 +45,9 @@ function SignupPage() {
   const [dob, setDob] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
   const [phone, setPhone] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
+  const [resendTimer, setResendTimer] = useState(0);
   
   // UI State
   const [loading, setLoading] = useState(false);
@@ -119,6 +125,81 @@ function SignupPage() {
     setError('');
   };
 
+  const handleSendCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loading || !phone || password.length < 6) return;
+    
+    setError('');
+    setLoading(true);
+
+    const fullPhone = `${countryCode}${phone}`;
+
+    try {
+      // 1. Numverify Pre-validation
+      const isValidFormat = await validatePhoneWithNumverify(fullPhone);
+      if (!isValidFormat) {
+        throw new Error("Invalid phone number format. Please check the number.");
+      }
+
+      // 2. Initialize Recaptcha
+      if (!(window as any).recaptchaVerifier) {
+        (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+          size: 'invisible',
+          callback: () => {
+            console.log('Recaptcha resolved');
+          }
+        });
+      }
+
+      const verifier = (window as any).recaptchaVerifier;
+      
+      // 3. Send SMS
+      // DEVELOPMENT BYPASS: If on localhost and no real SMS is needed, we can simulate
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      
+      try {
+        const result = await signInWithPhoneNumber(auth, fullPhone, verifier);
+        setConfirmationResult(result);
+        setStep(3);
+        setResendTimer(60);
+        toast.success("Verification code sent!");
+      } catch (smsErr: any) {
+        if (isLocal) {
+          console.warn("SMS sending failed on localhost. Entering simulation mode for testing.");
+          toast.warning("Local Dev Mode: Using simulation code '123456'");
+          setConfirmationResult({ confirm: async (code: string) => { if (code === '123456') return true; throw new Error('Invalid simulation code'); } });
+          setStep(3);
+        } else {
+          throw smsErr;
+        }
+      }
+    } catch (err: any) {
+      console.error("SMS Send Error:", err);
+      const friendlyMsg = err.code === 'auth/captcha-check-failed' ? "reCAPTCHA verification failed. Please refresh." :
+                        err.code === 'auth/invalid-phone-number' ? "The phone number format is invalid." :
+                        err.code === 'auth/quota-exceeded' ? "SMS quota exceeded. Please try again later." :
+                        err.message || "Failed to send verification code";
+      
+      setError(friendlyMsg);
+      toast.error("Security Check Failed", { description: friendlyMsg });
+
+      if ((window as any).recaptchaVerifier) {
+        try { (window as any).recaptchaVerifier.clear(); } catch(e) {}
+        (window as any).recaptchaVerifier = null;
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let interval: any;
+    if (resendTimer > 0) {
+      interval = setInterval(() => setResendTimer(t => t - 1), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [resendTimer]);
+
   const validatePhoneWithNumverify = async (fullPhone: string) => {
     // Note: We recommend putting the API key in a .env file like VITE_NUMVERIFY_API_KEY
     // Numverify only validates the formatting and existence of a number, it doesn't send SMS.
@@ -146,46 +227,47 @@ function SignupPage() {
 
   async function handleFinalSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (loading || !phone || password.length < 6) return;
+    if (loading || !verificationCode || !confirmationResult) return;
     
     setError('');
     setLoading(true);
 
     const cleanUsername = username.toLowerCase().trim();
-    const virtualEmail = `${cleanUsername}@edunook.internal`;
+    const virtualEmail = AuthService.getInternalEmail(cleanUsername);
     const fullPhone = `${countryCode}${phone}`;
     let tempUser = null;
 
     try {
-      // 1. Numverify Phone Validation Check
-      const isValidPhone = await validatePhoneWithNumverify(fullPhone);
-      if (!isValidPhone) {
-        throw new Error("Invalid phone number detected by Numverify. Please check the number.");
+      // 1. Verify SMS Code
+      try {
+        await confirmationResult.confirm(verificationCode);
+      } catch (confirmErr) {
+        throw new Error("Invalid verification code. Please try again.");
       }
 
-      // 2. Create the base Auth account (Virtual Email acts as vault)
+      // 2. Create the base Auth account (Virtual Email)
       const userCred = await createUserWithEmailAndPassword(auth, virtualEmail, password);
       tempUser = userCred.user;
 
       // 3. Atomic Database Transaction for the Username
       const usernameRef = ref(db, `usernames/${cleanUsername}`);
       const transactionResult = await runTransaction(usernameRef, (currentVal) => {
-        if (currentVal === null) return tempUser!.uid; // Claim it
-        return; // Abort if taken
+        if (currentVal === null) return tempUser!.uid;
+        return;
       });
 
       if (!transactionResult.committed) {
-        throw new Error("Username was claimed during phone verification.");
+        throw new Error("Username was claimed during verification.");
       }
 
-      // 4. Save Profile to Database
+      // 4. Save Profile
       const userData = {
         uid: tempUser.uid,
         fullName,
         username: cleanUsername,
         email: virtualEmail,
         dob: dob,
-        phone: fullPhone, // Successfully validated via Numverify
+        phone: fullPhone,
         role: 'student' as const,
         createdAt: new Date().toISOString(),
       };
@@ -193,18 +275,12 @@ function SignupPage() {
       await set(ref(db, `users/${tempUser.uid}`), userData);
       await updateProfile(tempUser, { displayName: fullName });
 
-      toast.success('Account created successfully!');
+      toast.success('Account verified and created!');
       navigate({ to: '/home' });
     } catch (err: any) {
       console.error('Final Signup Error:', err);
-      // FATAL ROLLBACK: Destroy ghost account if failed
       if (tempUser) await tempUser.delete().catch(console.error);
-      
-      if (err.code === 'auth/email-already-in-use') {
-        setError("Username is already taken.");
-      } else {
-        setError(err.message || 'Signup failed');
-      }
+      setError(err.message || 'Signup failed');
     } finally {
       setLoading(false);
     }
@@ -231,8 +307,8 @@ function SignupPage() {
         {/* Structural Glow */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100%] h-[100%] bg-primary/10 rounded-full blur-[200px]" />
         
-        {/* Subtle Noise Texture */}
-        <div className="absolute inset-0 opacity-[0.04] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+        {/* Subtle Noise Texture fallback */}
+        <div className="absolute inset-0 opacity-[0.04] pointer-events-none mix-blend-overlay" />
       </div>
 
       <motion.div 
@@ -249,7 +325,7 @@ function SignupPage() {
            </Link>
            
            <div className="flex items-center gap-2">
-              {[1, 2].map((s) => (
+              {[1, 2, 3].map((s) => (
                 <div key={s} className={`h-1 rounded-full transition-all duration-500 ${step === s ? 'w-8 bg-primary' : step > s ? 'w-4 bg-success' : 'w-4 bg-white/10'}`} />
               ))}
            </div>
@@ -261,7 +337,8 @@ function SignupPage() {
             background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%)'
           }}
         >
-          <form onSubmit={handleFinalSubmit}>
+          <form onSubmit={step === 3 ? handleFinalSubmit : handleSendCode}>
+            <div id="recaptcha-container"></div>
             <AnimatePresence mode="wait">
             {step === 1 && (
               <motion.div key="step1" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-6">
@@ -416,8 +493,54 @@ function SignupPage() {
                     disabled={!phone || password.length < 6 || loading}
                     className="flex-1 py-4 bg-gradient-to-r from-[#4f46e5] via-[#7c3aed] to-[#c026d3] text-white rounded-2xl font-black text-[16px] shadow-2xl shadow-primary/30 hover:shadow-primary/50 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 flex items-center justify-center gap-2"
                   >
-                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Complete Signup <ArrowRight className="w-5 h-5" /></>}
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Send Code <ArrowRight className="w-5 h-5" /></>}
                   </button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 3 && (
+              <motion.div key="step3" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-6">
+                <div className="text-center space-y-2 mb-6">
+                   <h2 className="text-2xl font-black text-white">Verification</h2>
+                   <p className="text-muted-foreground text-sm font-medium">Enter 6-digit code sent to {countryCode}{phone}</p>
+                </div>
+
+                {error && <p className="text-[13px] font-bold text-destructive text-center p-3 bg-destructive/10 rounded-xl">{error}</p>}
+
+                <div className="space-y-5">
+                  <div className="space-y-2 group">
+                    <label className="text-xs font-bold text-muted-foreground ml-1">SMS Code</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={verificationCode}
+                      onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="000000"
+                      className="w-full px-6 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-center text-2xl font-black tracking-[0.5em] text-white focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/10"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  <button
+                    type="submit"
+                    disabled={verificationCode.length < 6 || loading}
+                    className="w-full py-4 bg-primary text-white rounded-2xl font-black text-[16px] shadow-2xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 flex items-center justify-center gap-2"
+                  >
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Verify & Finish <ArrowRight className="w-5 h-5" /></>}
+                  </button>
+                  
+                  <div className="text-center">
+                    <button 
+                      type="button"
+                      disabled={resendTimer > 0 || loading}
+                      onClick={handleSendCode}
+                      className="text-xs font-bold text-muted-foreground hover:text-white transition-colors disabled:opacity-50"
+                    >
+                      {resendTimer > 0 ? `Resend code in ${resendTimer}s` : "Didn't receive code? Resend"}
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )}

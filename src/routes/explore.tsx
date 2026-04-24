@@ -246,8 +246,8 @@ function ExplorePage() {
                               {creator.avatarUrl ? (
                                 <img src={optimizeCloudinaryUrl(creator.avatarUrl, 160)} className="w-full h-full object-cover" alt={creator.fullName} loading="lazy" />
                               ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary font-black text-xl">
-                                  {creator.fullName?.[0]?.toUpperCase() || 'E'}
+                                <div className="w-full h-full flex items-center justify-center bg-primary/10">
+                                  <UserIcon className="w-8 h-8 text-primary/40" />
                                 </div>
                               )}
                             </div>

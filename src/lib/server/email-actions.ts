@@ -161,3 +161,59 @@ export const sendPasswordResetAction = createServerFn({ method: "POST" })
       throw new Error(err.message || 'Recovery failed');
     }
   });
+
+const feedbackSchema = z.object({
+  email: z.string().email(),
+  type: z.string(),
+  message: z.string(),
+  username: z.string()
+});
+
+export const sendFeedbackEmailAction = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => feedbackSchema.parse(d))
+  .handler(async ({ data }) => {
+    const { email, type, message, username } = data;
+    console.log(`[EmailAction] Sending feedback from: ${username} (${email})`);
+
+    try {
+      const { data: resendData, error } = await resend.emails.send({
+        from: 'EduNook Feedback <feedback@resend.dev>',
+        to: ['learningaurstudywala@gmail.com'],
+        subject: `[${type.toUpperCase()}] New Feedback from @${username}`,
+        html: `
+          <div style="font-family: 'Inter', sans-serif; background-color: #050505; color: #ffffff; padding: 40px; border-radius: 24px; max-width: 600px; margin: auto; border: 1px solid rgba(255,255,255,0.05);">
+            <div style="text-align: center; margin-bottom: 32px;">
+              <h1 style="font-size: 24px; font-weight: 900; margin: 0; color: #3b82f6;">EduNook Support</h1>
+            </div>
+
+            <div style="background-color: rgba(255,255,255,0.03); padding: 32px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+              <div style="margin-bottom: 24px;">
+                <span style="font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #3b82f6; background: rgba(59,130,246,0.1); padding: 4px 12px; border-radius: 100px; border: 1px solid rgba(59,130,246,0.2);">
+                  ${type}
+                </span>
+              </div>
+              
+              <p style="color: #ffffff; line-height: 1.6; font-size: 16px; margin-bottom: 32px; white-space: pre-wrap;">${message}</p>
+
+              <div style="border-top: 1px solid rgba(255,255,255,0.05); pt: 24px; margin-top: 24px;">
+                <p style="color: #71717a; font-size: 12px; margin: 4px 0;"><b>Sender:</b> @${username}</p>
+                <p style="color: #71717a; font-size: 12px; margin: 4px 0;"><b>Email:</b> ${email}</p>
+                <p style="color: #71717a; font-size: 12px; margin: 4px 0;"><b>Date:</b> ${new Date().toLocaleString()}</p>
+              </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 32px; color: #52525b; font-size: 12px;">
+              This feedback was sent from the EduNook Settings page.
+            </div>
+          </div>
+        `,
+      });
+
+      if (error) throw error;
+      return { success: true };
+    } catch (err: any) {
+      console.error('[EmailAction] Feedback Error:', err);
+      throw new Error(err.message || 'Failed to send feedback');
+    }
+  });
+
