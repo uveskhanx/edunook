@@ -46,6 +46,7 @@ function ProfilePage() {
   const [uploadingHighlight, setUploadingHighlight] = useState(false);
   const [highlightZoom, setHighlightZoom] = useState(1);
   const [highlightRatio, setHighlightRatio] = useState<'square' | 'portrait' | 'original'>('original');
+  const [highlightFilter, setHighlightFilter] = useState('Original');
 
   // Highlight Viewer State
   const [viewerHighlight, setViewerHighlight] = useState<Highlight | null>(null);
@@ -112,6 +113,17 @@ function ProfilePage() {
     setHighlightPreviewUrl(null);
     setHighlightZoom(1);
     setHighlightRatio('original');
+    setHighlightFilter('Original');
+  };
+
+  const getFilterStyle = (filter: string) => {
+    switch(filter) {
+      case 'Noir': return { filter: 'grayscale(100%) contrast(120%)' };
+      case 'Vivid': return { filter: 'contrast(110%) saturate(150%)' };
+      case 'Warm': return { filter: 'sepia(30%) saturate(140%) hue-rotate(-10deg)' };
+      case 'Cold': return { filter: 'sepia(20%) saturate(120%) hue-rotate(180deg)' };
+      default: return {};
+    }
   };
 
   useEffect(() => {
@@ -147,7 +159,7 @@ function ProfilePage() {
     async function resolveAndLoad() {
       try {
         setLoading(true);
-        let uid = await DbService.getUidByUsername(username);
+        const uid = await DbService.getUidByUsername(username);
         if (!uid) {
           setLoading(false);
           return;
@@ -162,12 +174,13 @@ function ProfilePage() {
           }
         }
         
-        let [p, c, a, h] = await Promise.all([
+        const [profileResult, c, a, h] = await Promise.all([
           DbService.getProfile(uid).catch(() => null),
           DbService.getCourses({ userId: uid }).catch(() => []),
           DbService.getAchievements(uid).catch(() => []),
           DbService.getHighlights(uid).catch(() => []),
         ]);
+        let p = profileResult;
         
         if (!p && user?.id === uid) {
            p = {
@@ -326,8 +339,8 @@ function ProfilePage() {
                     {profile.avatarUrl ? (
                       <img src={optimizeCloudinaryUrl(profile.avatarUrl, 400)} className="w-full h-full object-cover pointer-events-none select-none" alt="Avatar" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-muted/20 pointer-events-none select-none">
-                         <User className="w-16 h-16 text-primary/30" />
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/30 via-transparent to-violet-600/30 pointer-events-none select-none">
+                         <User className="w-16 h-16 md:w-20 md:h-20 text-primary/40 drop-shadow-[0_0_15px_rgba(59,130,246,0.3)]" />
                       </div>
                     )}
                     {isOwnProfile && (
@@ -558,104 +571,103 @@ function ProfilePage() {
                   exit={{ opacity: 0, scale: 0.9, y: 50 }}
                   className="relative w-full h-full md:max-w-md md:h-[90vh] bg-card overflow-hidden md:rounded-[3rem] md:border md:border-border shadow-[0_0_100px_rgba(0,0,0,0.4)] flex flex-col"
                 >
-                   <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between p-4 bg-gradient-to-b from-card/80 to-transparent pt-12 md:pt-6">
+                  <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between p-4 bg-gradient-to-b from-card/80 to-transparent pt-12 md:pt-6">
                       <button onClick={cancelHighlight} disabled={uploadingHighlight} className="p-3 rounded-full bg-card/40 text-foreground backdrop-blur-xl hover:bg-foreground/10 transition-all">
                          <X className="w-6 h-6" />
                       </button>
-                      
-                      <div className="flex items-center gap-4 px-2">
-                         <button className="p-2.5 rounded-full bg-card/40 text-foreground backdrop-blur-xl hover:scale-110 active:scale-95 transition-all outline-none">
-                            <Type className="w-6 h-6" />
-                         </button>
-                         <button className="p-2.5 rounded-full bg-card/40 text-foreground backdrop-blur-xl hover:scale-110 active:scale-95 transition-all outline-none">
-                            <Sticker className="w-6 h-6" />
-                         </button>
-                         <button className="p-2.5 rounded-full bg-card/40 text-foreground backdrop-blur-xl hover:scale-110 active:scale-95 transition-all outline-none">
-                            <Wand2 className="w-6 h-6" />
-                         </button>
-                         <button className="p-2.5 rounded-full bg-card/40 text-foreground backdrop-blur-xl hover:scale-110 active:scale-95 transition-all outline-none">
-                            <Music className="w-6 h-6" />
-                         </button>
-                      </div>
                    </div>
 
-                    <div className="flex-1 w-full h-full relative bg-background flex items-center justify-center overflow-hidden">
-                       <div className={`w-full h-full transition-all duration-300 flex items-center justify-center
-                          ${highlightRatio === 'square' ? 'aspect-square' : highlightRatio === 'portrait' ? 'aspect-[9/16]' : 'h-full w-full'}`}>
-                          <motion.div 
-                            style={{ scale: highlightZoom }}
-                            className="w-full h-full flex items-center justify-center"
-                          >
-                             {highlightType === 'video' ? (
-                                <video src={highlightPreviewUrl} className="w-full h-full object-cover" autoPlay loop playsInline />
-                             ) : (
-                                <img src={highlightPreviewUrl} className="w-full h-full object-cover" alt="Previewing" />
-                             )}
-                          </motion.div>
+                    <div className="flex-1 w-full relative bg-background flex flex-col overflow-hidden">
+                       <div className="flex-1 w-full bg-black relative flex items-center justify-center overflow-hidden" style={{ minHeight: '40vh' }}>
+                         <div className={`transition-all duration-300 flex items-center justify-center
+                            ${highlightRatio === 'square' ? 'aspect-square h-full' : highlightRatio === 'portrait' ? 'aspect-[9/16] h-full' : 'w-full h-full'}`}>
+                            <motion.div 
+                              style={{ scale: highlightZoom, ...getFilterStyle(highlightFilter) }}
+                              className="w-full h-full flex items-center justify-center"
+                            >
+                               {highlightType === 'video' ? (
+                                  <video src={highlightPreviewUrl} className="w-full h-full object-cover" autoPlay loop playsInline />
+                               ) : (
+                                  <img src={highlightPreviewUrl} className="w-full h-full object-cover" alt="Previewing" />
+                               )}
+                            </motion.div>
+                         </div>
                        </div>
                        
-                       <div className="absolute inset-x-6 top-[20%] space-y-6">
-                          <div className="flex flex-col gap-2 p-4 bg-card/40 backdrop-blur-xl rounded-2xl border border-border">
-                             <div className="flex justify-between items-center text-[10px] font-black uppercase text-foreground/40 tracking-widest px-1">
-                                <span>Zoom</span>
-                                <span>{Math.round(highlightZoom * 100)}%</span>
+                       <div className="bg-card p-6 pb-24 md:pb-6 space-y-6 overflow-y-auto max-h-[50vh]">
+                          <div className="flex items-center gap-6">
+                             <div className="flex-1 flex flex-col gap-2">
+                                <div className="flex justify-between items-center text-[10px] font-black uppercase text-foreground/40 tracking-widest px-1">
+                                   <span>Zoom</span>
+                                   <span>{Math.round(highlightZoom * 100)}%</span>
+                                </div>
+                                <input 
+                                  type="range" 
+                                  min="1" 
+                                  max="3" 
+                                  step="0.01" 
+                                  value={highlightZoom}
+                                  onChange={(e) => setHighlightZoom(parseFloat(e.target.value))}
+                                  className="w-full accent-primary bg-foreground/10 h-1.5 rounded-full appearance-none cursor-pointer"
+                                />
                              </div>
-                             <input 
-                               type="range" 
-                               min="1" 
-                               max="3" 
-                               step="0.01" 
-                               value={highlightZoom}
-                               onChange={(e) => setHighlightZoom(parseFloat(e.target.value))}
-                               className="w-full accent-primary bg-foreground/10 h-1.5 rounded-full appearance-none cursor-pointer"
-                             />
-                          </div>
 
-                          <div className="flex flex-col gap-3">
-                             <span className="text-[10px] font-black uppercase tracking-widest text-foreground/40 px-1">Aspect Ratio</span>
-                             <div className="flex items-center gap-2">
-                                {[
-                                  {id: 'square', label: '1:1'},
-                                  {id: 'portrait', label: '9:16'},
-                                  {id: 'original', label: 'Fit'}
-                                ].map(r => (
-                                  <button
-                                    key={r.id}
-                                    onClick={() => setHighlightRatio(r.id as any)}
-                                    className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all
-                                      ${highlightRatio === r.id ? 'bg-foreground text-background' : 'bg-card/60 text-foreground border border-border'}`}
-                                  >
-                                    {r.label}
-                                  </button>
-                                ))}
+                             <div className="flex flex-col gap-2">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-foreground/40 px-1">Format</span>
+                                <div className="flex items-center gap-2">
+                                   {[
+                                     {id: 'square', label: '1:1'},
+                                     {id: 'portrait', label: '9:16'},
+                                     {id: 'original', label: 'Fit'}
+                                   ].map(r => (
+                                     <button
+                                       key={r.id}
+                                       onClick={() => setHighlightRatio(r.id as 'square' | 'portrait' | 'original')}
+                                       className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all
+                                         ${highlightRatio === r.id ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}
+                                     >
+                                       {r.label}
+                                     </button>
+                                   ))}
+                                </div>
                              </div>
                           </div>
 
                           <div className="flex flex-col gap-3">
                              <span className="text-[10px] font-black uppercase tracking-widest text-foreground/40 px-1">Filters</span>
-                             <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-2">
+                             <div className="flex items-center gap-4 overflow-x-auto no-scrollbar pb-2 pt-1 px-1">
                                 {['Original', 'Noir', 'Vivid', 'Warm', 'Cold'].map(f => (
-                                   <div key={f} className="flex flex-col items-center gap-1.5 shrink-0">
-                                      <div className="w-12 h-12 rounded-xl bg-card border border-border flex items-center justify-center text-[8px] font-black uppercase tracking-tighter text-foreground/40 hover:border-primary/50 cursor-pointer transition-all">
-                                         {f[0]}
-                                      </div>
-                                      <span className="text-[8px] font-black text-foreground/30 uppercase">{f}</span>
+                                   <div key={f} className="flex flex-col items-center gap-2 shrink-0">
+                                      <button 
+                                        onClick={() => setHighlightFilter(f)}
+                                        className={`w-16 h-20 rounded-2xl overflow-hidden border-2 transition-all p-0.5 ${highlightFilter === f ? 'border-primary shadow-lg shadow-primary/20 scale-105' : 'border-transparent hover:border-white/20'}`}
+                                      >
+                                         <div className="w-full h-full rounded-xl overflow-hidden bg-muted">
+                                            {highlightType === 'image' && (
+                                              <img 
+                                                src={highlightPreviewUrl} 
+                                                style={getFilterStyle(f)}
+                                                className="w-full h-full object-cover" 
+                                                alt={f} 
+                                              />
+                                            )}
+                                         </div>
+                                      </button>
+                                      <span className={`text-[9px] font-black uppercase ${highlightFilter === f ? 'text-primary' : 'text-foreground/40'}`}>{f}</span>
                                    </div>
                                 ))}
                              </div>
                           </div>
                        </div>
-                       
-                       <div className="absolute inset-0 border-[1.5px] border-border m-4 rounded-[2.5rem] pointer-events-none" />
                     </div>
 
-                    <div className="absolute bottom-0 inset-x-0 z-20 p-6 bg-gradient-to-t from-card/90 via-card/50 to-transparent pb-8 md:pb-6">
-                       <div className="flex items-center justify-between gap-4">
+                    <div className="absolute bottom-0 inset-x-0 z-20 p-4 md:p-6 bg-gradient-to-t from-card via-card to-transparent border-t border-border/50">
+                       <div className="flex items-center justify-between gap-3 md:gap-4">
                           <input 
                             type="text"
                             value={highlightTitle}
                             onChange={(e) => setHighlightTitle(e.target.value)}
-                            className="flex-1 w-full bg-card/40 border border-border rounded-full px-5 py-3.5 text-foreground text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 backdrop-blur-xl shadow-lg placeholder:text-foreground/50"
+                            className="flex-1 w-full bg-background border border-border rounded-2xl px-5 py-3.5 text-foreground text-sm font-medium focus:outline-none focus:border-primary transition-all shadow-sm placeholder:text-foreground/50"
                             placeholder="Highlight Name..."
                             disabled={uploadingHighlight}
                             maxLength={15}
@@ -664,10 +676,9 @@ function ProfilePage() {
                          <button 
                             onClick={uploadHighlight}
                             disabled={uploadingHighlight || !highlightTitle.trim()}
-                            className="px-6 py-3.5 bg-foreground text-background rounded-full font-black text-[14px] flex shrink-0 items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-xl disabled:opacity-50"
+                            className="px-5 py-3.5 bg-primary text-white rounded-2xl font-black text-[12px] md:text-[14px] flex shrink-0 items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-50 uppercase tracking-widest"
                          >
-                            {uploadingHighlight ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Your Story'}
-                            {!uploadingHighlight && <ChevronRight className="w-4 h-4 ml-1" />}
+                            {uploadingHighlight ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Upload Highlight'}
                          </button>
                       </div>
                    </div>

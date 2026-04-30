@@ -64,6 +64,11 @@ export const Route = createRootRoute({
         href: "https://res.cloudinary.com",
         crossOrigin: "anonymous",
       },
+      {
+        rel: "icon",
+        type: "image/png",
+        href: "/favicon.png",
+      },
     ],
   }),
   shellComponent: RootShell,

@@ -38,7 +38,7 @@ export function CourseCard({ course }: CourseCardProps) {
       className="group cursor-pointer"
       onClick={handleCardClick}
     >
-      <div className="block space-y-3">
+      <div className="block space-y-2 md:space-y-3">
         {/* Thumbnail Area - 16:9 */}
         <div className="relative aspect-video rounded-[1.5rem] overflow-hidden bg-card border border-border transition-all duration-500 group-hover:border-primary/50 group-hover:shadow-[0_0_20px_rgba(var(--primary-rgb),0.15)]">
           {course.thumbnailUrl ? (
@@ -87,27 +87,21 @@ export function CourseCard({ course }: CourseCardProps) {
         </div>
 
         {/* Info Area - YouTube style */}
-        <div className="flex gap-4 pt-1">
+        <div className="flex gap-3 md:gap-4 pt-0.5 md:pt-1">
           {/* Creator Avatar */}
           <div className="flex-shrink-0">
-             <div className="w-8 h-8 rounded-full bg-card border border-border overflow-hidden">
+             <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-card border border-border overflow-hidden">
                 {course.profiles?.avatarUrl ? (
                   <img src={optimizeCloudinaryUrl(course.profiles.avatarUrl, 80)} alt="" loading="lazy" className="w-full h-full object-cover" />
                 ) : (
-                  <div 
-                    className={`w-full h-full flex items-center justify-center text-[10px] font-black text-white uppercase bg-gradient-to-br ${
-                      ['from-blue-600 to-indigo-600', 'from-purple-600 to-pink-600', 'from-emerald-600 to-teal-600', 'from-amber-500 to-orange-600', 'from-rose-600 to-red-700'][
-                        (course.profiles?.fullName || course.publisherName || 'E').length % 5
-                      ]
-                    }`}
-                  >
-                    <User className="w-4 h-4 text-white/40" />
+                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/30 via-transparent to-violet-600/30">
+                    <User className="w-4 h-4 text-primary/40 drop-shadow-[0_0_8px_rgba(59,130,246,0.3)]" />
                   </div>
                 )}
              </div>
           </div>
 
-          <div className="flex-1 min-w-0 space-y-1">
+          <div className="flex-1 min-w-0 space-y-0.5 md:space-y-1">
             <h3 className="text-[15px] font-bold text-foreground line-clamp-2 leading-tight group-hover:text-primary transition-colors">
               {course.title}
             </h3>

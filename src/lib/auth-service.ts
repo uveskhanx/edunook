@@ -29,6 +29,7 @@ export const AuthService = {
     await firebaseSignOut(auth);
   },
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async sendVerificationEmail(user?: any): Promise<void> {
     // Deprecated: We no longer use email verification
     return;

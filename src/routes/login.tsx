@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router';
 import { useState, useRef, useEffect } from 'react';
 import { auth, db } from '@/lib/firebase';
@@ -161,11 +162,11 @@ function LoginPage() {
         className="w-full max-w-[400px]"
       >
         <div className="flex flex-col items-center mb-6 md:mb-10 space-y-3 md:space-y-4">
-           <Link to="/" className="flex items-center gap-3 group">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center shadow-2xl shadow-primary/20 group-hover:scale-110 transition-transform duration-500">
-                 <Sparkles className="w-6 h-6 text-white" />
+           <Link to="/" className="flex items-center gap-4 group">
+              <span className="text-3xl md:text-4xl font-black text-white tracking-tighter group-hover:text-primary transition-colors">EduNook</span>
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl shadow-primary/20 group-hover:scale-110 transition-transform duration-500 overflow-hidden shrink-0">
+                 <img src="/logo.png" className="w-full h-full object-cover" alt="Logo" />
               </div>
-              <span className="text-3xl font-black tracking-tighter text-white uppercase">EduNook</span>
            </Link>
         </div>
 

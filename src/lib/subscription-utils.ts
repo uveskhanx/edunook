@@ -1,8 +1,7 @@
-export type SubscriptionTier = 'elite' | 'edge' | 'spark' | 'none';
+export type SubscriptionTier = 'edge' | 'spark' | 'none';
 
 export const SUBSCRIPTION_DISCOUNTS: Record<SubscriptionTier | string, number> = {
-  elite: 0.34, // 34% Off
-  edge: 0.16,  // 16% Off
+  edge: 0.30,  // 30% Off
   spark: 0,
   none: 0
 };
@@ -29,5 +28,5 @@ export function getDiscountLabel(planId?: string | null): string | null {
  * Checks if a user has any premium tier
  */
 export function isPremium(planId?: string | null): boolean {
-  return planId === 'elite' || planId === 'edge';
+  return planId === 'edge';
 }

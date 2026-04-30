@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useNavigate, Link, Outlet, useLocation } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
@@ -139,7 +140,7 @@ function SettingsPage() {
       items: [
         { label: 'Current Plan', value: dbUser?.subscription?.planId ? dbUser.subscription.planId.toUpperCase() : 'SPARK (Free)', type: 'bold' },
         { label: 'Billing Cycle', value: dbUser?.subscription?.billingCycle ? dbUser.subscription.billingCycle.toUpperCase() : 'N/A', type: 'text' },
-        { label: 'Benefits', value: dbUser?.subscription?.planId === 'elite' ? ['Gold Badge', '₹999/mo', 'Priority Support'] : dbUser?.subscription?.planId === 'edge' ? ['Blue Badge', '₹499/mo', 'Better Visibility'] : ['Basic Access'], type: 'list' },
+        { label: 'Benefits', value: dbUser?.subscription?.planId === 'edge' ? ['Blue Badge', '30% Discounts', 'Better Visibility', 'Custom Profile Themes'] : ['Basic Access'], type: 'list' },
       ],
       action: { label: 'Manage Plan', to: '/subscription' }
     },
@@ -351,14 +352,23 @@ function SettingsPage() {
                       ))}
                    </div>
 
-                   {section.action && (
-                     <button 
-                       onClick={section.action.onClick}
-                       className="mt-8 w-full py-4 bg-primary text-white rounded-2xl font-black text-[13px] uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all"
-                     >
-                        {section.action.label}
-                     </button>
-                   )}
+                    {section.action && (
+                      section.action.to ? (
+                        <Link
+                          to={section.action.to as any}
+                          className="mt-8 flex items-center justify-center w-full py-4 bg-primary text-white rounded-2xl font-black text-[13px] uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all"
+                        >
+                          {section.action.label}
+                        </Link>
+                      ) : (
+                        <button 
+                          onClick={section.action.onClick}
+                          className="mt-8 w-full py-4 bg-primary text-white rounded-2xl font-black text-[13px] uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all"
+                        >
+                          {section.action.label}
+                        </button>
+                      )
+                    )}
                 </div>
              </motion.div>
            ))}
@@ -472,75 +482,61 @@ function SettingsPage() {
                     <textarea 
                       value={feedbackText}
                       onChange={(e) => setFeedbackText(e.target.value)}
+                      disabled={isSendingFeedback}
                       placeholder={feedbackType === 'bug' ? "What happened? Describe the issue..." : "What could we do better? Tell us your ideas..."}
-                      className="w-full h-40 bg-white/[0.03] border border-white/5 rounded-2xl p-6 text-white font-medium focus:border-primary/50 focus:bg-white/[0.05] transition-all outline-none resize-none"
+                      className="w-full h-40 bg-white/[0.03] border border-white/5 rounded-2xl p-6 text-white font-medium focus:border-primary/50 focus:bg-white/[0.05] transition-all outline-none resize-none disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                   </div>
 
                   <div className="p-4 rounded-xl bg-primary/5 border border-primary/10 flex gap-3 items-start">
                     <ChatCircleDots size={20} className="text-primary shrink-0" weight="bold" />
                     <p className="text-[11px] font-medium text-primary/70 leading-relaxed">
-                      This will open your email app with the message pre-filled to <span className="font-bold">learningaurstudywala@gmail.com</span>
+                      Your feedback will be sent directly to the <span className="font-bold">@edunook</span> team for review.
                     </p>
                   </div>
 
                           <button 
-                            onClick={async () => {
+                            onClick={() => {
+                              console.log('[Feedback] Send clicked');
                               if (!feedbackText.trim() || !user || !dbUser) return;
                               
-                              setIsSendingFeedback(true);
-                              const feedbackData = {
-                                email: user.email!,
-                                type: feedbackType === 'bug' ? 'Bug Report' : 'Improvement',
-                                message: feedbackText,
-                                username: dbUser.username || 'student'
-                              };
+                              // 1. Close immediately
+                              const text = feedbackText;
+                              const type = feedbackType;
+                              setFeedbackText('');
+                              setShowFeedbackModal(false);
+                              toast.loading("Sending feedback...", { id: 'feedback-status' });
 
-                              try {
-                                // 1. Save to Database (Reliable Backup)
-                                await DbService.createFeedback(user.id, feedbackData);
-
-                                // 2. Try Server Email Action
+                              // 2. Background work
+                              (async () => {
                                 try {
-                                  await sendFeedbackEmailAction({ data: feedbackData });
-                                  toast.success("Feedback sent! Thank you for helping us grow.");
-                                } catch (emailErr) {
-                                  console.error('[Settings] Email Action Failed, falling back to mailto:', emailErr);
-                                  // 3. Fallback to Mailto if Server Action fails
-                                  const subject = `[${feedbackData.type.toUpperCase()}] EduNook Feedback`;
-                                  const body = `Message: ${feedbackText}\n\nSender: @${feedbackData.username}`;
-                                  window.location.href = `mailto:learningaurstudywala@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-                                  toast.success("Opening email client...");
+                                  const feedbackData = {
+                                    email: user.email!,
+                                    type: type === 'bug' ? 'Bug Report' : 'Improvement',
+                                    message: text,
+                                    username: dbUser.username || 'student'
+                                  };
+
+                                  const edunookUid = await DbService.getUidByUsername('edunook');
+                                  if (edunookUid) {
+                                    const chatId = await DbService.getOrCreateChat(user.id, edunookUid);
+                                    await DbService.sendMessage(chatId, user.id, `[${feedbackData.type}] ${text}`);
+                                    await DbService.deleteChat(user.id, chatId);
+                                  }
+                                  await DbService.createFeedback(user.id, feedbackData);
+                                  sendFeedbackEmailAction({ data: feedbackData }).catch(() => {});
+                                  toast.success("Feedback received! Thank you.", { id: 'feedback-status' });
+                                } catch (err) {
+                                  console.error('[Feedback] Background error:', err);
+                                  toast.error("Failed to send feedback. Please try again later.", { id: 'feedback-status' });
                                 }
-                                
-                                setShowFeedbackModal(false);
-                                setFeedbackText('');
-                              } catch (err) {
-                                console.error('Feedback Submission Error:', err);
-                                toast.error("Failed to submit feedback. Please try again.");
-                              } finally {
-                                setIsSendingFeedback(false);
-                              }
+                              })();
                             }}
-                            disabled={!feedbackText.trim() || isSendingFeedback}
+                            disabled={!feedbackText.trim()}
                             className="w-full py-5 bg-primary text-white rounded-2xl font-black text-[13px] uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2"
                           >
-                             {isSendingFeedback ? (
-                               <>
-                                 <motion.div 
-                                   animate={{ rotate: 360 }}
-                                   transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                                 >
-                                    <Wind size={18} />
-                                 </motion.div>
-                                 Sending...
-                               </>
-                             ) : (
-                               <>
-                                 Send Feedback
-                                 <ArrowRight weight="bold" />
-                               </>
-                             )}
+                             Send Feedback
+                             <ArrowRight weight="bold" />
                           </button>
                 </div>
               </div>

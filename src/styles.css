@@ -365,4 +365,21 @@
   .chat-scrollbar::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.2);
   }
+
+  .premium-horizontal-scrollbar::-webkit-scrollbar {
+    height: 6px;
+    display: block;
+    -webkit-appearance: none;
+  }
+  .premium-horizontal-scrollbar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+  }
+  .premium-horizontal-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(var(--primary-rgb), 0.5);
+    border-radius: 10px;
+  }
+  .premium-horizontal-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(var(--primary-rgb), 0.8);
+  }
 }

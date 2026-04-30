@@ -11,6 +11,7 @@ export type AuthUser = {
   emailVerified: boolean;
 } | null;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function resolveProfile(fbUser: any): Promise<Profile | null> {
   let profile = await DbService.getProfile(fbUser.uid);
 
@@ -43,7 +44,7 @@ async function resolveProfile(fbUser: any): Promise<Profile | null> {
 
   // Silently backfill real name onto any courses missing publisherName
   if (profile?.fullName) {
-    DbService.backfillCoursePublisherNames(fbUser.uid, profile.fullName).catch(() => {});
+    DbService.backfillCoursePublisherNames(fbUser.uid, profile.fullName).catch(() => { });
   }
 
   return profile;

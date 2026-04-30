@@ -1,9 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { DbService, Subscription } from '@/lib/db-service';
 import { Layout } from '@/components/Layout';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
   Sparkle, ShootingStar, Crown, 
   CheckCircle, ArrowLeft, ArrowRight,
@@ -40,31 +41,15 @@ const PLANS = [
     price: { monthly: 299, yearly: 2999 },
     features: [
       'Verified Blue Badge',
-      '15% Course Discounts',
+      '30% Course Discounts',
       'Priority visibility',
       'Early access to features',
-      'Ad-free experience'
+      'Ad-free experience',
+      'Custom profile themes'
     ],
     highlight: 'Most Popular',
     color: 'from-primary to-accent',
     buttonText: 'Upgrade to Edge'
-  },
-  {
-    id: 'elite',
-    name: 'Elite',
-    icon: Crown,
-    description: 'The ultimate EduNook experience for serious learners.',
-    price: { monthly: 399, yearly: 3500},
-    features: [
-      'Gold Premium Badge',
-      '30% Maximum Discounts',
-      '1-on-1 Priority Support',
-      'All Edge features included',
-      'Custom profile themes'
-    ],
-    highlight: 'Best Value',
-    color: 'from-amber-400 to-orange-600',
-    buttonText: 'Get Elite Access'
   }
 ];
 

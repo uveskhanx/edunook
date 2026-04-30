@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Link, useLocation, useNavigate, useSearch } from '@tanstack/react-router';
 import { 
-  Home, Search as SearchIcon, PlusCircle, 
+  Home, Compass, PlusCircle, 
   ClipboardList, User, MessageCircle, LogOut, 
-  Sparkles, Bell, X, Filter, Settings
+  Sparkles, Bell, X, Filter, Settings, ChevronLeft,
+  Search as SearchIcon
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { DbService } from '@/lib/db-service';
@@ -21,7 +23,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
   
   const navItems = [
     { to: '/home', icon: Home, label: 'Home' },
-    { to: '/search', icon: SearchIcon, label: 'Search' },
+    { to: '/search', icon: Compass, label: 'Explore' },
     { to: '/create', icon: PlusCircle, label: 'Create' },
     { to: '/chat', icon: MessageCircle, label: 'Chat' },
     { to: '/notifications', icon: Bell, label: 'Notifications' },
@@ -110,16 +112,16 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-background text-foreground font-sans">
+    <div className="flex min-h-screen w-full bg-background text-foreground font-sans overflow-x-clip">
       {/* Desktop Sidebar (Left) */}
       {!hideNavigation && (
         <aside className="hidden md:flex flex-col w-[280px] h-screen sticky top-0 left-0 bg-background border-r border-border z-50">
         <div className="p-8">
-          <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20 group-hover:scale-110 transition-transform">
-              <Sparkles className="w-6 h-6 text-white" />
+          <Link to="/" className="flex items-center gap-4 group">
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform overflow-hidden shadow-2xl shadow-primary/10 border border-white/5 shrink-0">
+              <img src="/logo.png" className="w-full h-full object-cover" alt="Logo" />
             </div>
-            <span className="text-2xl font-black tracking-tighter text-foreground uppercase">EduNook</span>
+            <span className="text-2xl font-black text-foreground tracking-tighter group-hover:text-primary transition-colors">EduNook</span>
           </Link>
         </div>
 
@@ -180,8 +182,8 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
                           alt="Avatar" 
                         />
                       </div>
-                      {dbUser?.subscription?.planId === 'elite' && (
-                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center border-2 border-card shadow-lg">
+                      {dbUser?.subscription?.planId === 'edge' && (
+                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center border-2 border-card shadow-lg">
                           <Sparkles className="w-2 h-2 text-white fill-white" />
                         </div>
                       )}
@@ -228,73 +230,68 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
       <div className="flex-1 flex flex-col min-w-0">
         {/* Global Header */}
         {!hideNavigation && !hideHeader && (
-          <header className="sticky top-0 z-50 h-[72px] bg-background/95 backdrop-blur-xl border-b border-border px-6 md:px-10 flex items-center justify-between gap-6">
+          <header className="sticky top-0 z-50 h-[60px] md:h-[72px] bg-background/95 backdrop-blur-xl border-b border-border px-4 md:px-10 flex items-center justify-between gap-4 md:gap-6">
           {/* Mobile Logo */}
-          <Link to="/" className="md:hidden flex-shrink-0" aria-label="EduNook Home">
-            <Sparkles className="w-7 h-7 text-primary" />
+          <Link to="/" className="md:hidden flex items-center gap-3 flex-shrink-0" aria-label="EduNook Home">
+            <img src="/logo.png" className="w-10 h-10 object-contain" alt="Logo" />
+            <span className="text-xl font-black text-foreground tracking-tighter">EduNook</span>
           </Link>
 
-          {/* Search Bar - Only show on home page for courses */}
+          {/* Search Bar - Desktop and Mobile Overlay */}
           {(location.pathname === '/home' || location.pathname === '/') ? (
-            <div ref={containerRef} className={`flex-1 max-w-[600px] group relative ${isMobileSearchOpen ? 'fixed inset-x-0 top-0 h-[72px] bg-background z-[70] px-6 flex items-center md:relative md:inset-auto md:h-auto md:bg-transparent md:px-0' : 'contents md:block'}`}>
-               <form onSubmit={handleSearch} className={`relative z-10 w-full ${!isMobileSearchOpen && 'hidden md:block'}`}>
-                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors">
-                    <SearchIcon className="w-5 h-5" />
-                 </div>
-                 <input
-                    ref={searchRef}
-                    type="text"
-                    value={searchValue}
-                    onFocus={() => setShowSuggestions(true)}
-                    onChange={(e) => {
-                      setSearchValue(e.target.value);
-                      setShowSuggestions(true);
-                    }}
-                    placeholder="Search courses..."
-                    className="w-full pl-12 pr-12 py-3 bg-card border border-border rounded-full text-[14px] text-foreground font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/40"
-                 />
-                 
-                 <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                   <AnimatePresence>
-                     {searchValue && (
-                        <motion.button
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.8 }}
-                          type="button"
-                          onClick={clearSearch}
-                          aria-label="Clear search"
-                          className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          <X className="w-4 h-4" />
-                        </motion.button>
-                     )}
-                   </AnimatePresence>
+            <div ref={containerRef} className="flex-1 flex justify-end md:justify-center">
+               <form onSubmit={handleSearch} className={`
+                 ${isMobileSearchOpen 
+                   ? 'fixed inset-x-0 top-0 h-[60px] md:h-[72px] bg-background/98 backdrop-blur-2xl z-[70] px-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300' 
+                   : 'hidden md:block w-full max-w-[600px] relative'
+                 }
+               `}>
+                 {isMobileSearchOpen && (
+                   <button 
+                     type="button"
+                     onClick={() => setIsMobileSearchOpen(false)}
+                     className="p-2 text-muted-foreground hover:text-foreground bg-muted/20 rounded-xl"
+                   >
+                     <ChevronLeft className="w-5 h-5" />
+                   </button>
+                 )}
+
+                 <div className="relative flex-1 group">
+                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors">
+                      <SearchIcon className="w-4 h-4 md:w-5 h-5" />
+                   </div>
+                   <input
+                      ref={searchRef}
+                      type="text"
+                      value={searchValue}
+                      onFocus={() => setShowSuggestions(true)}
+                      onChange={(e) => {
+                        setSearchValue(e.target.value);
+                        setShowSuggestions(true);
+                      }}
+                      placeholder="Search for courses..."
+                      className="w-full pl-11 md:pl-12 pr-12 py-2.5 md:py-3 bg-muted/20 border border-white/5 rounded-2xl md:rounded-full text-[14px] text-foreground font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/40"
+                   />
                    
-                   {isMobileSearchOpen && (
-                      <button 
-                        type="button"
-                        onClick={() => setIsMobileSearchOpen(false)}
-                        aria-label="Close mobile search"
-                        className="md:hidden p-1 text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                   )}
+                   <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                     <AnimatePresence>
+                       {searchValue && (
+                          <motion.button
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.8 }}
+                            type="button"
+                            onClick={clearSearch}
+                            className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </motion.button>
+                       )}
+                     </AnimatePresence>
+                   </div>
                  </div>
                </form>
-  
-               {/* Mobile Search Trigger */}
-               {!isMobileSearchOpen && (
-                  <button 
-                    onClick={() => setIsMobileSearchOpen(true)}
-                    aria-label="Open search"
-                    className="md:hidden p-2 text-muted-foreground hover:text-foreground bg-card border border-border rounded-xl"
-                  >
-                    <SearchIcon className="w-5 h-5" />
-                  </button>
-               )}
-  
+   
                {/* Suggestions Dropdown */}
                <AnimatePresence>
                   {showSuggestions && suggestions.length > 0 && (
@@ -302,7 +299,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
-                      className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-2xl shadow-xl overflow-hidden z-[60]"
+                      className={`absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-[80] ${isMobileSearchOpen ? 'mx-4' : 'max-w-[600px] mx-auto'}`}
                     >
                       {suggestions.map((item, idx) => (
                         <button
@@ -327,12 +324,23 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
 
           {/* Header Action Icons */}
           <div className="flex items-center gap-2 md:gap-4 shrink-0">
+            {/* Mobile Search Trigger */}
+            {(location.pathname === '/home' || location.pathname === '/') && (
+              <button 
+                onClick={() => setIsMobileSearchOpen(true)}
+                aria-label="Open search"
+                className="md:hidden p-2.5 bg-muted/20 border border-white/5 rounded-xl text-muted-foreground hover:text-primary transition-all"
+              >
+                <SearchIcon className="w-5 h-5" />
+              </button>
+            )}
+
             <Link 
               to={user ? '/chat' : '/login' as any}
               aria-label="Messages"
-              className="md:hidden p-2 bg-card border border-border rounded-xl text-muted-foreground hover:text-primary hover:border-primary/50 transition-all group"
+              className="md:hidden p-2.5 bg-muted/20 border border-white/5 rounded-xl text-muted-foreground hover:text-primary transition-all"
             >
-              <MessageCircle className="w-5 h-5 group-hover:scale-110 transition-transform" />
+              <MessageCircle className="w-5 h-5" />
             </Link>
             
             {/* Notification Bell - Mobile Only */}

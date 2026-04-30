@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useState, useMemo } from 'react';
 import { DbService, Course, Profile } from '@/lib/db-service';

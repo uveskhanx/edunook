@@ -1,9 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { DbService, TestRow } from '@/lib/db-service';
 import { useAuth } from '@/hooks/use-auth';
 import { Layout } from '@/components/Layout';
-import { Upload, Plus, X, Loader2, BookOpen, IndianRupee, Tag, Video as VideoIcon, Sparkles, LayoutGrid, CheckCircle2, Link as LinkIcon, FileQuestion, GripVertical, Clock, ShieldAlert, Infinity, ArrowRight, Music, Camera, Microscope, Calculator, Globe, User, Zap } from 'lucide-react';
+import { Upload, Plus, X, Loader2, BookOpen, IndianRupee, Tag, Video as VideoIcon, Sparkles, LayoutGrid, CheckCircle2, Link as LinkIcon, FileQuestion, GripVertical, Clock, ShieldAlert, Infinity as InfinityIcon, ArrowRight, Music, Camera, Microscope, Calculator, Globe, User, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const Route = createFileRoute('/create')({
@@ -23,6 +24,7 @@ interface ChapterDraft {
   file?: File;       // for video type
   pageUrl?: string;  // for link type
   quizUrl?: string;  // for quiz type
+  isFreeDemo?: boolean;
 }
 
 function CreateCoursePage() {
@@ -59,7 +61,7 @@ function CreateCoursePage() {
           <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="p-12 bg-card/30 backdrop-blur-3xl border border-white/5 rounded-[3rem] shadow-2xl max-w-md">
             <BookOpen className="w-20 h-20 text-primary mx-auto mb-8 opacity-20" />
             <h2 className="text-3xl font-black text-white mb-4 tracking-tighter">Enter Creator Mode</h2>
-            <p className="text-muted-foreground mb-10 font-medium leading-relaxed">Join our elite collective of master educators. Sign in to publish your masterpiece.</p>
+            <p className="text-muted-foreground mb-10 font-medium leading-relaxed">Join our exclusive collective of master educators. Sign in to publish your masterpiece.</p>
             <Link to="/login" className="block w-full py-5 bg-primary text-white rounded-2xl font-black shadow-2xl shadow-primary/20 hover:scale-105 transition-all">
               Ignite Your Journey
             </Link>
@@ -145,6 +147,7 @@ function CreateCoursePage() {
           ...(ch.pageUrl && { pageUrl: ch.pageUrl }),
           ...(ch.quizUrl && { quizUrl: ch.quizUrl }),
           position: i,
+          isFreeDemo: !!ch.isFreeDemo,
         });
       }
 
@@ -462,6 +465,21 @@ function CreateCoursePage() {
                                   )
                                 )}
 
+                                {ch.type === 'video' && i === 0 && isPaid && (
+                                  <div className="mt-4 flex items-center gap-3 p-4 bg-primary/5 border border-primary/10 rounded-2xl animate-in fade-in slide-in-from-left-2">
+                                     <input 
+                                       type="checkbox" 
+                                       id={`demo-${i}`}
+                                       checked={!!ch.isFreeDemo}
+                                       onChange={e => updateChapter(i, { isFreeDemo: e.target.checked })}
+                                       className="w-5 h-5 rounded-lg border-white/10 bg-black/40 text-primary focus:ring-primary/20 transition-all cursor-pointer"
+                                     />
+                                     <label htmlFor={`demo-${i}`} className="text-xs font-black uppercase tracking-widest text-primary cursor-pointer select-none">
+                                        Mark as Free Demo <span className="text-[10px] opacity-40 ml-2 font-medium">(Publicly Accessible)</span>
+                                     </label>
+                                  </div>
+                                )}
+
                                 {ch.type === 'link' && (
                                   <input 
                                     type="url" 
@@ -582,7 +600,7 @@ function CreateCoursePage() {
                                className={`p-6 rounded-2xl border-2 transition-all text-left flex items-center gap-5 ${!hasExpiry ? 'border-primary bg-primary/10' : 'border-white/5 bg-black/20 hover:bg-white/5'}`}
                              >
                                 <div className={`p-3 rounded-xl ${!hasExpiry ? 'bg-primary/20 text-primary' : 'bg-white/5 text-muted-foreground'}`}>
-                                   <Infinity className="w-6 h-6" />
+                                   <InfinityIcon className="w-6 h-6" />
                                 </div>
                                 <div>
                                    <p className={`font-black text-sm ${!hasExpiry ? 'text-white' : 'text-muted-foreground'}`}>Lifetime Access</p>
@@ -624,7 +642,7 @@ function CreateCoursePage() {
                       ) : (
                         <div className="p-8 bg-emerald-500/5 border border-emerald-500/10 rounded-3xl flex items-center gap-6">
                            <div className="p-4 bg-emerald-500/10 rounded-2xl">
-                              <Infinity className="w-8 h-8 text-emerald-500" />
+                              <InfinityIcon className="w-8 h-8 text-emerald-500" />
                            </div>
                            <div className="space-y-1">
                               <h4 className="text-emerald-500 font-black uppercase tracking-widest text-[10px]">Perpetual Access</h4>

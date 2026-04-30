@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
@@ -166,7 +167,7 @@ function ChangePasswordPage() {
                   ) : (
                     <>
                       Verify Identity
-                      <ArrowRight weight="bold" />
+                      <ArrowRight />
                     </>
                   )}
                 </button>
@@ -229,7 +230,7 @@ function ChangePasswordPage() {
                   ) : (
                     <>
                       Update Password
-                      <ArrowRight weight="bold" />
+                      <ArrowRight />
                     </>
                   )}
                 </button>
@@ -243,7 +244,7 @@ function ChangePasswordPage() {
 }
 
 // Minimal ArrowRight icon to avoid missing export
-function ArrowRight({ weight }: { weight?: string }) {
+function ArrowRight() {
   return (
     <svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor">
       <path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L204.69,128,138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"></path>

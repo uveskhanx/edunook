@@ -33,6 +33,7 @@ function ResetPasswordPage() {
       await confirmPasswordReset(auth, oobCode, newPassword);
       setSuccess(true);
       setTimeout(() => navigate({ to: '/login' }), 3000);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setError(err.message || 'Failed to reset password');
     } finally {

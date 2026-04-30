@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useNavigate, Link, useSearch } from '@tanstack/react-router';
 import { useEffect, useState, useRef } from 'react';
 import { DbService, Profile, Message } from '@/lib/db-service';
@@ -8,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { motion, AnimatePresence, useScroll, useSpring } from 'framer-motion';
 import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 import { differenceInMinutes, formatDistanceToNow, format } from 'date-fns';
+import { VerificationTick } from '@/components/VerificationTick';
 
 export const Route = createFileRoute('/chat')({
   head: () => ({
@@ -274,24 +276,36 @@ function ChatPage() {
                     </div>
                     
                     <div className="flex-1 min-w-0 text-left">
-                      <div className="flex justify-between items-center mb-1">
-                        <div className="flex items-center gap-1.5 truncate">
-                           <p className={`text-sm font-black truncate transition-colors ${(conv as any).unreadCount > 0 ? 'text-white' : (activeChat?.chatId === conv.chatId ? 'text-white' : 'text-muted-foreground group-hover:text-white')}`}>
+                      <div className="flex justify-between items-start mb-0.5 gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                           <p className={`text-[15px] font-black truncate transition-colors ${(conv as any).unreadCount > 0 ? 'text-white' : (activeChat?.chatId === conv.chatId ? 'text-white' : 'text-muted-foreground group-hover:text-white')}`}>
                              {conv.fullName}
                            </p>
+                           {/* Standardized Verification Badge */}
+                           <VerificationTick planId={conv.subscription?.planId} size={16} />
+
                            {(conv as any).unreadCount > 0 && (
                              <motion.span 
                                 initial={{ scale: 0 }}
                                 animate={{ scale: 1 }}
-                                className="w-1.5 h-1.5 bg-primary rounded-full inline-block shadow-[0_0_8px_var(--primary)]" 
+                                className="shrink-0 w-1.5 h-1.5 bg-primary rounded-full inline-block shadow-[0_0_8px_var(--primary)]" 
                              />
                            )}
-                           {(conv as any).isPinned && <Pin className="w-3 h-3 text-primary rotate-45" />}
-                           {(conv as any).isMuted && <VolumeX className="w-3 h-3 text-muted-foreground/30" />}
+                           {(conv as any).isPinned && <Pin className="shrink-0 w-3 h-3 text-primary rotate-45" />}
                         </div>
                         {conv.updatedAt && (
-                          <span className={`text-[9px] font-bold uppercase tracking-tighter ${(conv as any).unreadCount > 0 ? 'text-primary' : 'text-muted-foreground/30'}`}>
-                            {formatDistanceToNow(new Date(conv.updatedAt), { addSuffix: false }).replace('about ', '').replace(' minutes', 'm').replace(' hours', 'h').replace(' days', 'd')}
+                          <span className={`shrink-0 text-[10px] font-bold uppercase tracking-tighter mt-1 ${(conv as any).unreadCount > 0 ? 'text-primary' : 'text-muted-foreground/30'}`}>
+                            {formatDistanceToNow(new Date(conv.updatedAt), { addSuffix: false })
+                              .replace('less than a minute', 'now')
+                              .replace('about ', '')
+                              .replace(' minutes', 'm')
+                              .replace(' minute', 'm')
+                              .replace(' hours', 'h')
+                              .replace(' hour', 'h')
+                              .replace(' days', 'd')
+                              .replace(' day', 'd')
+                              .replace(' months', 'mo')
+                              .replace(' month', 'mo')}
                           </span>
                         )}
                       </div>
@@ -365,10 +379,13 @@ function ChatPage() {
                                <UserIcon className="w-5 h-5 mx-auto mt-2.5 text-muted-foreground opacity-30" />
                             )}
                          </div>
-                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-black text-white truncate">{result.fullName}</p>
-                            <p className="text-[10px] text-muted-foreground font-medium truncate">@{result.username}</p>
-                         </div>
+                          <div className="flex-1 min-w-0">
+                             <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-black text-white truncate">{result.fullName}</p>
+                                <VerificationTick planId={result.subscription?.planId} size={14} />
+                             </div>
+                             <p className="text-[10px] text-muted-foreground font-medium truncate">@{result.username}</p>
+                          </div>
                       </motion.button>
                    ))}
                 </div>
@@ -401,10 +418,10 @@ function ChatPage() {
                        {activeChat.profile.avatarUrl ? <img src={activeChat.profile.avatarUrl} className="w-full h-full object-cover" alt={activeChat.profile.fullName} /> : <UserIcon className="w-10 h-10 md:w-12 md:h-12 p-2.5 text-muted-foreground opacity-20" />}
                     </div>
                      <div className="flex flex-col">
-                       <div className="flex items-center gap-1.5">
-                          <h2 className="text-sm md:text-base font-black text-white tracking-tight leading-none">{activeChat.profile.fullName}</h2>
-                          <ShieldCheck className="w-3.5 h-3.5 text-primary fill-primary/10" />
-                       </div>
+                        <div className="flex items-center gap-1.5">
+                           <h2 className="text-sm md:text-base font-black text-white tracking-tight leading-none">{activeChat.profile.fullName}</h2>
+                           <VerificationTick planId={activeChat.profile.subscription?.planId} size={18} />
+                        </div>
                        <div className="flex items-center gap-1.5 mt-0.5">
                           {recipientPresence?.status === 'online' ? (
                             <>

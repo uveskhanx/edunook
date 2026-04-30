@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/tooltip";
 
 interface VerificationTickProps {
-  planId?: 'elite' | 'edge' | 'spark' | 'none' | string | null;
+  planId?: 'edge' | 'spark' | 'none' | string | null;
   size?: number;
   className?: string;
 }
@@ -18,10 +18,8 @@ export const VerificationTick: React.FC<VerificationTickProps> = ({
   size = 16,
   className = ""
 }) => {
-  // Only show for elite and edge
-  if (!planId || (planId !== 'elite' && planId !== 'edge')) return null;
-
-  const isElite = planId === 'elite';
+  // Only show for edge
+  if (!planId || planId !== 'edge') return null;
   
   return (
     <TooltipProvider delayDuration={300}>
@@ -31,14 +29,14 @@ export const VerificationTick: React.FC<VerificationTickProps> = ({
             <SealCheck 
               size={size} 
               weight="fill" 
-              className={isElite ? "text-amber-400" : "text-blue-500"} 
+              className="text-blue-500" 
             />
           </div>
         </TooltipTrigger>
-        <TooltipContent side="top" className="bg-black/90 border-white/10 backdrop-blur-xl">
-          <p className="text-[10px] font-black uppercase tracking-widest text-white">
-            Verified
-          </p>
+        <TooltipContent side="right" className="bg-background border-border text-xs font-black">
+          <div className="flex items-center gap-2">
+            <span className="text-blue-500">Verified Edge User</span>
+          </div>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
