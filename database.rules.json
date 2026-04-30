@@ -130,6 +130,15 @@
       "$uid": {
         ".write": "auth != null && auth.uid === $uid"
       }
+    },
+
+    "enrollments": {
+      "$courseId": {
+        "$uid": {
+          ".read": "auth != null && (auth.uid === $uid || root.child('courses').child($courseId).child('userId').val() === auth.uid)",
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
     }
   }
 }

@@ -9,8 +9,9 @@ import {
 } from 'firebase/auth';
 import { 
   Lock, Loader2, Sparkles, ArrowRight, 
-  AtSign, Eye, EyeOff, Mail, CheckCircle2,
-  AlertCircle
+  AtSign, Eye, EyeOff, Mail,
+  AlertCircle, ChevronLeft, ShieldCheck,
+  HelpCircle
 } from 'lucide-react';
 import { DbService } from '@/lib/db-service';
 import { AuthService } from '@/lib/auth-service';
@@ -54,6 +55,13 @@ function LoginPage() {
     try {
       const cleanUsername = identifier.toLowerCase().trim();
 
+      const isValidPath = /^[a-zA-Z0-9_]+$/.test(cleanUsername);
+      if (!isValidPath) {
+         setError('Please enter a valid username (no spaces or special characters).');
+         setLoading(false);
+         return;
+      }
+
       // 1. Lookup UID connected to this username
       const uid = await DbService.getUidByUsername(cleanUsername);
       if (!uid) {
@@ -79,13 +87,15 @@ function LoginPage() {
     } catch (err: any) {
       console.error('Login Error:', err);
       if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.message === 'auth/user-not-found') {
-        setError('Invalid username or password');
+        setError('Hmm, we couldn\'t find that account. Please check your username and password.');
       } else if (err.code === 'auth/wrong-password') {
-        setError('Invalid username or password');
+        setError('Oops! That password doesn\'t look right. Try again?');
       } else if (err.code === 'auth/network-request-failed') {
-        setError('Network error, try again');
+        setError('Connection problem. Please check your internet and try again.');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Too many attempts. Please wait a moment and try again.');
       } else {
-        setError('Something went wrong. Try again.');
+        setError('Something went wrong on our end. Please try again in a bit.');
       }
     } finally {
       setLoading(false);
@@ -105,81 +115,72 @@ function LoginPage() {
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!identifier) {
-      toast.error('Please enter your username first to reset your password');
-      return;
-    }
-    
-    const toastId = toast.loading('Locating your account...');
-    try {
-      const cleanUsername = identifier.toLowerCase().trim();
-      
-      // Look up UID by Username
-      const uid = await DbService.getUidByUsername(cleanUsername);
-      if (!uid) {
-        toast.error('No account found with this username.', { id: toastId });
-        return;
-      }
-      
-      // Get the hidden Profile Email
-      const profile = await DbService.getProfile(uid);
-      if (!profile || !profile.email) {
-        toast.error('Could not find a recovery address for this account', { id: toastId });
-        return;
-      }
-
-      await sendPasswordResetEmail(auth, profile.email);
-      toast.success('Recovery link sent successfully!', { id: toastId });
-    } catch (err: any) {
-      console.error(err);
-      toast.error('Failed to send reset link. Please try again.', { id: toastId });
-    }
-  };
 
   return (
     <div 
-      className="min-h-screen flex items-center justify-center px-6 py-8 md:py-12 relative overflow-hidden"
-      style={{ background: '#020202' }}
+      className="min-h-screen flex items-center justify-center px-4 md:px-6 py-12 md:py-20 relative overflow-hidden bg-[#020202]"
     >
-      {/* Maximum Premium "Living Aurora" Background */}
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        {/* Animated Aurora Blooms - High Opacity for maximum visibility */}
-        <div className="absolute top-[-20%] left-[-10%] w-[80%] h-[70%] bg-[#4f46e5]/40 rounded-full blur-[140px] animate-pulse duration-[12s]" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[80%] h-[70%] bg-[#06b6d4]/40 rounded-full blur-[140px] animate-pulse duration-[15s] delay-700" />
-        <div className="absolute top-[20%] right-[10%] w-[50%] h-[50%] bg-[#9333ea]/30 rounded-full blur-[120px] animate-pulse duration-[18s]" />
-        
-        {/* Structural Glow */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100%] h-[100%] bg-primary/10 rounded-full blur-[200px]" />
-        
-        {/* Subtle Noise Texture fallback */}
-        <div className="absolute inset-0 opacity-[0.04] pointer-events-none mix-blend-overlay" />
+      {/* Dynamic Background Elements - Aurora System */}
+      <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
+        <motion.div 
+          animate={{ 
+            scale: [1, 1.2, 1],
+            opacity: [0.3, 0.5, 0.3],
+            x: [0, 60, 0],
+            y: [0, -40, 0]
+          }}
+          transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+          className="absolute top-[-10%] left-[-10%] w-[70%] h-[70%] bg-primary/20 rounded-full blur-[120px]" 
+        />
+        <motion.div 
+          animate={{ 
+            scale: [1.2, 1, 1.2],
+            opacity: [0.2, 0.4, 0.2],
+            x: [0, -50, 0],
+            y: [0, 70, 0]
+          }}
+          transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
+          className="absolute bottom-[-10%] right-[-10%] w-[70%] h-[70%] bg-accent/20 rounded-full blur-[120px]" 
+        />
+        <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }} />
       </div>
 
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-[400px]"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-[440px] relative"
       >
-        <div className="flex flex-col items-center mb-6 md:mb-10 space-y-3 md:space-y-4">
-           <Link to="/" className="flex items-center gap-4 group">
-              <span className="text-3xl md:text-4xl font-black text-white tracking-tighter group-hover:text-primary transition-colors">EduNook</span>
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl shadow-primary/20 group-hover:scale-110 transition-transform duration-500 overflow-hidden shrink-0">
-                 <img src="/logo.png" className="w-full h-full object-cover" alt="Logo" />
+        <div className="flex flex-col items-center mb-8 space-y-6">
+           <Link to="/" className="flex flex-col items-center gap-4 group">
+              <div className="relative">
+                <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full group-hover:bg-primary/40 transition-colors duration-500" />
+                <div className="w-16 h-16 md:w-20 md:h-20 rounded-[2rem] bg-white/[0.03] border border-white/10 backdrop-blur-xl flex items-center justify-center shadow-2xl group-hover:scale-105 group-hover:rotate-3 transition-all duration-500 overflow-hidden relative z-10">
+                   <img src="/logo.png" className="w-full h-full object-cover p-3 md:p-4" alt="Logo" />
+                </div>
+              </div>
+              <div className="text-center space-y-1">
+                <span className="text-3xl md:text-4xl font-black text-white tracking-tighter group-hover:premium-gradient-text transition-all duration-500">
+                  EduNook
+                </span>
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] opacity-60 text-center">Your Learning Hub</p>
               </div>
            </Link>
         </div>
 
         <div 
-          className="backdrop-blur-[40px] rounded-[3.5rem] p-6 md:p-10 shadow-[0_0_100px_rgba(79,70,229,0.15)] border border-white/20 ring-1 ring-white/10 transition-all duration-500"
-          style={{
-            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%)'
-          }}
+          className="premium-glass-strong rounded-[2.5rem] p-6 md:p-10 shadow-2xl relative overflow-hidden group/card"
         >
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div className="text-center space-y-2 mb-8">
-              <h1 className="text-2xl font-black text-white">Welcome Back</h1>
-              <p className="text-muted-foreground text-sm font-medium">Log in to your account</p>
+          {/* Subtle Inner Glow */}
+          <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 via-transparent to-accent/5 pointer-events-none" />
+          
+          <form onSubmit={handleLogin} className="relative z-10 space-y-8">
+            <div className="text-center space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-black uppercase tracking-widest mb-2">
+                <Sparkles className="w-3 h-3" /> Welcome Back
+              </div>
+              <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">Sign In</h1>
+              <p className="text-muted-foreground text-sm font-medium">Ready to continue your learning journey?</p>
             </div>
 
             <AnimatePresence mode="wait">
@@ -190,17 +191,20 @@ function LoginPage() {
                   exit={{ opacity: 0, scale: 0.9 }}
                   className="flex items-center gap-3 p-4 bg-destructive/10 border border-destructive/20 rounded-2xl"
                 >
-                  <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0" />
-                  <p className="text-destructive text-sm font-bold">{error}</p>
+                  <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0" />
+                  <p className="text-destructive text-[13px] font-bold">{error}</p>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            <div className="space-y-5">
+            <div className="space-y-6">
               <div className="space-y-2 group">
-                <label className="text-xs font-bold text-muted-foreground ml-1">Username</label>
+                <div className="flex items-center justify-between px-1">
+                  <label className="text-xs font-bold text-muted-foreground/60 uppercase tracking-wider">Username</label>
+                  <span className="text-[10px] text-muted-foreground/40 font-medium italic">Your unique identifier</span>
+                </div>
                 <div className="relative">
-                  <AtSign className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <AtSign className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
                   <input
                     type="text"
                     value={identifier}
@@ -213,25 +217,23 @@ function LoginPage() {
                     spellCheck="false"
                     disabled={loading}
                     onKeyDown={(e) => e.key === 'Enter' && passwordRef.current?.focus()}
-                    className="w-full pl-11 pr-4 py-4 bg-white/[0.04] border border-white/10 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 focus:shadow-[0_0_20px_rgba(59,130,246,0.15)] transition-all placeholder:text-muted-foreground/20 disabled:opacity-50"
+                    className="w-full pl-12 pr-4 py-4 md:py-5 bg-white/[0.02] border border-white/5 rounded-2xl text-[16px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 focus:bg-white/[0.05] transition-all placeholder:text-white/10 disabled:opacity-50"
                   />
                 </div>
               </div>
 
-              {/* Password Info */}
               <div className="space-y-2 group">
-                <div className="flex justify-between items-center ml-1">
-                  <label className="text-xs font-bold text-muted-foreground">Password</label>
-                  <button 
-                    type="button" 
-                    onClick={handleForgotPassword}
-                    className="text-[11px] font-bold text-primary hover:text-primary/80 transition-colors"
+                <div className="flex justify-between items-center px-1">
+                  <label className="text-xs font-bold text-muted-foreground/60 uppercase tracking-wider">Password</label>
+                  <Link 
+                    to="/forgot-password"
+                    className="text-[11px] font-bold text-primary hover:text-white transition-colors flex items-center gap-1 group/link"
                   >
-                    Forgot Password?
-                  </button>
+                    <HelpCircle className="w-3 h-3 group-hover:rotate-12 transition-transform" /> Forgot?
+                  </Link>
                 </div>
                 <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
                   <input
                     ref={passwordRef}
                     type={showPassword ? 'text' : 'password'}
@@ -240,59 +242,62 @@ function LoginPage() {
                     placeholder="Enter your password"
                     autoComplete="current-password"
                     disabled={loading}
-                    className="w-full pl-11 pr-12 py-4 bg-white/[0.03] border border-white/5 rounded-2xl text-[15px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all placeholder:text-muted-foreground/20 disabled:opacity-50"
+                    className="w-full pl-12 pr-12 py-4 md:py-5 bg-white/[0.02] border border-white/5 rounded-2xl text-[16px] text-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/40 focus:bg-white/[0.05] transition-all placeholder:text-white/10 disabled:opacity-50"
                   />
                   <button 
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white transition-colors"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-white transition-colors"
                   >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
               </div>
             </div>
 
-            <div className="pt-2">
+            <div className="pt-2 space-y-4">
               <button
                 type="submit"
                 disabled={loading || !identifier || !password}
-                className="w-full py-4 bg-gradient-to-r from-[#4f46e5] via-[#7c3aed] to-[#c026d3] text-white rounded-2xl font-black text-[16px] shadow-2xl shadow-primary/30 hover:shadow-primary/50 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 flex items-center justify-center gap-2 group"
+                className="w-full py-4 md:py-5 bg-gradient-to-r from-primary via-accent to-primary bg-[length:200%_auto] animate-gradient text-white rounded-2xl font-black text-[17px] shadow-xl shadow-primary/20 hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 flex items-center justify-center gap-2 group/btn overflow-hidden relative"
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
-                  <>Log In <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>
+                {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : (
+                  <>
+                    <span className="relative z-10">Let's Get Started</span>
+                    <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-1 transition-transform relative z-10" />
+                  </>
                 )}
               </button>
+              
+              <p className="text-center text-[13px] text-muted-foreground/60 font-medium">
+                Not a member yet?{' '}
+                <Link to="/signup" className="text-white font-black hover:underline underline-offset-4 decoration-primary transition-all">
+                  Create Account
+                </Link>
+              </p>
             </div>
 
             {needsVerification && (
               <motion.div 
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="p-4 bg-primary/5 border border-primary/10 rounded-2xl flex flex-col items-center space-y-3"
+                className="p-5 bg-primary/5 border border-primary/10 rounded-3xl flex flex-col items-center space-y-4"
               >
-                <p className="text-[11px] font-bold text-primary/80 text-center uppercase tracking-wider">Please verify your email first</p>
+                <div className="flex items-center gap-2 text-primary">
+                  <ShieldCheck className="w-5 h-5" />
+                  <p className="text-[12px] font-black uppercase tracking-widest text-center">Verify Your Email</p>
+                </div>
                 <button
                   type="button"
                   onClick={handleResendVerification}
                   disabled={resendLoading}
-                  className="px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-black uppercase tracking-widest rounded-xl transition-all disabled:opacity-50"
+                  className="w-full py-3 bg-primary/10 hover:bg-primary text-primary hover:text-white text-[11px] font-black uppercase tracking-widest rounded-xl transition-all disabled:opacity-50"
                 >
-                  {resendLoading ? 'Sending...' : 'Resend verification link'}
+                  {resendLoading ? 'Sending...' : 'Resend link'}
                 </button>
               </motion.div>
             )}
           </form>
-
-          <div className="mt-8 text-center border-t border-white/5 pt-8">
-            <p className="text-sm text-muted-foreground font-medium">
-              New to EduNook?{' '}
-              <Link to="/signup" className="text-white font-black hover:underline underline-offset-4 decoration-primary transition-all">
-                Create Account
-              </Link>
-            </p>
-          </div>
         </div>
       </motion.div>
     </div>

@@ -269,7 +269,7 @@ function HomePage() {
 
   return (
     <Layout>
-      <div className="max-w-[1600px] mx-auto">
+      <div className="w-full max-w-[1600px] mx-auto overflow-hidden">
         
         {/* Filter Tabs - Sticky below Header */}
         <div className="sticky top-[72px] z-40 bg-background/90 backdrop-blur-xl px-4 md:px-10 py-4 border-b border-border">
@@ -309,24 +309,24 @@ function HomePage() {
         <div className="px-4 md:px-10 py-8 space-y-16 w-full max-w-full overflow-x-hidden">
           {/* Continue Watching */}
           <AnimatePresence>
-            {historyCourses.length > 0 && !searchParams.q && (
+            {historyCourses.length > 0 && !searchParams.q && activeTab === 'All' && (
               <motion.section 
                 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
                 className="space-y-4 md:space-y-6 w-full max-w-full min-w-0"
               >
                 {/* Header */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
+                <div className="flex items-center justify-between w-full pr-1">
+                  <div className="flex items-center gap-3 md:gap-4 shrink-0">
                     <div className="p-2 md:p-3 bg-primary/10 rounded-2xl border border-primary/20">
                       <Clock className="w-5 h-5 md:w-6 md:h-6 text-primary" />
                     </div>
                     <div>
                       <h2 className="text-xl md:text-2xl font-black text-white tracking-tight uppercase">Continue Watching</h2>
-                      <p className="hidden md:block text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40">Pick up where you left off</p>
+                      <p className="hidden md:block text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-60">Pick up exactly where you left off</p>
                     </div>
                   </div>
                   <button 
-                    className="md:hidden px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-white hover:bg-white/10 transition-colors"
+                    className="md:hidden shrink-0 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-white hover:bg-white/10 transition-colors"
                     onClick={() => setShowMobileHistory(!showMobileHistory)}
                   >
                     {showMobileHistory ? 'Hide' : 'View All'}
@@ -334,12 +334,15 @@ function HomePage() {
                 </div>
 
                 {/* Scrollable cards container */}
-                <div className={`w-full min-w-0 ${!showMobileHistory ? 'hidden md:block' : 'block'}`}>
+                <div className={`w-full min-w-0 relative ${!showMobileHistory ? 'hidden md:block' : 'block'}`}>
+                  {/* Fade Edges for premium feel */}
+                  <div className="absolute top-0 right-0 bottom-0 w-8 md:w-16 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
+                  
                   <div
                     ref={scrollRef}
                     onScroll={updateScrollbar}
                     className="flex gap-4 md:gap-6 overflow-x-auto pb-4 w-full snap-x snap-mandatory"
-                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
                   >
                     {historyCourses.map((course) => (
                       <div key={course.id} className="relative group min-w-[260px] md:min-w-[320px] max-w-[260px] md:max-w-[320px] flex-shrink-0 snap-center">
@@ -404,8 +407,8 @@ function HomePage() {
                   <TrendingUp className="w-6 h-6 text-emerald-500" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black text-white tracking-tight uppercase">Explore All</h2>
-                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40">Discover your next masterpiece</p>
+                  <h2 className="text-2xl font-black text-white tracking-tight uppercase">Explore Courses</h2>
+                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-60">Find something new to learn today</p>
                 </div>
               </div>
 
@@ -440,22 +443,22 @@ function HomePage() {
                 <Search className="w-10 h-10 text-muted-foreground opacity-20" />
               </div>
               <div className="space-y-3">
-                <h3 className="text-3xl font-black text-foreground uppercase tracking-tighter">No courses found</h3>
-                <p className="text-muted-foreground font-medium max-w-xs mx-auto">
+                <h3 className="text-2xl md:text-3xl font-black text-foreground uppercase tracking-tighter">No courses found</h3>
+                <p className="text-muted-foreground font-medium max-w-sm mx-auto">
                    {searchParams.q 
                     ? `We couldn't find anything matching "${searchParams.q}". Try a different search.` 
-                    : "No courses have been published yet. Be the first to share your knowledge!"}
+                    : "There are no courses here right now. Check back later or start your own!"}
                 </p>
               </div>
-              {/* Note: Update the Create Link to not rely on old create page. Wait, no create user page for now... 
-                  Ah, the user has a /create page? No, we will make it /$uid/create soon! */}
-              <button 
-                onClick={() => alert("Creating a course will be available from your profile.")}
-                className="inline-flex items-center gap-3 px-8 py-4 bg-primary text-white rounded-[1.5rem] font-black shadow-2xl shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
-              >
-                <Plus className="w-5 h-5" />
-                Create Course
-              </button>
+              {dbUser?.username && (
+                <button 
+                  onClick={() => navigate({ to: '/$username', params: { username: dbUser.username } })}
+                  className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-primary to-accent text-white rounded-2xl font-black shadow-xl shadow-primary/20 hover:shadow-primary/40 hover:scale-105 active:scale-95 transition-all"
+                >
+                  <Plus className="w-5 h-5" />
+                  Create a Course
+                </button>
+              )}
             </motion.div>
             )}
           </section>

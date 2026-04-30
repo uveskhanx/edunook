@@ -342,6 +342,16 @@
     text-shadow: 0 0 10px var(--primary), 0 0 20px var(--primary), 0 0 30px var(--primary);
   }
 
+  .animate-gradient {
+    animation: gradient 3s linear infinite;
+  }
+
+  @keyframes gradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
   .floating {
     animation: floating 3s ease-in-out infinite;
     will-change: transform;
