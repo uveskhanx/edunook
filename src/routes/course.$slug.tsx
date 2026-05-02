@@ -11,7 +11,7 @@ import {
   Rewind, Settings, ChevronRight, ChevronLeft, Loader2, PlayCircle,
   MoreVertical, Trash2, Send, UserPlus, UserCheck,
   RotateCcw, RotateCw, Monitor, Download, Trophy,
-  ShieldAlert, IndianRupee, Rocket
+  ShieldAlert, IndianRupee, Rocket, Globe, Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { optimizeCloudinaryUrl } from '@/lib/image-utils';
@@ -44,13 +44,22 @@ function CourseViewPage() {
   const [loading, setLoading] = useState(true);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [theaterMode, setTheaterMode] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'reviews'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'reviews' | 'resources'>('overview');
   const [reviews, setReviews] = useState<CourseReview[]>([]);
   const [newReview, setNewReview] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [isDownloaded, setIsDownloaded] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [checkingAccess, setCheckingAccess] = useState(true);
+
+  const isExpired = useMemo(() => {
+    if (!course?.expiresInDays) return false;
+    const expiryDate = new Date(course.createdAt);
+    expiryDate.setDate(expiryDate.getDate() + course.expiresInDays);
+    return new Date() > expiryDate;
+  }, [course]);
   
   // Video Player State
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -72,9 +81,38 @@ function CourseViewPage() {
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(err => console.error('SW failed:', err));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (course?.id) {
+      const saved = localStorage.getItem(`offline_${course.id}`);
+      if (saved === 'true') {
+        setIsDownloaded(true);
+        setSyncProgress(100);
+      }
+    }
+  }, [course?.id]);
+
+  useEffect(() => {
     let unsubReviews: (() => void) | undefined;
     
     async function loadData() {
+      // 1. Try to load from Local Offline Vault first (Instant Load)
+      const offlineKey = `offline_data_${slug}`;
+      const cached = localStorage.getItem(offlineKey);
+      if (cached) {
+        try {
+          const { course: c, chapters: chs } = JSON.parse(cached);
+          setCourse(c);
+          setChapters(chs);
+          if (chs.length > 0) setActiveChapter(chs[0]);
+          setLoading(false); // Immediate transition
+        } catch (e) { console.error('Cache corrupt:', e); }
+      }
+
       try {
         const c = await DbService.getCourse(slug);
         if (c) {
@@ -82,9 +120,14 @@ function CourseViewPage() {
           const ch = await DbService.getChapters(c.id);
           setCourse(c);
           setChapters(ch);
-          if (ch.length > 0) setActiveChapter(ch[0]);
+          if (ch.length > 0 && !activeChapter) setActiveChapter(ch[0]);
 
           unsubReviews = DbService.subscribeToCourseReviews(c.id, setReviews);
+
+          // Silently update cache if already in offline mode
+          if (localStorage.getItem(`offline_${c.id}`) === 'true') {
+            localStorage.setItem(offlineKey, JSON.stringify({ course: c, chapters: ch }));
+          }
 
           if (currentUser) {
             const following = await DbService.isFollowing(currentUser.id, c.userId);
@@ -243,6 +286,62 @@ function CourseViewPage() {
     catch (e) { toast.error('Failed to delete'); }
   };
 
+  const handleShare = async () => {
+    if (!course) return;
+    const shareData = {
+      title: course.title,
+      text: `Elevate your mastery with ${course.title} by ${course.profiles?.fullName} on EduNook.`,
+      url: window.location.href,
+    };
+    try {
+      if (navigator.share) await navigator.share(shareData);
+      else { await navigator.clipboard.writeText(window.location.href); toast.success('Link copied to clipboard'); }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDownload = async () => {
+    if (!course) return;
+    if (isDownloaded) return toast.success('Course already available in your Offline Vault.');
+    
+    // Immediate feedback
+    const syncToastId = toast.loading('Initializing Secure Vault...');
+
+    try {
+      const cache = await caches.open('edunook-vault-v1');
+      const modulesToSync = chapters.filter(ch => ch.videoUrl || ch.pageUrl);
+      
+      if (modulesToSync.length === 0) {
+        toast.dismiss(syncToastId);
+        return toast.error('No downloadable content found in this course.');
+      }
+
+      let count = 0;
+      for (const ch of modulesToSync) {
+        const url = ch.videoUrl || ch.pageUrl;
+        if (!url) continue;
+
+        try {
+          // Real physical caching
+          const response = await fetch(url, { mode: 'no-cors' }); 
+          await cache.put(url, response);
+          count++;
+          setSyncProgress(Math.round((count / modulesToSync.length) * 100));
+          toast.loading(`Syncing: ${ch.title} (${Math.round((count / modulesToSync.length) * 100)}%)`, { id: syncToastId });
+        } catch (err) {
+          console.warn(`Sync skipped for ${ch.title}:`, err);
+        }
+      }
+
+      setIsDownloaded(true);
+      localStorage.setItem(`offline_${course.id}`, 'true');
+      localStorage.setItem(`offline_data_${slug}`, JSON.stringify({ course, chapters }));
+      toast.success('Course 100% Offline Ready!', { id: syncToastId });
+    } catch (e) {
+      toast.error('Vault access error. Please check browser permissions.', { id: syncToastId });
+      console.error(e);
+    }
+  };
+
   const resetControlsTimeout = () => {
     setShowControls(true);
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
@@ -258,11 +357,18 @@ function CourseViewPage() {
     if (!currentUser) return toast.error('Please sign in to enroll');
     try {
       setCheckingAccess(true);
-      await DbService.enrollInCourse(course.id, currentUser.id);
+      
+      // Simulated Payment Flow
+      const loadingToast = toast.loading('Initializing secure payment gateway...');
+      await new Promise(r => setTimeout(r, 1500));
+      toast.loading('Processing payment...', { id: loadingToast });
+      await new Promise(r => setTimeout(r, 2000));
+      
+      await DbService.enrollInCourse(course!.id, currentUser.id);
       setIsEnrolled(true);
-      toast.success('Successfully enrolled! Welcome to the journey.');
+      toast.success('Payment Successful! Welcome to the cohort.', { id: loadingToast });
     } catch (err) {
-      toast.error('Enrollment failed. Please try again.');
+      toast.error('Transaction failed. Please try again.');
     } finally {
       setCheckingAccess(false);
     }
@@ -429,32 +535,47 @@ function CourseViewPage() {
                             Enroll for ₹{course.price} <IndianRupee className="w-3.5 h-3.5 md:w-4 h-4" />
                          </button>
                       </div>
-                   ) : (
-                      <div className="relative z-10 flex flex-col items-center justify-center gap-4 md:gap-8 w-full max-w-xs md:max-w-md text-center">
-                        <div className="p-6 md:p-12 bg-primary/5 rounded-[2rem] md:rounded-[3rem] border border-primary/10 shadow-[0_0_50px_rgba(var(--primary-rgb),0.1)]">
-                           {activeChapter?.type === 'quiz' ? <FileQuestion className="w-10 h-10 md:w-20 md:h-20 text-primary" /> : <ExternalLink className="w-10 h-10 md:w-20 md:h-20 text-primary" />}
+                    ) : (
+                      <div className="relative z-10 flex flex-col items-center justify-center gap-6 md:gap-10 w-full max-w-2xl text-center px-4">
+                        <div className="relative w-full p-8 md:p-16 bg-gradient-to-b from-white/[0.03] to-transparent border border-white/10 rounded-[3rem] shadow-2xl overflow-hidden group/launch">
+                           <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover/launch:opacity-100 transition-opacity duration-1000" />
+                           
+                           <div className="relative z-10 flex flex-col items-center gap-6">
+                              <div className="w-20 h-20 md:w-28 md:h-28 bg-primary/10 rounded-[2rem] md:rounded-[2.5rem] border border-primary/20 flex items-center justify-center text-primary shadow-[0_0_50px_rgba(var(--primary-rgb),0.2)] group-hover/launch:scale-110 transition-transform duration-500">
+                                 {activeChapter?.type === 'quiz' ? <FileQuestion className="w-10 h-10 md:w-14 md:h-14" /> : <Rocket className="w-10 h-10 md:w-14 md:h-14" />}
+                              </div>
+                              
+                              <div className="space-y-3">
+                                 <h2 className="text-2xl md:text-4xl font-black text-white leading-none tracking-tighter uppercase">{activeChapter?.title}</h2>
+                                 <div className="flex items-center justify-center gap-3">
+                                    <span className="px-3 py-1 bg-white/5 border border-white/10 rounded-full text-[9px] font-black text-muted-foreground uppercase tracking-widest">External Workspace</span>
+                                    <div className="w-1 h-1 rounded-full bg-white/20" />
+                                    <span className="text-[9px] font-black text-primary uppercase tracking-widest">{activeChapter?.type} Module</span>
+                                 </div>
+                              </div>
+
+                              <p className="text-muted-foreground font-medium text-xs md:text-sm leading-relaxed max-w-md mx-auto opacity-60">This module requires an specialized environment. Click below to launch your dedicated instance.</p>
+                              
+                              <a 
+                                href={launchUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => {
+                                  if (launchUrl === '#') {
+                                    e.preventDefault();
+                                    toast.error("Module workspace URL not found.");
+                                    return;
+                                  }
+                                  if (document.fullscreenElement) document.exitFullscreen();
+                                }}
+                                className="mt-4 w-full md:w-auto px-12 md:px-16 py-4 md:py-5 bg-white text-black rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-[0.2em] shadow-[0_20px_40px_rgba(255,255,255,0.1)] hover:scale-[1.03] active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+                              >
+                                 Go to Workspace <ExternalLink className="w-4 h-4" />
+                              </a>
+                           </div>
                         </div>
-                        <div className="space-y-1 md:space-y-4 px-4">
-                           <h2 className="text-lg md:text-2xl font-black text-white leading-tight tracking-tight">{activeChapter?.title}</h2>
-                           <p className="text-muted-foreground font-medium text-[10px] md:text-sm leading-relaxed opacity-70">This module requires an external workspace. Access it below to continue your journey.</p>
-                        </div>
-                        <a 
-                           href={launchUrl}
-                           target="_blank"
-                           rel="noopener noreferrer"
-                           onClick={(e) => {
-                             if (launchUrl === '#') {
-                               e.preventDefault();
-                               toast.error("Module workspace URL not found for this chapter.");
-                               return;
-                             }
-                             if (document.fullscreenElement) document.exitFullscreen();
-                           }}
-                           className="w-full md:w-auto px-8 md:px-14 py-4 md:py-5 bg-primary text-white rounded-full md:rounded-[2rem] font-black text-[9px] md:text-xs uppercase tracking-[0.2em] shadow-2xl shadow-primary/30 hover:scale-[1.03] active:scale-[0.98] transition-all flex items-center justify-center gap-3">
-                           <Rocket className="w-4 h-4 md:w-5 md:h-5" /> Launch Module <ExternalLink className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                        </a>
                       </div>
-                   )}
+                    )}
                 </div>
             )}
           </div>
@@ -471,53 +592,50 @@ function CourseViewPage() {
                   </button>
               </div>
               <div className="flex items-center gap-3 md:gap-5 pr-2 md:pr-4">
-                  <button onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success('Link Copied!'); }} className="p-1.5 md:p-3 bg-white/5 border border-white/5 rounded-xl md:rounded-2xl hover:bg-white/10 transition-all text-white/60 hover:text-white">
+                  <button onClick={handleShare} className="p-1.5 md:p-3 bg-white/5 border border-white/5 rounded-xl md:rounded-2xl hover:bg-white/10 transition-all text-white/60 hover:text-white" title="Share Course">
                       <Share2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
                   </button>
-                  <button className="p-1.5 md:p-3 bg-white/5 border border-white/5 rounded-xl md:rounded-2xl hover:bg-white/10 transition-all text-white/60 hover:text-white">
-                      <Download className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                  </button>
+                   <button 
+                     onClick={handleDownload} 
+                     className={`p-1.5 md:p-3 rounded-xl md:rounded-2xl transition-all flex items-center gap-2 group/sync ${isDownloaded ? 'bg-emerald-500/20 border border-emerald-500/20 text-emerald-500' : 'bg-white/5 border border-white/5 text-white/60 hover:bg-white/10 hover:text-white'}`} 
+                     title={isDownloaded ? 'Course Synced Offline' : 'Sync for Offline'}
+                   >
+                       {isDownloaded ? <CheckCircle className="w-3.5 h-3.5 md:w-4 md:h-4" /> : <Download className="w-3.5 h-3.5 md:w-4 md:h-4 group-hover/sync:animate-bounce" />}
+                       {syncProgress > 0 && syncProgress < 100 && (
+                          <span className="text-[8px] font-black">{syncProgress}%</span>
+                       )}
+                   </button>
               </div>
           </div>
 
-          {/* Core Info */}
-          <div className={`p-6 md:p-12 lg:p-16 ${theaterMode ? 'max-w-7xl' : 'max-w-5xl'} mx-auto w-full space-y-12 md:space-y-16 pb-40`}>
-             
+          <div className={`p-4 md:p-10 lg:p-16 ${theaterMode ? 'max-w-[1800px]' : 'max-w-[1600px]'} mx-auto w-full space-y-12 md:space-y-24 pb-40`}>
              {/* Header */}
-             <div className="space-y-6 md:space-y-10">
-                <div className="flex flex-wrap items-center gap-3 md:gap-4">
-                    <div className="flex items-center gap-2.5 px-4 md:px-6 py-2 md:py-3 bg-primary/10 border border-primary/20 rounded-[1rem] md:rounded-[1.25rem] text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] text-primary">
-                        <Trophy className="w-3.5 h-3.5 md:w-4 md:h-4" /> Professional Tier
+             <div className="space-y-6 md:space-y-12">
+                <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <span className="px-4 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-black text-primary uppercase tracking-[0.2em] shadow-lg shadow-primary/5">Batch 01</span>
+                        <span className="flex items-center gap-2 text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40"><Rocket className="w-3 h-3" /> {course.category}</span>
                     </div>
-                    <span className="px-4 md:px-6 py-2 md:py-3 bg-white/5 border border-white/10 rounded-[1rem] md:rounded-[1.25rem] text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">{course.category}</span>
+                    <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white uppercase tracking-tighter leading-[0.9]">{course.title}</h1>
                 </div>
-                <h1 className="text-3xl md:text-6xl lg:text-7xl xl:text-8xl 2xl:text-9xl font-black tracking-tighter text-white leading-[0.85]">{course.title}</h1>
-                
-                {/* Publisher Card */}
-                <motion.div 
-                   initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                   className="relative group p-4 md:p-8 bg-gradient-to-br from-white/[0.05] to-transparent border border-white/10 rounded-[2rem] md:rounded-[3rem] overflow-hidden flex flex-col md:flex-row items-center justify-between gap-8"
-                >
-                    <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700 blur-3xl -z-10" />
+
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col md:flex-row md:items-center justify-between gap-8 md:gap-12 p-6 md:p-10 bg-white/[0.02] border border-white/5 rounded-[2rem] md:rounded-[3rem] backdrop-blur-3xl relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
                     
-                    <Link to="/$username" params={{ username: course.profiles?.username || '' }} className="flex items-center gap-5 md:gap-6 w-full md:w-auto">
-                        <div className="relative shrink-0">
-                            <div className="w-14 h-14 md:w-24 md:h-24 rounded-[1.25rem] md:rounded-[2rem] bg-black border border-white/10 flex items-center justify-center overflow-hidden shadow-2xl transition-transform duration-500 group-hover:scale-105 group-hover:rotate-2">
-                                {course.profiles?.avatarUrl ? <img src={optimizeCloudinaryUrl(course.profiles.avatarUrl, 200)} className="w-full h-full object-cover" alt="" /> : <User className="w-7 h-7 md:w-10 md:h-10 text-primary/40" />}
-                            </div>
-                            <div className="absolute -bottom-1 -right-1 bg-primary p-1 md:p-1.5 rounded-lg md:rounded-xl border-2 md:border-4 border-[#050505] shadow-lg">
-                                <Sparkles className="w-2.5 h-2.5 md:w-3 md:h-3 text-white fill-white" />
-                            </div>
+                    <Link to="/$username" params={{ username: course.profiles?.username || '' }} className="flex items-center gap-5 md:gap-6 relative z-10">
+                        <div className="w-16 h-16 md:w-20 md:h-20 rounded-[1.5rem] md:rounded-[2rem] border-2 border-white/10 overflow-hidden group-hover:border-primary/40 transition-all duration-700">
+                            {course.profiles?.avatarUrl ? (
+                               <img src={optimizeCloudinaryUrl(course.profiles.avatarUrl, 200)} className="w-full h-full object-cover" alt="" />
+                            ) : (
+                               <div className="w-full h-full bg-primary/10 flex items-center justify-center"><User className="w-8 h-8 text-primary/40" /></div>
+                            )}
                         </div>
-                        <div className="flex flex-col min-w-0">
-                            <div className="flex items-center gap-2 md:gap-3">
-                                <span className="text-base md:text-2xl font-black text-white tracking-tight truncate">{course.profiles?.fullName}</span>
-                                <VerificationTick planId={course.profiles?.subscription?.planId} size={18} />
-                            </div>
-                            <div className="flex items-center gap-2 md:gap-3 mt-1">
-                                <span className="text-[8px] md:text-[10px] font-black text-primary uppercase tracking-[0.2em]">{course.profiles?.subscription?.planId || 'Educator'} Mastery</span>
+                        <div className="space-y-1">
+                            <h3 className="text-xl md:text-2xl font-black text-white leading-none tracking-tight">{course.profiles?.fullName}</h3>
+                            <div className="flex items-center gap-3">
+                                <span className="text-[10px] md:text-[11px] font-black text-primary uppercase tracking-[0.2em]">Course Director</span>
                                 <div className="w-1 h-1 rounded-full bg-white/20" />
-                                <span className="text-[8px] md:text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] whitespace-nowrap">{course.profiles?.followersCount || 0} Learners</span>
+                                <span className="text-[10px] md:text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40">{course.profiles?.username}</span>
                             </div>
                         </div>
                     </Link>
@@ -535,47 +653,126 @@ function CourseViewPage() {
                 </motion.div>
              </div>
 
-             {/* Content */}
-             <div className="space-y-6 md:space-y-12">
-                <div className="flex items-center gap-6 md:gap-8 border-b border-white/5 overflow-x-auto no-scrollbar">
-                    {['overview', 'reviews'].map((t) => (
-                       <button key={t} onClick={() => setActiveTab(t as any)} className={`relative pb-3 md:pb-6 text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] transition-all flex items-center gap-2 ${activeTab === t ? 'text-primary' : 'text-muted-foreground hover:text-white'}`}>
-                          {t} {t === 'reviews' && <span className="px-2 py-0.5 bg-white/5 rounded-lg text-[8px] opacity-40">{reviews.length}</span>}
-                          {activeTab === t && <motion.div layoutId="tab-underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.5)]" />}
-                       </button>
-                    ))}
+             <div className="flex flex-col gap-16 md:gap-24">
+                {/* Custom Tabs */}
+                <div className="flex items-center gap-8 md:gap-14 border-b border-white/5 pb-2">
+                   {['overview', 'reviews'].map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab as any)}
+                        className={`relative pb-6 text-[11px] md:text-[13px] font-black uppercase tracking-[0.3em] transition-all ${
+                          activeTab === tab ? 'text-primary' : 'text-muted-foreground/40 hover:text-white'
+                        }`}
+                      >
+                         <div className="flex items-center gap-3">
+                            {tab === 'overview' && <BookOpen className="w-4 h-4" />}
+                            {tab === 'reviews' && <MessageCircle className="w-4 h-4" />}
+                            {tab}
+                         </div>
+                         {activeTab === tab && (
+                            <motion.div layoutId="tab-active" className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full shadow-[0_0_15px_rgba(var(--primary-rgb),0.5)]" />
+                         )}
+                      </button>
+                   ))}
                 </div>
 
                 <AnimatePresence mode="wait">
-                   {activeTab === 'overview' ? (
-                     <motion.div key="ov" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-20">
-                        <div className="space-y-6 md:space-y-10">
-                           <h3 className="text-[10px] md:text-xs font-black uppercase tracking-[0.4em] text-primary">The Syllabus</h3>
-                           <p className="text-sm md:text-[20px] text-muted-foreground leading-relaxed font-medium opacity-80 whitespace-pre-wrap">{course.description || "Master the core principles and professional execution of this curriculum in a high-intensity learning environment."}</p>
-                           <div className="flex flex-wrap gap-6 md:gap-10">
-                               <div className="flex flex-col"><span className="text-xl md:text-3xl font-black text-white">{chapters.length}</span><span className="text-[8px] md:text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1 opacity-40">Modules</span></div>
-                               <div className="flex flex-col"><span className="text-xl md:text-3xl font-black text-white">4.9</span><span className="text-[8px] md:text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1 opacity-40">Global Rating</span></div>
-                               <div className="flex flex-col"><span className="text-xl md:text-3xl font-black text-white">20h</span><span className="text-[8px] md:text-[9px] font-black text-muted-foreground uppercase tracking-widest mt-1 opacity-40">Total Content</span></div>
-                           </div>
-                        </div>
-                        <div className="p-6 md:p-14 bg-[#0a0a0a] border border-white/5 rounded-[2.5rem] md:rounded-[4rem] shadow-3xl space-y-6 md:space-y-10">
-                           <h3 className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/60">Learning Outcomes</h3>
-                           <div className="space-y-6 md:space-y-8">
-                              {[
-                                { t: 'Executive Certificate', d: 'Earn a globally recognized credential.' },
-                                { t: 'Industry Standard Tools', d: 'Master the tech used by professionals.' },
-                                { t: 'Lifetime Access', d: 'Always return to refreshed content.' }
-                              ].map((item, i) => (
-                                <div key={i} className="flex gap-4 md:gap-6">
-                                  <div className="mt-1 w-6 h-6 md:w-7 md:h-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xl shrink-0"><CheckCircle className="w-3.5 h-3.5 md:w-4 md:h-4" /></div>
-                                  <div className="space-y-1"><p className="text-[13px] md:text-[15px] font-black text-white">{item.t}</p><p className="text-[9px] md:text-xs font-medium text-muted-foreground opacity-50">{item.d}</p></div>
+                    {activeTab === 'overview' ? (
+                      <motion.div 
+                        key="ov" 
+                        initial={{ opacity: 0, x: -10 }} 
+                        animate={{ opacity: 1, x: 0 }} 
+                        exit={{ opacity: 0, x: 10 }} 
+                        className="grid grid-cols-1 2xl:grid-cols-2 gap-16 md:gap-24"
+                      >
+                         <div className="space-y-12">
+                            <div className="space-y-8">
+                               <div className="space-y-4">
+                                  <h3 className="text-[10px] md:text-xs font-black uppercase tracking-[0.4em] text-primary">The Syllabus</h3>
+                                  <p className="text-base md:text-lg lg:text-xl text-white/70 leading-relaxed font-medium whitespace-pre-wrap">{course.description || "Master the core principles of this curriculum through expert-led modules and hands-on professional execution."}</p>
+                               </div>
+
+                               <div className="space-y-6 pt-4">
+                                  <h4 className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/40">Curriculum Breakdown</h4>
+                                  <div className="space-y-4">
+                                     {chapters.map((ch, i) => (
+                                        <div key={ch.id} className="flex items-center gap-4 group/item">
+                                           <span className="text-[10px] font-black text-primary/40 w-5">{(i+1).toString().padStart(2, '0')}</span>
+                                           <div className="flex-1 h-px bg-white/5 group-hover/item:bg-primary/20 transition-colors" />
+                                           <span className="text-xs md:text-sm font-bold text-white/60 group-hover/item:text-white transition-colors">{ch.title}</span>
+                                        </div>
+                                     ))}
+                                  </div>
+                               </div>
+                            </div>
+                            
+                            {/* Course Meta Specs */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 2xl:grid-cols-2 gap-8 md:gap-12 py-10 border-y border-white/5">
+                                <div className="flex flex-col gap-2">
+                                   <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Language</span>
+                                   <span className="text-sm md:text-base font-black text-white uppercase tracking-tight flex items-center gap-2.5"><Globe className="w-4 h-4 text-primary" /> {course.language || 'English'}</span>
                                 </div>
-                              ))}
+                                <div className="flex flex-col gap-2">
+                                   <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Release Date</span>
+                                   <span className="text-sm md:text-base font-black text-white uppercase tracking-tight">{new Date(course.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                   <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Verified Views</span>
+                                   <span className="text-sm md:text-base font-black text-white uppercase tracking-tight flex items-center gap-2.5"><Eye className="w-4 h-4 text-primary" /> {course.views?.toLocaleString() || '0'}</span>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                   <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Access Term</span>
+                                   <span className="text-sm md:text-base font-black text-white uppercase tracking-tight">{course.expiresInDays ? `${course.expiresInDays} Days` : 'Lifetime Access'}</span>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-10 md:gap-16 pt-4">
+                                <div className="flex flex-col gap-1"><span className="text-4xl md:text-5xl font-black text-white">{chapters.length}</span><span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Modules</span></div>
+                                <div className="flex flex-col gap-1"><span className="text-4xl md:text-5xl font-black text-white">{course.price > 0 ? 'PAID' : 'FREE'}</span><span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Access</span></div>
+                            </div>
+                         </div>
+                         <div className="space-y-12">
+                            <div className="p-8 md:p-14 bg-white/[0.03] border border-white/10 rounded-[3rem] shadow-3xl space-y-10 relative overflow-hidden">
+                               <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 blur-[100px] rounded-full" />
+                               <h3 className="text-[10px] md:text-xs font-black uppercase tracking-[0.4em] text-muted-foreground/60">Professional Outcomes</h3>
+                               <div className="space-y-8">
+                                  {[
+                                    { t: 'Industry-Standard Proficiency', d: 'Master the core workflows and tooling used by elite production teams.' },
+                                    { t: 'Strategic Architecture', d: 'Develop the capacity to design and scale complex technical solutions.' },
+                                    { t: 'Career Acceleration', d: 'Bridge the gap between theoretical knowledge and senior-level execution.' }
+                                  ].map((item, i) => (
+                                    <div key={i} className="flex gap-6 relative z-10">
+                                      <div className="mt-1 w-8 h-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shadow-xl shrink-0"><CheckCircle className="w-4 h-4" /></div>
+                                      <div className="space-y-1.5">
+                                         <p className="text-base md:text-lg font-black text-white">{item.t}</p>
+                                         <p className="text-xs font-medium text-muted-foreground/60 leading-relaxed">{item.d}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                               </div>
+                            </div>
+
+                           {/* Certificate Preview */}
+                           <div className="group relative p-8 md:p-12 bg-gradient-to-br from-primary/10 to-transparent border border-primary/20 rounded-[2.5rem] md:rounded-[3rem] overflow-hidden flex flex-col gap-6">
+                              <div className="flex items-center gap-4">
+                                 <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center text-primary"><Award className="w-6 h-6" /></div>
+                                 <div>
+                                    <h4 className="text-sm md:text-lg font-black text-white uppercase tracking-tighter">Certification of Mastery</h4>
+                                    <p className="text-[10px] text-primary font-bold uppercase tracking-widest">Included with enrollment</p>
+                                 </div>
+                              </div>
+                              <p className="text-xs md:text-sm text-muted-foreground/60 leading-relaxed font-medium">Showcase your achievement to the world. Upon completion, receive a cryptographically verified certificate linked to your professional profile.</p>
+                              <div className="relative aspect-[1.414/1] w-full bg-white/5 rounded-2xl border border-white/10 flex items-center justify-center group-hover:scale-[1.02] transition-transform duration-700">
+                                 <div className="flex flex-col items-center gap-2 opacity-20 group-hover:opacity-40 transition-opacity">
+                                    <Trophy className="w-12 h-12" />
+                                    <span className="text-[10px] font-black uppercase tracking-[0.3em]">EduNook Verified</span>
+                                 </div>
+                              </div>
                            </div>
                         </div>
                      </motion.div>
-                   ) : (
-                     <motion.div key="rv" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-8 md:space-y-12">
+                    ) : (
+                      <motion.div key="rv" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-8 md:space-y-12">
                         {currentUser && (
                            <div className="p-5 md:p-10 bg-white/5 border border-white/5 rounded-[2rem] md:rounded-[3rem] space-y-6 md:space-y-8">
                               <div className="flex items-center gap-4 md:gap-5">
@@ -641,15 +838,43 @@ function CourseViewPage() {
           </div>
         </div>
 
-        {/* Sidebar */}
+         {/* Sidebar */}
         {!theaterMode && (
-          <aside className="w-full xl:w-[380px] 2xl:w-[450px] xl:sticky xl:top-0 h-fit xl:h-screen bg-black border-l border-white/5 xl:overflow-y-auto z-40">
-            <div className="p-6 md:p-12 border-b border-white/5 bg-gradient-to-br from-white/[0.03] to-transparent">
-              <div className="flex items-center justify-between mb-2">
-                 <h2 className="text-xl md:text-3xl font-black text-white uppercase tracking-tighter flex items-center gap-4"><BookOpen className="w-6 h-6 md:w-8 md:h-8 text-primary" /> Journey</h2>
-                 <span className="px-3 py-1 bg-primary/10 border border-primary/20 rounded-lg text-[9px] font-black text-primary uppercase tracking-widest">{chapters.length} Parts</span>
+          <aside className="w-full xl:w-[380px] 2xl:w-[450px] xl:sticky xl:top-0 h-fit xl:h-screen bg-black border-l border-white/5 xl:overflow-y-auto z-40 no-scrollbar">
+            <div className="p-6 md:p-10 border-b border-white/5 bg-gradient-to-br from-white/[0.03] to-transparent relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 blur-3xl rounded-full -translate-y-1/2 translate-x-1/2" />
+              
+              <div className="flex items-center justify-between mb-6 relative z-10">
+                 <h2 className="text-xl md:text-2xl font-black text-white uppercase tracking-tighter flex items-center gap-3"><Monitor className="w-6 h-6 text-primary" /> Playlist</h2>
+                 <div className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Mastery Tracking</span>
+                 </div>
               </div>
-              <p className="text-[9px] md:text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40">Complete the syllabus to unlock certification</p>
+
+              {/* Progress System */}
+              <div className="space-y-4 relative z-10">
+                 <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-60">Your Progress</span>
+                    <span className="text-[10px] font-black text-white uppercase tracking-widest">{Math.round((chapters.findIndex(c => c.id === activeChapter?.id) / chapters.length) * 100)}%</span>
+                 </div>
+                 <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${(chapters.findIndex(c => c.id === activeChapter?.id) / chapters.length) * 100}%` }}
+                      className="h-full bg-gradient-to-r from-primary to-accent shadow-[0_0_15px_rgba(var(--primary-rgb),0.5)]"
+                    />
+                 </div>
+                 <div className="flex items-center gap-2 pt-2">
+                    <div className="flex -space-x-2">
+                       {[1,2,3].map(i => (
+                         <div key={i} className="w-5 h-5 rounded-full border-2 border-black bg-muted" />
+                       ))}
+                       <div className="w-5 h-5 rounded-full border-2 border-black bg-primary flex items-center justify-center text-[7px] font-black text-white">+8</div>
+                    </div>
+                    <span className="text-[8px] font-black text-muted-foreground/60 uppercase tracking-widest ml-1">Learning with you</span>
+                 </div>
+              </div>
             </div>
             
             <div className="p-4 md:p-8 space-y-4 pb-40">
@@ -658,27 +883,27 @@ function CourseViewPage() {
                  const uniqueKey = ch.id || `chapter-${i}`;
                  return (
                    <button key={uniqueKey} onClick={() => { setActiveChapter(ch); setHasStarted(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                     className={`w-full group relative rounded-[2rem] md:rounded-[2.5rem] p-4 md:p-6 transition-all text-left flex items-center gap-4 md:gap-6 border ${active ? 'bg-primary/10 border-primary/40 shadow-2xl' : 'border-transparent hover:bg-white/[0.03] hover:border-white/5'}`}>
-                      <div className={`w-12 h-12 md:w-16 md:h-16 rounded-[1.25rem] md:rounded-[1.5rem] flex items-center justify-center transition-all duration-700 shrink-0 ${active ? 'bg-primary text-white scale-110 shadow-[0_15px_30px_rgba(var(--primary-rgb),0.5)]' : 'bg-white/5 text-muted-foreground group-hover:bg-white/10 group-hover:text-white'}`}>
-                         {active ? <Sparkles className="w-6 h-6 md:w-8 md:h-8 animate-pulse" /> : (
-                            ch.isFreeDemo ? <PlayCircle className="w-6 h-6 md:w-8 md:h-8 text-emerald-500 opacity-60 group-hover:opacity-100 transition-opacity" /> : <span className="text-xs md:text-sm font-black opacity-30">{(i+1).toString().padStart(2,'0')}</span>
+                     className={`w-full group relative rounded-2xl md:rounded-[1.75rem] p-3 md:p-4 transition-all text-left flex items-center gap-3 md:gap-4 border ${active ? 'bg-primary/10 border-primary/30 shadow-lg' : 'border-transparent hover:bg-white/[0.02] hover:border-white/5'}`}>
+                      <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-[1rem] flex items-center justify-center transition-all duration-500 shrink-0 ${active ? 'bg-primary text-white scale-105 shadow-[0_8px_20px_rgba(var(--primary-rgb),0.3)]' : 'bg-white/5 text-muted-foreground group-hover:bg-white/10 group-hover:text-white'}`}>
+                         {active ? <Sparkles className="w-5 h-5 md:w-6 md:h-6 animate-pulse" /> : (
+                            ch.isFreeDemo ? <PlayCircle className="w-5 h-5 md:w-6 md:h-6 text-emerald-500 opacity-60 group-hover:opacity-100 transition-opacity" /> : <span className="text-[10px] md:text-xs font-black opacity-30">{(i+1).toString().padStart(2,'0')}</span>
                          )}
                       </div>
-                      <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex-1 min-w-0 space-y-0.5">
                          <div className="flex items-center gap-2">
-                            <p className={`text-sm md:text-[17px] font-black truncate transition-colors ${active ? 'text-white' : 'text-muted-foreground group-hover:text-white'}`}>{ch.title}</p>
+                            <p className={`text-xs md:text-[14px] font-black truncate transition-colors ${active ? 'text-white' : 'text-muted-foreground group-hover:text-white'}`}>{ch.title}</p>
                             {ch.isFreeDemo && !isEnrolled && (
-                               <span className="px-1.5 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded-md text-[7px] md:text-[8px] font-black text-emerald-500 uppercase tracking-widest whitespace-nowrap">Demo</span>
+                               <span className="px-1.5 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded-md text-[6px] md:text-[7px] font-black text-emerald-500 uppercase tracking-widest whitespace-nowrap">Free</span>
                             )}
                          </div>
                          <div className="flex items-center gap-2">
-                            <div className={`w-1 h-1 md:w-1.5 md:h-1.5 rounded-full ${active ? 'bg-primary animate-pulse shadow-[0_0_10px_var(--primary)]' : 'bg-white/10'}`} />
-                            <span className="text-[8px] md:text-[9px] font-black uppercase tracking-[0.15em] opacity-40 truncate">{ch.type === 'video' ? 'Video Masterclass' : 'Skill Assessment'}</span>
+                            <div className={`w-1 h-1 rounded-full ${active ? 'bg-primary animate-pulse' : 'bg-white/10'}`} />
+                            <span className="text-[7px] md:text-[8px] font-black uppercase tracking-[0.1em] opacity-30 truncate">{ch.type} Module</span>
                          </div>
                       </div>
                       {active && (
-                         <div className="flex gap-1 items-end h-3 md:h-4 pb-1 pr-1 md:pr-2 shrink-0">
-                            {[1, 2, 3].map(j => <motion.div key={j} animate={{ height: [4, 16, 4] }} transition={{ repeat: Infinity, duration: 1, delay: j*0.2 }} className="w-0.5 md:w-1 bg-primary rounded-full" />)}
+                         <div className="flex gap-0.5 items-end h-2 md:h-3 pb-1 pr-1 shrink-0">
+                            {[1, 2, 3].map(j => <motion.div key={j} animate={{ height: [3, 10, 3] }} transition={{ repeat: Infinity, duration: 1, delay: j*0.2 }} className="w-0.5 bg-primary rounded-full" />)}
                          </div>
                       )}
                    </button>

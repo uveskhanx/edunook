@@ -164,10 +164,10 @@ function TestsPage() {
             {/* QUICK STATS - Hide on mobile if too crowded or use 2x2 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
                {[
-                 { label: 'Assessments', val: tests.length, icon: LayoutGrid, color: 'text-primary' },
-                 { label: 'Educators', val: globalStats.experts, icon: ShieldCheck, color: 'text-emerald-400' },
-                 { label: 'Candidates', val: globalStats.enrollments, icon: Smile, color: 'text-blue-400' },
-                 { label: 'Certifications', val: globalStats.trophies, icon: Trophy, color: 'text-amber-400' },
+                 { label: 'Total Assessments', val: tests.length, icon: LayoutGrid, color: 'text-primary' },
+                 { label: 'Certified Educators', val: globalStats.experts, icon: ShieldCheck, color: 'text-emerald-400' },
+                 { label: 'Active Candidates', val: globalStats.enrollments, icon: Smile, color: 'text-blue-400' },
+                 { label: 'Academic Standing', val: globalStats.trophies, icon: Trophy, color: 'text-amber-400' },
                ].map((stat, i) => (
                  <motion.div 
                    key={i}
@@ -261,9 +261,6 @@ function TestsPage() {
                          <h3 className="text-lg md:text-5xl font-black text-white tracking-tight md:tracking-tighter group-hover:text-primary transition-colors leading-tight">
                            {test.title}
                          </h3>
-                         <p className="text-white/40 font-medium text-[10px] md:text-lg leading-relaxed line-clamp-1 md:line-clamp-none">
-                           {test.description || "Mission brief active."}
-                         </p>
                       </div>
 
                       {/* Actions Area - Better Mobile Arrangement */}
@@ -310,7 +307,7 @@ function CinematicQuizCreator({ isOpen, onClose }: { isOpen: boolean; onClose: (
     title: '',
     description: '',
     timeLimit: 10,
-    theme: 'dark' as 'dark' | 'neon' | 'gradient',
+    theme: 'dark' as 'dark' | 'neon' | 'emerald' | 'royal' | 'crimson',
     questions: [] as any[],
     activeStartAt: '',
     expiresAt: '',
@@ -465,16 +462,48 @@ function CinematicQuizCreator({ isOpen, onClose }: { isOpen: boolean; onClose: (
                           <input 
                             type="datetime-local"
                             value={quizData.expiresAt}
-                            onChange={e => setQuizData({ ...quizData, expiresAt: e.target.value })}
-                            className="w-full bg-white/[0.05] border border-white/10 rounded-xl py-4 px-5 text-base font-bold text-white focus:outline-none focus:border-rose-500/50 transition-all [color-scheme:dark]"
+                          className="w-full bg-white/[0.05] border border-white/10 rounded-xl py-4 px-5 text-base font-bold text-white focus:outline-none focus:border-rose-500/50 transition-all [color-scheme:dark]"
                           />
                        </div>
                     </div>
                  </div>
 
+                 {/* Visual Identity (Themes) */}
+                  <div className="space-y-6">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-2">🎨 Assessment Visual Identity (Themes)</Label>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                      {[
+                        { id: 'dark', label: 'Dark Arena', bg: 'bg-[#0a0a0a]', accent: 'bg-primary' },
+                        { id: 'neon', label: 'Cyber Neon', bg: 'bg-[#0f0a1f]', accent: 'bg-pink-500' },
+                        { id: 'emerald', label: 'Forest Green', bg: 'bg-[#050f05]', accent: 'bg-emerald-500' },
+                        { id: 'royal', label: 'Royal Gold', bg: 'bg-[#120a1a]', accent: 'bg-amber-500' },
+                        { id: 'crimson', label: 'Blood Red', bg: 'bg-[#1a0a0a]', accent: 'bg-rose-500' }
+                      ].map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => setQuizData({ ...quizData, theme: t.id as any })}
+                          className={`group relative p-4 rounded-2xl border transition-all overflow-hidden ${
+                            quizData.theme === t.id 
+                              ? 'border-white/40 ring-2 ring-white/20' 
+                              : 'border-white/5 hover:border-white/20'
+                          }`}
+                        >
+                          <div className={`w-full h-12 ${t.bg} rounded-lg mb-3 relative overflow-hidden border border-white/10`}>
+                             <div className={`absolute bottom-2 right-2 w-4 h-4 ${t.accent} rounded-full blur-[4px]`} />
+                             <div className={`absolute top-2 left-2 w-8 h-1 ${t.accent} rounded-full opacity-50`} />
+                          </div>
+                          <p className={`text-[9px] font-black uppercase tracking-widest text-center ${quizData.theme === t.id ? 'text-white' : 'text-white/30'}`}>{t.label}</p>
+                          {quizData.theme === t.id && (
+                             <motion.div layoutId="activeTheme" className="absolute inset-0 bg-white/5 pointer-events-none" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                  {/* Results Announcement */}
                  <div className="space-y-6">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-2">📊 Result Protocols</Label>
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-2">📊 Assessment Standing Protocol</Label>
                     <div className="grid grid-cols-2 gap-4">
                        <button
                           onClick={() => setQuizData({ ...quizData, resultAnnounceAt: 'immediate' })}
@@ -485,8 +514,8 @@ function CinematicQuizCreator({ isOpen, onClose }: { isOpen: boolean; onClose: (
                           }`}
                        >
                           <Zap className={`w-6 h-6 mb-3 ${quizData.resultAnnounceAt === 'immediate' ? 'text-emerald-400' : 'text-white/20'}`} />
-                          <p className="text-sm font-black text-white">Instant Reveal</p>
-                          <p className="text-[10px] text-white/30 font-bold mt-1">Standings update after each submission.</p>
+                          <p className="text-sm font-black text-white">Instant Feedback</p>
+                          <p className="text-[10px] text-white/30 font-bold mt-1">Standings are updated in real-time post-submission.</p>
                        </button>
                        <button
                           onClick={() => setQuizData({ ...quizData, resultAnnounceAt: '' })}

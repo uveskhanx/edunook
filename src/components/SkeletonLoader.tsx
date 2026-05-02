@@ -20,13 +20,22 @@ export function SkeletonLoader({ className = '', variant = 'rectangular' }: Skel
 
 export function CourseCardSkeleton() {
   return (
-    <div className="premium-glass rounded-[2rem] overflow-hidden border border-white/5 space-y-4 p-4">
-      <SkeletonLoader className="aspect-video w-full rounded-2xl" />
-      <div className="space-y-3 px-2">
-        <SkeletonLoader variant="text" className="w-3/4 h-6" />
-        <div className="flex justify-between items-center">
-          <SkeletonLoader variant="text" className="w-1/3" />
-          <SkeletonLoader variant="text" className="w-1/4 h-8 rounded-full" />
+    <div className="block space-y-3 md:space-y-4">
+      {/* Thumbnail Skeleton */}
+      <SkeletonLoader className="aspect-video w-full rounded-[1.5rem] border border-white/5" />
+      
+      {/* Info Area Skeleton */}
+      <div className="flex gap-3 md:gap-4 pt-1 px-1">
+        {/* Avatar Circle */}
+        <SkeletonLoader variant="circular" className="w-8 h-8 md:w-10 md:h-10 shrink-0" />
+        
+        {/* Text Lines */}
+        <div className="flex-1 space-y-2.5">
+          <SkeletonLoader variant="text" className="w-full h-4 rounded-md" />
+          <div className="space-y-1.5">
+            <SkeletonLoader variant="text" className="w-2/3 h-2.5 rounded-md opacity-40" />
+            <SkeletonLoader variant="text" className="w-1/3 h-2 rounded-md opacity-20" />
+          </div>
         </div>
       </div>
     </div>

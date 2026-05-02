@@ -73,8 +73,11 @@ export interface Course {
 export interface Message {
   id: string;
   senderId: string;
-  text: string;
+  text?: string;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'file';
   createdAt: string;
+  seen?: boolean;
 }
 
 export interface Video {
@@ -104,7 +107,7 @@ export interface TestRow {
   slug: string;
   timeLimit: number; // in minutes
   totalQuestions: number;
-  theme: 'dark' | 'neon' | 'gradient';
+  theme: 'dark' | 'neon' | 'emerald' | 'royal' | 'crimson';
   createdAt: string;
   activeStartAt?: string;
   expiresAt?: string;
@@ -131,6 +134,7 @@ export interface TestAttempt {
   completedAt: string;
   answers?: Record<string, number>;
   hintsUsed?: string[];
+  timeTaken?: number;
 }
 
 export interface Achievement {
@@ -763,6 +767,7 @@ export const DbService = {
     const settingsRef = ref(db, `user_settings/${userId}/deletedChats/${chatId}`);
     
     let deletedAtThreshold: string | null = null;
+    let deletedMessageIds: Record<string, boolean> = {};
     let latestMessagesSnapshot: any = null;
 
     const processMessages = () => {
@@ -773,6 +778,9 @@ export const DbService = {
         if (deletedAtThreshold) {
           msgList = msgList.filter(msg => msg.createdAt > deletedAtThreshold!);
         }
+
+        // Filter out individual messages deleted for me
+        msgList = msgList.filter(msg => !deletedMessageIds[msg.id]);
         
         callback(msgList.sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
       } else {
@@ -786,36 +794,45 @@ export const DbService = {
       processMessages();
     });
 
-    // Listen to deletion threshold in real-time
-    const unsubSettings = onValue(settingsRef, (snap) => {
+    // Listen to deletion threshold and individual deleted messages
+    const unsubSettings = onValue(ref(db, `user_settings/${userId}/deletedChats/${chatId}`), (snap) => {
       deletedAtThreshold = snap.exists() ? snap.val() : null;
+      processMessages();
+    });
+
+    const unsubDeletedMsgs = onValue(ref(db, `user_settings/${userId}/deletedMessages/${chatId}`), (snap) => {
+      deletedMessageIds = snap.exists() ? snap.val() : {};
       processMessages();
     });
     
     return () => {
-       unsubMsgs();
-       unsubSettings();
+        unsubMsgs();
+        unsubSettings();
+        unsubDeletedMsgs();
     };
   },
 
-  async sendMessage(chatId: string, senderId: string, text: string): Promise<void> {
-    const now = new Date().toISOString();
-    const participants = chatId.split('_');
-    const receiverId = participants.find(p => p !== senderId);
-
-    // 1. Save message
+  async sendMessage(chatId: string, senderId: string, text?: string, media?: { url: string, type: 'image' | 'video' | 'file' }): Promise<void> {
     const messagesRef = ref(db, `messages/${chatId}`);
     const newMessageRef = push(messagesRef);
+    const now = new Date().toISOString();
+
     await set(newMessageRef, {
+      id: newMessageRef.key,
       senderId,
-      text,
+      text: text || '',
+      mediaUrl: media?.url || null,
+      mediaType: media?.type || null,
       createdAt: now,
       seen: false
     });
 
+    const participants = chatId.split('_');
+    const receiverId = participants.find(p => p !== senderId);
+
     // 2. Update chat metadata and increment unread for receiver
     const updates: Record<string, any> = {};
-    updates[`chats/${chatId}/lastMessage`] = text;
+    updates[`chats/${chatId}/lastMessage`] = text || (media?.type === 'image' ? 'Sent an image' : 'Sent a file');
     updates[`chats/${chatId}/updatedAt`] = now;
     updates[`chats/${chatId}/lastSenderId`] = senderId;
     
@@ -828,6 +845,16 @@ export const DbService = {
         return (count || 0) + 1;
       });
     }
+  },
+
+  async unsendMessage(chatId: string, messageId: string): Promise<void> {
+    const msgRef = ref(db, `messages/${chatId}/${messageId}`);
+    await remove(msgRef);
+  },
+
+  async deleteMessageForMe(userId: string, chatId: string, messageId: string): Promise<void> {
+    const delRef = ref(db, `user_settings/${userId}/deletedMessages/${chatId}/${messageId}`);
+    await set(delRef, true);
   },
 
   async getOrCreateChat(uid1: string, uid2: string): Promise<string> {
@@ -895,6 +922,18 @@ export const DbService = {
     if (isTyping) {
       onDisconnect(typingRef).set(false);
     }
+  },
+
+  async uploadChatMedia(userId: string, file: File): Promise<{ url: string, type: 'image' | 'video' | 'file' }> {
+    const { uploadToCloudinary } = await import('./cloudinary');
+    let folder = `edunook/chat/${userId}`;
+    const result = await uploadToCloudinary(file, folder);
+    
+    let type: 'image' | 'video' | 'file' = 'file';
+    if (file.type.startsWith('image/')) type = 'image';
+    else if (file.type.startsWith('video/')) type = 'video';
+    
+    return { url: result.secure_url, type };
   },
 
   updatePresence(userId: string) {
@@ -1169,40 +1208,78 @@ export const DbService = {
   },
 
   // Leaderboards
-  async saveLeaderboardEntry(testId: string, uid: string, entry: { score: number; timeTaken: number; name: string; avatar?: string | null; hintsCount?: number }) {
-    const leaderboardRef = ref(db, `leaderboards/${testId}/${uid}`);
-    await set(leaderboardRef, {
+  async saveLeaderboardEntry(idOrSlug: string, uid: string, entry: { score: number; timeTaken: number; name: string; avatar?: string | null; hintsCount?: number }) {
+    if (!idOrSlug || !uid) return;
+
+    // 1. Resolve actual ID first 
+    let actualId = idOrSlug;
+    let slug = idOrSlug;
+    try {
+      const slugSnapshot = await get(ref(db, `test_slugs/${idOrSlug}`));
+      if (slugSnapshot.exists()) {
+        actualId = slugSnapshot.val();
+        slug = idOrSlug;
+      }
+    } catch (e) { }
+
+    const data = {
       ...entry,
       completedAt: new Date().toISOString()
-    });
+    };
+
+    const updates: Record<string, any> = {};
+    if (actualId) {
+        updates[`leaderboards/${actualId}/${uid}`] = data;
+    }
+    if (slug && slug !== actualId) {
+      updates[`leaderboards/${slug}/${uid}`] = data;
+    }
+    
+    // Check if we should actually update (Best score logic)
+    const snapshot = await get(ref(db, `leaderboards/${actualId}/${uid}`));
+    if (snapshot.exists()) {
+      const existing = snapshot.val();
+      if (entry.score < existing.score || (entry.score === existing.score && entry.timeTaken >= existing.timeTaken)) {
+        return; 
+      }
+    }
+
+    await update(ref(db), updates);
   },
 
-  subscribeToLeaderboard(testId: string, callback: (rankings: any[], error?: any) => void) {
-    const leaderboardRef = ref(db, `leaderboards/${testId}`);
-    return onValue(leaderboardRef, (snapshot) => {
+  subscribeToLeaderboard(testId: string, callback: (rankings: any[], error?: any) => void, slug?: string) {
+    // Perform a deep-scan across the leaderboard node to find contenders
+    const rootRef = ref(db, 'leaderboards');
+    return onValue(rootRef, (snapshot) => {
       if (snapshot.exists()) {
-        const data = snapshot.val();
-        const list = Object.keys(data).map(uid => ({ 
-          uid, 
-          ...data[uid],
-          score: data[uid].score ?? 0,
-          timeTaken: data[uid].timeTaken ?? 9999,
-          completedAt: data[uid].completedAt || new Date(0).toISOString()
-        }));
+        const allData = snapshot.val() || {};
         
-        // Sort: 1. Score (Desc), 2. Time Taken (Asc), 3. CompletedAt (Asc)
-        list.sort((a, b) => {
-          if (b.score !== a.score) return b.score - a.score;
-          if (a.timeTaken !== b.timeTaken) return a.timeTaken - b.timeTaken;
-          return (a.completedAt || "").localeCompare(b.completedAt || "");
-        });
+        // Find the correct standings node (could be ID or Slug)
+        const standingsNode = allData[testId] || (slug ? allData[slug] : null);
         
-        callback(list);
+        if (standingsNode) {
+          const list = Object.keys(standingsNode).map(uid => ({ 
+            uid, 
+            ...standingsNode[uid],
+            score: typeof standingsNode[uid].score === 'number' ? standingsNode[uid].score : 0,
+            timeTaken: typeof standingsNode[uid].timeTaken === 'number' ? standingsNode[uid].timeTaken : 9999,
+            completedAt: standingsNode[uid].completedAt || new Date(0).toISOString()
+          }));
+          
+          list.sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            if (a.timeTaken !== b.timeTaken) return a.timeTaken - b.timeTaken;
+            return (a.completedAt || "").localeCompare(b.completedAt || "");
+          });
+          
+          callback(list);
+        } else {
+          callback([]);
+        }
       } else {
         callback([]);
       }
     }, (error) => {
-      console.error('[Leaderboard] Subscription Error:', error);
       callback([], error);
     });
   },

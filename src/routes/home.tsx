@@ -38,11 +38,12 @@ function HomePage() {
   const [courses, setCourses] = useState<EnrichedCourse[]>([]);
   const [history, setHistory] = useState<Record<string, { chapterId: string, lastVisited: string }>>({});
   const [enrollmentMap, setEnrollmentMap] = useState<Record<string, boolean>>({});
-  const [loading, setLoading] = useState(true);
+  
+  // Instant Offline Detection
+  const [loading, setLoading] = useState(() => !localStorage.getItem('edunook_universal_cache'));
   const [activeTab, setActiveTab] = useState<TabType>(searchParams.tab || 'All');
-  const [showMobileHistory, setShowMobileHistory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollThumbWidth, setScrollThumbWidth] = useState(0);
+  const [scrollThumbWidth, setScrollThumbWidth] = useState(100);
   const [scrollThumbLeft, setScrollThumbLeft] = useState(0);
   const isDragging = useRef(false);
   const dragStartX = useRef(0);
@@ -90,7 +91,7 @@ function HomePage() {
       window.removeEventListener('touchmove', onMouseMove);
       window.removeEventListener('touchend', onMouseUp);
     };
-  }, [updateScrollbar, showMobileHistory]);
+  }, [updateScrollbar]);
 
   // Security Check
   useEffect(() => {
@@ -99,60 +100,67 @@ function HomePage() {
     }
   }, [user, authLoading, navigate]);
 
-  // If user is logged in but profile didn't load (stale session before scaffold fix),
-  // immediately re-resolve and backfill, then reload courses
+  // Load Data logic
   useEffect(() => {
-    if (user && !authLoading && !dbUser) {
-      refreshProfile().then(() => {
-        // Reload courses after profile+backfill completes so publisherName appears
-        DbService.getCourses({ isPublished: true }).then(data => setCourses(data)).catch(() => {});
-      });
-    }
-  }, [user, authLoading, dbUser, refreshProfile]);
-
-  // Load Data
-  useEffect(() => {
-    if (user) {
-      async function loadData() {
+    async function loadData() {
+      // 1. Instant Recovery from Universal Cache (Zero-latency)
+      const universalCache = localStorage.getItem('edunook_universal_cache');
+      if (universalCache) {
         try {
-          setLoading(true);
-          await DbService.ensureUsernameMapLoaded();
-          const [courseData, historyData] = await Promise.all([
-            DbService.getCourses({ isPublished: true }),
-            DbService.getHistory(user!.id)
-          ]);
-          setCourses(courseData);
-          setHistory(historyData);
+          const { courses: c, history: h, enrollmentMap: e } = JSON.parse(universalCache);
+          setCourses(c);
+          if (h) setHistory(h);
+          if (e) setEnrollmentMap(e);
+          setLoading(false);
+        } catch (err) { console.error('Universal cache corrupt:', err); }
+      }
 
+      // 2. Network Sync (If online)
+      try {
+        await DbService.ensureUsernameMapLoaded();
+        const courseData = await DbService.getCourses({ isPublished: true });
+        let historyData = {};
+        let enrollments: Record<string, boolean> = {};
+
+        if (user) {
+          historyData = await DbService.getHistory(user.id);
           const historyCourseIds = Object.keys(historyData || {});
-          const enrollments: Record<string, boolean> = {};
           await Promise.all(
             historyCourseIds.map(async (cId) => {
                const c = courseData.find(course => course.id === cId);
                if (c) {
-                  if (c.userId === user!.id || c.price === 0) {
+                  if (c.userId === user.id || c.price === 0) {
                      enrollments[cId] = true;
                   } else {
                      try {
-                       enrollments[cId] = await DbService.isEnrolled(cId, user!.id);
+                       enrollments[cId] = await DbService.isEnrolled(cId, user.id);
                      } catch (e) {
-                       console.error('Enrollment check failed for', cId, e);
                        enrollments[cId] = false;
                      }
                   }
                }
             })
           );
-
-          setEnrollmentMap(enrollments);
-        } catch (err) {
-          console.error('Error loading home data:', err);
-        } finally {
-          setLoading(false);
         }
+
+        setCourses(courseData);
+        setHistory(historyData);
+        setEnrollmentMap(enrollments);
+
+        // Update Universal Cache for next visit
+        localStorage.setItem('edunook_universal_cache', JSON.stringify({ 
+          courses: courseData, 
+          history: historyData, 
+          enrollmentMap: enrollments 
+        }));
+      } catch (err) {
+        console.warn('Network sync failed, staying in offline mode.');
+      } finally {
+        setLoading(false);
       }
-      loadData();
     }
+
+    loadData();
   }, [user]);
 
   // Update URL and scroll when tab changes
@@ -258,9 +266,9 @@ function HomePage() {
   if (authLoading || (loading && !courses.length)) {
     return (
       <Layout>
-        <div className="max-w-[1600px] mx-auto px-4 md:px-10 py-8">
-           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-10">
-             {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => <CourseCardSkeleton key={i} />)}
+        <div className="w-full max-w-[1600px] mx-auto px-4 md:px-10 py-10">
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-12">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => <CourseCardSkeleton key={i} />)}
            </div>
         </div>
       </Layout>
@@ -269,79 +277,74 @@ function HomePage() {
 
   return (
     <Layout>
-      <div className="w-full max-w-[1600px] mx-auto overflow-hidden">
-        
-        {/* Filter Tabs - Sticky below Header */}
-        <div className="sticky top-[72px] z-40 bg-background/90 backdrop-blur-xl px-4 md:px-10 py-4 border-b border-border">
-           <div className="flex items-center justify-center md:justify-start gap-1 md:gap-3 pb-1">
+      {/* Background Aurora Effects */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute top-[10%] right-[-10%] w-[50%] h-[40%] bg-primary/5 rounded-full blur-[120px] animate-pulse" />
+        <div className="absolute bottom-[20%] left-[-5%] w-[40%] h-[30%] bg-accent/5 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: '1s' }} />
+      </div>
+
+      {/* Filter Tabs - Sticky below Header with ZERO gap */}
+      <div className="sticky top-[60px] md:top-[72px] z-40 bg-background/80 backdrop-blur-xl border-b border-white/5 w-full -mt-px">
+         <div className="max-w-[1600px] mx-auto px-4 md:px-10 py-3">
+           <div className="flex items-center gap-1.5 md:gap-3 overflow-x-auto no-scrollbar scroll-smooth">
               {(['All', 'Free', 'Paid'] as TabType[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => handleTabChange(tab)}
-                  className={`relative px-6 py-2.5 rounded-xl text-sm font-black transition-all flex-shrink-0 ${
+                  className={`relative px-6 py-2.5 rounded-2xl text-[11px] font-black transition-all flex-shrink-0 group overflow-hidden ${
                     activeTab === tab 
-                      ? 'text-foreground' 
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/5'
+                      ? 'text-white' 
+                      : 'text-white/40 hover:text-white/70 hover:bg-white/5'
                   }`}
                 >
                   {activeTab === tab && (
                     <motion.div 
                       layoutId="tab-pill" 
-                      className="absolute inset-0 bg-primary/10 border border-primary/20 rounded-xl" 
+                      className="absolute inset-0 bg-primary rounded-2xl shadow-[0_0_20px_rgba(59,130,246,0.3)]" 
                     />
                   )}
-                  {activeTab === tab && (
-                    <motion.div 
-                      layoutId="tab-line" 
-                      className="absolute bottom-0 left-6 right-6 h-0.5 bg-primary rounded-full" 
-                    />
-                  )}
-                  <span className="relative z-10 uppercase tracking-widest text-[11px]">{tab}</span>
+                  <span className="relative z-10 uppercase tracking-[0.15em]">{tab}</span>
                 </button>
               ))}
-              <div className="ml-auto flex items-center gap-2 text-muted-foreground opacity-40 md:flex hidden">
-                 <Filter className="w-4 h-4" />
-                 <span className="text-[10px] font-black uppercase tracking-widest">Filters</span>
+              <div className="ml-auto flex items-center gap-2 text-white/20 md:flex hidden pr-2">
+                 <Filter className="w-3.5 h-3.5" />
+                 <span className="text-[9px] font-black uppercase tracking-[0.2em]">Filter List</span>
               </div>
            </div>
-        </div>
+         </div>
+      </div>
 
-        <div className="px-4 md:px-10 py-8 space-y-16 w-full max-w-full overflow-x-hidden">
-          {/* Continue Watching */}
-          <AnimatePresence>
-            {historyCourses.length > 0 && !searchParams.q && activeTab === 'All' && (
-              <motion.section 
-                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-                className="space-y-4 md:space-y-6 w-full max-w-full min-w-0"
-              >
+      <div className="w-full max-w-[1600px] mx-auto overflow-x-hidden px-4 md:px-10 py-6 md:py-10 space-y-10 md:space-y-16">
+        {/* Continue Watching */}
+        <AnimatePresence>
+          {historyCourses.length > 0 && !searchParams.q && activeTab === 'All' && (
+            <motion.section 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="space-y-4 md:space-y-6 w-full max-w-full min-w-0"
+            >
                 {/* Header */}
-                <div className="flex items-center justify-between w-full pr-1">
-                  <div className="flex items-center gap-3 md:gap-4 shrink-0">
-                    <div className="p-2 md:p-3 bg-primary/10 rounded-2xl border border-primary/20">
-                      <Clock className="w-5 h-5 md:w-6 md:h-6 text-primary" />
+                <div className="flex items-center justify-between w-full px-1">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-primary/20 to-accent/10 rounded-2xl border border-white/10 flex items-center justify-center shadow-inner">
+                      <Clock className="w-6 h-6 md:w-7 md:h-7 text-primary animate-pulse" />
                     </div>
                     <div>
-                      <h2 className="text-xl md:text-2xl font-black text-white tracking-tight uppercase">Continue Watching</h2>
-                      <p className="hidden md:block text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-60">Pick up exactly where you left off</p>
+                      <h2 className="text-xl md:text-3xl font-black text-white tracking-tighter uppercase leading-none">Pick Up Where You Left</h2>
+                      <p className="text-[10px] md:text-[11px] font-black text-primary/60 uppercase tracking-[0.25em] mt-1">Continue your learning journey</p>
                     </div>
                   </div>
-                  <button 
-                    className="md:hidden shrink-0 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-white hover:bg-white/10 transition-colors"
-                    onClick={() => setShowMobileHistory(!showMobileHistory)}
-                  >
-                    {showMobileHistory ? 'Hide' : 'View All'}
-                  </button>
                 </div>
 
                 {/* Scrollable cards container */}
-                <div className={`w-full min-w-0 relative ${!showMobileHistory ? 'hidden md:block' : 'block'}`}>
+                <div className="w-full min-w-0 relative -mx-4 md:-mx-10">
                   {/* Fade Edges for premium feel */}
                   <div className="absolute top-0 right-0 bottom-0 w-8 md:w-16 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
                   
                   <div
                     ref={scrollRef}
                     onScroll={updateScrollbar}
-                    className="flex gap-4 md:gap-6 overflow-x-auto pb-4 w-full snap-x snap-mandatory"
+                    className="flex gap-4 md:gap-6 overflow-x-auto pb-4 w-full snap-x snap-mandatory px-4 md:px-10"
                     style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
                   >
                     {historyCourses.map((course) => (
@@ -371,27 +374,29 @@ function HomePage() {
 
                   {/* Custom draggable scrollbar — only shows when content overflows */}
                   {scrollThumbWidth < 99 && (
-                    <div
-                      className="w-full h-[5px] rounded-full relative cursor-pointer mt-1"
-                      style={{ background: 'rgba(255,255,255,0.07)' }}
-                      onClick={(e) => {
-                        const el = scrollRef.current;
-                        if (!el) return;
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const ratio = (e.clientX - rect.left) / rect.width;
-                        el.scrollLeft = ratio * (el.scrollWidth - el.clientWidth);
-                      }}
-                    >
+                    <div className="px-4 md:px-10 mt-1">
                       <div
-                        className="absolute top-0 h-full rounded-full cursor-grab active:cursor-grabbing"
-                        style={{
-                          width: `${scrollThumbWidth}%`,
-                          left: `${scrollThumbLeft}%`,
-                          background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)',
+                        className="w-full h-[5px] rounded-full relative cursor-pointer"
+                        style={{ background: 'rgba(255,255,255,0.07)' }}
+                        onClick={(e) => {
+                          const el = scrollRef.current;
+                          if (!el) return;
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const ratio = (e.clientX - rect.left) / rect.width;
+                          el.scrollLeft = ratio * (el.scrollWidth - el.clientWidth);
                         }}
-                        onMouseDown={onThumbMouseDown}
-                        onTouchStart={onThumbMouseDown}
-                      />
+                      >
+                        <div
+                          className="absolute top-0 h-full rounded-full cursor-grab active:cursor-grabbing"
+                          style={{
+                            width: `${scrollThumbWidth}%`,
+                            left: `${scrollThumbLeft}%`,
+                            background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)',
+                          }}
+                          onMouseDown={onThumbMouseDown}
+                          onTouchStart={onThumbMouseDown}
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -399,16 +404,15 @@ function HomePage() {
             )}
           </AnimatePresence>
 
-          {/* Main Feed */}
-          <section className="space-y-8">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
-                  <TrendingUp className="w-6 h-6 text-emerald-500" />
+          <section className="space-y-10 relative z-10">
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-5">
+                <div className="w-12 h-12 md:w-14 md:h-14 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <TrendingUp className="w-6 h-6 md:w-7 md:h-7 text-emerald-500" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black text-white tracking-tight uppercase">Explore Courses</h2>
-                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-60">Find something new to learn today</p>
+                  <h2 className="text-xl md:text-3xl font-black text-white tracking-tighter uppercase leading-none">Discover New Skills</h2>
+                  <p className="text-[10px] md:text-[11px] font-black text-emerald-500/60 uppercase tracking-[0.25em] mt-1">Handpicked for your progress</p>
                 </div>
               </div>
 
@@ -427,43 +431,77 @@ function HomePage() {
                 layout
                 className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-10"
               >
-                <AnimatePresence>
-                  {filteredCourses.map((course) => (
-                    <CourseCard key={course.id} course={course} />
+                <AnimatePresence mode="popLayout">
+                  {filteredCourses.map((course, index) => (
+                    <motion.div
+                      key={course.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ 
+                        duration: 0.3, 
+                        delay: Math.min(index * 0.05, 0.4),
+                        ease: "easeOut"
+                      }}
+                    >
+                      <CourseCard course={course} />
+                    </motion.div>
                   ))}
                 </AnimatePresence>
               </motion.div>
             ) : (
             <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="py-32 flex flex-col items-center justify-center text-center space-y-8"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="py-24 md:py-40 flex flex-col items-center justify-center text-center space-y-10 px-6"
             >
-              <div className="w-24 h-24 rounded-full bg-muted/20 flex items-center justify-center border border-border">
-                <Search className="w-10 h-10 text-muted-foreground opacity-20" />
+              <div className="relative">
+                <div className="absolute inset-0 bg-primary/20 blur-[60px] rounded-full animate-pulse" />
+                <div className="w-24 h-24 md:w-32 md:h-32 rounded-3xl bg-white/[0.03] border border-white/10 flex items-center justify-center backdrop-blur-2xl relative z-10">
+                  <BookOpen className="w-10 h-10 md:w-14 md:h-14 text-white/20" />
+                </div>
               </div>
-              <div className="space-y-3">
-                <h3 className="text-2xl md:text-3xl font-black text-foreground uppercase tracking-tighter">No courses found</h3>
-                <p className="text-muted-foreground font-medium max-w-sm mx-auto">
+              <div className="space-y-4 max-w-md">
+                <h3 className="text-3xl md:text-5xl font-black text-white uppercase tracking-tighter leading-none">The library is empty</h3>
+                <p className="text-white/40 font-bold uppercase tracking-widest text-[11px] md:text-xs leading-relaxed">
                    {searchParams.q 
-                    ? `We couldn't find anything matching "${searchParams.q}". Try a different search.` 
-                    : "There are no courses here right now. Check back later or start your own!"}
+                    ? `We couldn't find any courses matching "${searchParams.q}". Try broadening your search.` 
+                    : "Become a pioneer on EduNook. Start sharing your knowledge with the world today!"}
                 </p>
               </div>
               {dbUser?.username && (
                 <button 
                   onClick={() => navigate({ to: '/$username', params: { username: dbUser.username } })}
-                  className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-primary to-accent text-white rounded-2xl font-black shadow-xl shadow-primary/20 hover:shadow-primary/40 hover:scale-105 active:scale-95 transition-all"
+                  className="group relative px-10 py-5 bg-white text-black rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-[0_20px_40px_rgba(255,255,255,0.1)] hover:scale-105 active:scale-95 transition-all overflow-hidden"
                 >
-                  <Plus className="w-5 h-5" />
-                  Create a Course
+                  <div className="absolute inset-0 bg-gradient-to-r from-primary/10 to-accent/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <span className="relative z-10 flex items-center gap-3">
+                    <Plus className="w-4 h-4" />
+                    Start Creating
+                  </span>
                 </button>
               )}
             </motion.div>
             )}
-          </section>
+           </section>
+
+           {/* Mobile Create Floating Action Button (Optional) */}
+           <AnimatePresence>
+             {!loading && dbUser?.username && (
+               <motion.button
+                 initial={{ scale: 0, opacity: 0 }}
+                 animate={{ scale: 1, opacity: 1 }}
+                 whileHover={{ scale: 1.1 }}
+                 whileTap={{ scale: 0.9 }}
+                 onClick={() => navigate({ to: '/$username', params: { username: dbUser.username } })}
+                 className="md:hidden fixed bottom-24 right-6 w-14 h-14 bg-primary text-white rounded-2xl shadow-2xl shadow-primary/40 flex items-center justify-center z-[45]"
+                 aria-label="Create a new course"
+               >
+                 <Plus className="w-7 h-7" />
+               </motion.button>
+             )}
+           </AnimatePresence>
         </div>
-      </div>
     </Layout>
   );
 }
