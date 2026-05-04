@@ -164,49 +164,77 @@ export const sendPasswordResetAction = createServerFn({ method: "POST" })
   });
 
 const feedbackSchema = z.object({
-  email: z.string().email(),
-  type: z.string(),
-  message: z.string(),
-  username: z.string()
+  data: z.object({
+    email: z.string().email(),
+    type: z.string(),
+    message: z.string(),
+    username: z.string(),
+    userId: z.string().optional()
+  })
 });
 
 export const sendFeedbackEmailAction = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => feedbackSchema.parse(d))
   .handler(async ({ data }) => {
-    const { email, type, message, username } = data;
+    const { email, type, message, username, userId } = data.data;
     console.log(`[EmailAction] Sending feedback from: ${username} (${email})`);
 
     try {
-      const { data: resendData, error } = await resend.emails.send({
-        from: 'EduNook Feedback <feedback@resend.dev>',
-        to: ['learningaurstudywala@gmail.com'],
-        subject: `[${type.toUpperCase()}] New Feedback from @${username}`,
-        html: `
-          <div style="font-family: 'Inter', sans-serif; background-color: #050505; color: #ffffff; padding: 40px; border-radius: 24px; max-width: 600px; margin: auto; border: 1px solid rgba(255,255,255,0.05);">
-            <div style="text-align: center; margin-bottom: 32px;">
-              <h1 style="font-size: 24px; font-weight: 900; margin: 0; color: #6366f1;">EduNook Center</h1>
-            </div>
-
-            <div style="background-color: rgba(255,255,255,0.03); padding: 32px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
-              <div style="margin-bottom: 24px;">
-                <span style="font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #6366f1; background: rgba(99,102,241,0.1); padding: 6px 16px; border-radius: 100px; border: 1px solid rgba(99,102,241,0.2);">
-                  ${type}
-                </span>
-              </div>
-              
-              <p style="color: #ffffff; line-height: 1.8; font-size: 16px; margin-bottom: 32px; white-space: pre-wrap;">${message}</p>
-
-              <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 24px;">
-                <p style="color: rgba(255,255,255,0.3); font-size: 12px; margin: 6px 0;"><b>User:</b> @${username}</p>
-                <p style="color: rgba(255,255,255,0.3); font-size: 12px; margin: 6px 0;"><b>Contact:</b> ${email}</p>
-                <p style="color: rgba(255,255,255,0.3); font-size: 12px; margin: 6px 0;"><b>Timestamp:</b> ${new Date().toLocaleString()}</p>
-              </div>
-            </div>
-          </div>
-        `,
+      // 1. Store in Global Feedback Node
+      const adminDb = (await import('./admin')).adminDb;
+      const feedbackRef = adminDb.ref('feedback').push();
+      await feedbackRef.set({
+        type,
+        message,
+        email,
+        username,
+        userId: userId || 'system',
+        createdAt: new Date().toISOString()
       });
 
-      if (error) throw error;
+      // 2. Route to "edunook" Admin Chat
+      const usernameSnapshot = await adminDb.ref(`usernames/edunook`).get();
+      if (usernameSnapshot.exists()) {
+        const edunookUid = usernameSnapshot.val();
+        const reporterId = userId || (await adminDb.ref(`usernames/${username.toLowerCase()}`).get()).val() || 'system';
+        
+        const participants = [reporterId, edunookUid].sort();
+        const chatId = participants.join('_');
+        const now = new Date().toISOString();
+
+        // Push chat message
+        const messagesRef = adminDb.ref(`messages/${chatId}`).push();
+        const messageId = messagesRef.key;
+        await messagesRef.set({
+          id: messageId,
+          senderId: reporterId,
+          text: `[SYSTEM SIGNAL: ${type}]\n${message}`,
+          createdAt: now,
+          seen: false
+        });
+
+        // Update chat metadata and user chats index
+        await adminDb.ref(`chats/${chatId}`).update({
+          lastMessage: `${type}: Signal Received`,
+          updatedAt: now,
+          lastSenderId: reporterId,
+          [`users/${reporterId}`]: true,
+          [`users/${edunookUid}`]: true
+        });
+
+        // Ensure chat appears in both users' sidebars
+        await adminDb.ref(`user_chats/${reporterId}/${chatId}`).set(true);
+        await adminDb.ref(`user_chats/${edunookUid}/${chatId}`).set(true);
+        
+        // Increment unread for edunook
+        await adminDb.ref(`chats/${chatId}/unreadCounts/${edunookUid}`).transaction((c: any) => (c || 0) + 1);
+
+        // If it's an Account Report, mask it from the reporter
+        if (type === 'Account Report' && reporterId !== 'system') {
+          await adminDb.ref(`user_settings/${reporterId}/deletedMessages/${chatId}/${messageId}`).set(true);
+        }
+      }
+
       return { success: true };
     } catch (err: any) {
       console.error('[EmailAction] Feedback Error:', err);

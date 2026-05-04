@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { 
   ref, get, set, push, update, onValue,
-  remove, 
+  remove, query, orderByChild, equalTo,
   runTransaction, onDisconnect, serverTimestamp 
 } from 'firebase/database';
 import { db } from './firebase';
+import { getAuth } from 'firebase/auth';
+import { sendFeedbackEmailAction } from './server/email-actions';
 
 // Types
 export interface UserPreferences {
@@ -23,6 +25,11 @@ export interface UserPreferences {
     theme: 'dark' | 'light';
     reduceAnimations: boolean;
     dataSaver: boolean;
+  };
+  privacy: {
+    showOnlineStatus: boolean;
+    showReadReceipts: boolean;
+    allowStrangerMessages: boolean;
   };
 }
 
@@ -167,11 +174,22 @@ export interface CourseReview {
 
 export interface Notification {
   id: string;
-  type: 'follow' | 'system' | 'update' | 'test' | 'quiz' | 'review';
+  type: 'follow' | 'system' | 'update' | 'test' | 'quiz' | 'review' | 'chat' | 'message';
   fromUid: string;
   text: string;
   createdAt: string;
   seen: boolean;
+}
+
+export interface Report {
+  id?: string;
+  targetId: string;
+  targetName: string;
+  targetType: 'user' | 'course' | 'chat';
+  reason: string;
+  description: string;
+  timestamp: number;
+  reporterId?: string;
 }
 
 export interface Chat {
@@ -544,13 +562,7 @@ export const DbService = {
   },
 
   async createFeedback(userId: string, data: { type: string; message: string; email: string; username: string }) {
-    const feedbackRef = ref(db, 'feedbacks');
-    const newFeedbackRef = push(feedbackRef);
-    await set(newFeedbackRef, {
-      ...data,
-      userId,
-      createdAt: new Date().toISOString()
-    });
+    await sendFeedbackEmailAction({ data });
   },
 
   /**
@@ -582,11 +594,34 @@ export const DbService = {
     }
   },
 
-  async incrementCourseViews(courseId: string): Promise<void> {
-    const courseViewsRef = ref(db, `courses/${courseId}/views`);
-    await runTransaction(courseViewsRef, (currentViews) => {
-      return (currentViews || 0) + 1;
-    });
+  async incrementCourseViews(courseId: string, userId?: string): Promise<void> {
+    try {
+      // 1. Session Throttling (Client-side immediate prevention)
+      const sessionKey = `viewed_${courseId}`;
+      if (sessionStorage.getItem(sessionKey)) return;
+      sessionStorage.setItem(sessionKey, 'true');
+
+      // 2. Persistent Unique Check (Database level)
+      if (userId) {
+        const uniqueViewRef = ref(db, `unique_views/${courseId}/${userId}`);
+        const snapshot = await get(uniqueViewRef);
+        if (snapshot.exists()) return; // Already counted permanently
+        
+        // Mark as viewed in database
+        await set(uniqueViewRef, { 
+          viewedAt: serverTimestamp(),
+          platform: 'web'
+        });
+      }
+
+      // 3. Increment Atomic Counter
+      const courseViewsRef = ref(db, `courses/${courseId}/views`);
+      await runTransaction(courseViewsRef, (currentViews) => {
+        return (currentViews || 0) + 1;
+      });
+    } catch (err) {
+      console.warn('[DbService] incrementCourseViews throttled or failed:', err);
+    }
   },
 
   async uploadThumbnail(userId: string, file: File): Promise<string> {
@@ -899,17 +934,91 @@ export const DbService = {
 
   async deleteChat(userId: string, chatId: string): Promise<void> {
     const settingsRef = ref(db, `user_settings/${userId}`);
+    const now = new Date();
+    
     try {
-      // Record exact ISO deletion timestamp to truncate past message feed local-only
+      // 1. Record local deletion
       await update(settingsRef, {
-        [`deletedChats/${chatId}`]: new Date().toISOString()
+        [`deletedChats/${chatId}`]: now.toISOString()
       });
+
+      // 2. Check if the other user has also deleted this chat
+      const participants = chatId.split('_');
+      const otherId = participants.find(id => id !== userId);
+      
+      if (otherId) {
+        const otherSettingsRef = ref(db, `user_settings/${otherId}/deletedChats/${chatId}`);
+        const otherSnapshot = await get(otherSettingsRef);
+        
+        if (otherSnapshot.exists()) {
+          // BOTH users have deleted the chat. Mark for permanent purge in 10 days.
+          const purgeDate = new Date();
+          purgeDate.setDate(purgeDate.getDate() + 10);
+          
+          await update(ref(db, `chats/${chatId}`), {
+            pendingPurgeAt: purgeDate.toISOString(),
+            status: 'purging'
+          });
+        }
+      }
     } catch (err) {
-      console.warn("Failed to delete chat locally:", err);
+      console.warn("Failed to process chat deletion policy:", err);
+    }
+  },
+
+  /**
+   * Scans the current user's conversations and removes those marked for purge that have passed their 10-day window.
+   * This ensures we only attempt to clean up data the user has access to.
+   */
+  async runGarbageCollector(userId: string): Promise<void> {
+    try {
+      // Get the user's own chat references first
+      const userChatsRef = ref(db, `user_chats/${userId}`);
+      const snapshot = await get(userChatsRef);
+      
+      if (!snapshot.exists()) return;
+      
+      const userChatIds = Object.keys(snapshot.val());
+      const now = new Date();
+      
+      for (const chatId of userChatIds) {
+        try {
+          const chatRef = ref(db, `chats/${chatId}`);
+          const chatSnap = await get(chatRef);
+          
+          if (!chatSnap.exists()) continue;
+          const chat = chatSnap.val();
+          
+          if (chat.status === 'purging' && chat.pendingPurgeAt && new Date(chat.pendingPurgeAt) <= now) {
+            console.log(`[GC] Identified expired conversation: ${chatId}. Initializing secure wipe...`);
+            
+            // 1. Remove messages (if permission allowed)
+            await remove(ref(db, `messages/${chatId}`)).catch(() => null);
+            
+            // 2. Remove references for this specific user
+            await remove(ref(db, `user_chats/${userId}/${chatId}`)).catch(() => null);
+            await remove(ref(db, `user_settings/${userId}/deletedChats/${chatId}`)).catch(() => null);
+            await remove(ref(db, `user_settings/${userId}/deletedMessages/${chatId}`)).catch(() => null);
+
+            // 3. Attempt to remove the main chat node (will only succeed if rules allow or if other user also purged)
+            await remove(ref(db, `chats/${chatId}`)).catch(() => null);
+          }
+        } catch (err) {
+          // Individual chat failure shouldn't stop the loop
+          continue;
+        }
+      }
+    } catch (err) {
+      console.warn("[GC] User-level cleanup cycle interrupted:", err);
     }
   },
 
   async markAsRead(chatId: string, userId: string): Promise<void> {
+    // Check if user has read receipts enabled
+    const profile = await this.getProfile(userId);
+    if (profile?.preferences?.privacy?.showReadReceipts === false) {
+      return;
+    }
     const chatRef = ref(db, `chats/${chatId}/unreadCounts/${userId}`);
     await set(chatRef, 0);
   },
@@ -936,20 +1045,23 @@ export const DbService = {
     return { url: result.secure_url, type };
   },
 
-  updatePresence(userId: string) {
+  updatePresence(userId: string, showOnlineStatus: boolean = true) {
     const userPresenceRef = ref(db, `presence/${userId}`);
     const connectedRef = ref(db, '.info/connected');
 
+    if (!showOnlineStatus) {
+      // If user wants to be hidden, remove the presence node entirely or set to offline
+      remove(userPresenceRef);
+      return;
+    }
+
     onValue(connectedRef, (snap) => {
       if (snap.val() === true) {
-        // We are connected (or reconnected)!
-        // When I disconnect, update the last time I was seen online
         onDisconnect(userPresenceRef).set({
           status: 'offline',
           lastSeen: serverTimestamp()
         });
 
-        // The app is currently running, set to online
         set(userPresenceRef, {
           status: 'online',
           lastSeen: serverTimestamp()
@@ -1085,6 +1197,14 @@ export const DbService = {
         await update(ref(db), updates);
       }
     }
+  },
+
+  async markNotificationAsRead(uid: string, id: string): Promise<void> {
+    await update(ref(db, `notifications/${uid}/${id}`), { seen: true });
+  },
+
+  async deleteNotification(uid: string, id: string): Promise<void> {
+    await remove(ref(db, `notifications/${uid}/${id}`));
   },
 
   // Tests

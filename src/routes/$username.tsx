@@ -11,6 +11,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 import { VerificationTick } from '@/components/VerificationTick';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { ReportModal } from '@/components/ReportModal';
+import { ShieldAlert, Info, MoreVertical } from 'lucide-react';
 
 export const Route = createFileRoute('/$username')({
   head: () => ({
@@ -55,6 +58,8 @@ function ProfilePage() {
   // Avatar Long-press State
   const [isPressingAvatar, setIsPressingAvatar] = useState(false);
   const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [isReporting, setIsReporting] = useState(false);
+  const [isAccountInfoOpen, setIsAccountInfoOpen] = useState(false);
 
   const startAvatarPress = () => {
     pressTimerRef.current = setTimeout(() => {
@@ -420,6 +425,30 @@ function ProfilePage() {
                     >
                       <MessageCircle className="w-4 h-4" /> Message
                     </Link>
+                    
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="p-4.5 bg-muted border border-border hover:bg-muted/80 rounded-3xl text-foreground transition-all flex items-center justify-center active:scale-95">
+                          <MoreVertical className="w-5 h-5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" side="bottom" sideOffset={12} className="w-56 bg-popover/90 border-border backdrop-blur-3xl rounded-2xl p-2 shadow-2xl z-[100]">
+                        <DropdownMenuItem 
+                          onClick={() => setIsAccountInfoOpen(true)}
+                          className="cursor-pointer text-foreground font-medium focus:bg-foreground/10 focus:text-foreground rounded-xl py-3 px-4 flex items-center justify-between"
+                        >
+                          Account Intelligence
+                          <Info className="w-4 h-4 opacity-70" />
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={() => setIsReporting(true)}
+                          className="cursor-pointer text-rose-500 font-bold focus:bg-rose-500/10 focus:text-rose-500 rounded-xl py-3 px-4 flex items-center justify-between"
+                        >
+                          Report Account
+                          <ShieldAlert className="w-4 h-4 opacity-80" />
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </>
                 )}
              </div>
@@ -797,6 +826,54 @@ function ProfilePage() {
                 <div className="w-full h-full flex items-center justify-center">
                    <img src={optimizeCloudinaryUrl(viewerHighlight.coverImage || '', 1200)} className="w-full h-full object-contain" alt="" />
                 </div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        <ReportModal 
+          isOpen={isReporting}
+          onClose={() => setIsReporting(false)}
+          targetId={resolvedUid || ''}
+          targetType="user"
+          targetName={profile.fullName}
+        />
+
+        <AnimatePresence>
+          {isAccountInfoOpen && (
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+               <motion.div 
+                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                 onClick={() => setIsAccountInfoOpen(false)}
+                 className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+               />
+               <motion.div 
+                 initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+                 className="relative w-full max-w-md bg-card border border-white/10 rounded-[2.5rem] p-8 shadow-2xl space-y-6 text-center"
+               >
+                  <div className="w-20 h-20 bg-primary/20 rounded-2xl flex items-center justify-center mx-auto border border-primary/40">
+                    <Info className="w-10 h-10 text-primary" />
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Account Intelligence</h2>
+                    <p className="text-muted-foreground text-sm font-medium">Detailed metadata for @{profile.username}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-left">
+                     <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                        <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">Joined Network</p>
+                        <p className="text-sm font-bold text-white">May 2024</p>
+                     </div>
+                     <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                        <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">Security Status</p>
+                        <p className="text-sm font-bold text-emerald-500">Verified</p>
+                     </div>
+                  </div>
+                  <button 
+                    onClick={() => setIsAccountInfoOpen(false)}
+                    className="w-full py-4 bg-white/5 text-white/60 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-white/10 transition-all border border-white/5"
+                  >
+                    Close Terminal
+                  </button>
+               </motion.div>
             </div>
           )}
         </AnimatePresence>

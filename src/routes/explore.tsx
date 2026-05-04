@@ -49,7 +49,10 @@ function ExplorePage() {
   
   const [trendingCourses, setTrendingCourses] = useState<TrendingCourse[]>([]);
   const [topCreators, setTopCreators] = useState<TopCreator[]>([]);
-  const [loading, setLoading] = useState(() => !localStorage.getItem('explore_cache_universal'));
+  const [loading, setLoading] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return !localStorage.getItem('explore_cache_universal');
+  });
   const [searchQuery, setSearchQuery] = useState(searchParams.q || '');
   const [activeTab, setActiveTab] = useState<'trending' | 'creators'>((searchParams.tab as any) || 'trending');
   const [activeCategory, setActiveCategory] = useState(searchParams.category || 'All');

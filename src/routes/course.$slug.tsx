@@ -24,6 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { CourseViewSkeleton } from '@/components/SkeletonLoader';
 
 export const Route = createFileRoute('/course/$slug')({
   head: () => ({
@@ -116,7 +117,7 @@ function CourseViewPage() {
       try {
         const c = await DbService.getCourse(slug);
         if (c) {
-          DbService.incrementCourseViews(c.id);
+          DbService.incrementCourseViews(c.id, currentUser?.id);
           const ch = await DbService.getChapters(c.id);
           setCourse(c);
           setChapters(ch);
@@ -348,7 +349,7 @@ function CourseViewPage() {
     if (isPlaying) controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 3000);
   };
 
-  if (loading || checkingAccess) return <Layout><div className="flex items-center justify-center h-screen bg-[#050505]"><Loader2 className="w-12 h-12 text-primary animate-spin" /></div></Layout>;
+  if (loading || checkingAccess) return <CourseViewSkeleton />;
   if (!course) return <Layout><div className="p-12 text-center text-2xl font-black text-white bg-[#050505]">Course not found</div></Layout>;
 
   const hasAccess = isEnrolled || activeChapter?.isFreeDemo;

@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { Layout } from '@/components/Layout';
 import { 
   User as UserIcon, Loader2, MessageSquare, ArrowLeft, 
-  MoreVertical, Info, ShieldCheck, Search, X, Trash2, Settings, MoreHorizontal
+  MoreVertical, Info, ShieldCheck, Search, X, Trash2, Settings, MoreHorizontal, ShieldAlert
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -16,6 +16,7 @@ import { ChatSidebar } from '@/components/chat/ChatSidebar';
 import { MessageList } from '@/components/chat/MessageList';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { toast } from 'sonner';
+import { ReportModal } from '@/components/ReportModal';
 
 export const Route = createFileRoute('/chat')({
   head: () => ({
@@ -42,6 +43,8 @@ function ChatPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [isReporting, setIsReporting] = useState(false);
+  const [isInfoOpen, setIsInfoOpen] = useState(false);
   
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
@@ -101,6 +104,13 @@ function ChatPage() {
 
     return () => clearTimeout(timer);
   }, [searchQuery, conversations, user?.id]);
+
+  // Background Garbage Collector for expired chats
+  useEffect(() => {
+    if (user) {
+      DbService.runGarbageCollector(user.id);
+    }
+  }, [user]);
 
   // Sync Active Chat from URL
   useEffect(() => {
@@ -282,10 +292,18 @@ function ChatPage() {
                          <Trash2 className="w-4 h-4 opacity-80" />
                        </DropdownMenuItem>
                        <DropdownMenuItem 
+                         onClick={() => setIsInfoOpen(true)}
                          className="cursor-pointer text-foreground font-medium focus:bg-foreground/10 focus:text-foreground rounded-xl py-3 px-4 flex items-center justify-between"
                        >
                          Conversation Info
                          <Info className="w-4 h-4 opacity-70" />
+                       </DropdownMenuItem>
+                       <DropdownMenuItem 
+                         onClick={() => setIsReporting(true)}
+                         className="cursor-pointer text-rose-500 font-bold focus:bg-rose-500/10 focus:text-rose-500 rounded-xl py-3 px-4 flex items-center justify-between"
+                       >
+                         Report Account
+                         <ShieldAlert className="w-4 h-4 opacity-80" />
                        </DropdownMenuItem>
                      </DropdownMenuContent>
                    </DropdownMenu>
@@ -365,6 +383,80 @@ function ChatPage() {
           )}
         </main>
       </div>
+
+      <ReportModal 
+        isOpen={isReporting}
+        onClose={() => setIsReporting(false)}
+        targetId={activeChat?.profile.uid || ''}
+        targetType="user"
+        targetName={activeChat?.profile.fullName || 'User'}
+      />
+
+      <AnimatePresence>
+        {isInfoOpen && activeChat && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setIsInfoOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-md bg-card border border-white/10 rounded-[2.5rem] p-8 shadow-2xl space-y-8"
+            >
+               <div className="flex flex-col items-center text-center gap-6">
+                  <div className="relative">
+                    <div className="w-32 h-32 rounded-[2.5rem] border-4 border-white/10 overflow-hidden shadow-2xl">
+                      {activeChat.profile.avatarUrl ? (
+                         <img src={activeChat.profile.avatarUrl} className="w-full h-full object-cover" alt="" />
+                      ) : (
+                         <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary text-4xl font-black italic">
+                            {activeChat.profile.fullName[0]}
+                         </div>
+                      )}
+                    </div>
+                    {recipientPresence?.status === 'online' && (
+                      <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-success rounded-full border-4 border-card shadow-lg" />
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-center gap-2">
+                      <h2 className="text-2xl font-black text-white uppercase tracking-tighter">{activeChat.profile.fullName}</h2>
+                      <VerificationTick planId={activeChat.profile.subscription?.planId} size={24} />
+                    </div>
+                    <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px]">@{activeChat.profile.username}</p>
+                  </div>
+               </div>
+
+               <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-white/5 rounded-2xl border border-white/5 text-center space-y-1">
+                    <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Joined</p>
+                    <p className="text-sm font-bold text-white">May 2024</p>
+                  </div>
+                  <div className="p-4 bg-white/5 rounded-2xl border border-white/5 text-center space-y-1">
+                    <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Enrolled</p>
+                    <p className="text-sm font-bold text-white">12 Courses</p>
+                  </div>
+               </div>
+
+               <div className="space-y-3">
+                  <button 
+                    onClick={() => { setIsInfoOpen(false); navigate({ to: '/$username', params: { username: activeChat.profile.username }}); }}
+                    className="w-full py-4 bg-white text-black rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-xl"
+                  >
+                    View Intelligence Profile
+                  </button>
+                  <button 
+                    onClick={() => setIsInfoOpen(false)}
+                    className="w-full py-4 bg-white/5 text-white/60 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-white/10 transition-all border border-white/5"
+                  >
+                    Close Terminal
+                  </button>
+               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </Layout>
   );
 }

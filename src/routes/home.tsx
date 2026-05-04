@@ -40,7 +40,10 @@ function HomePage() {
   const [enrollmentMap, setEnrollmentMap] = useState<Record<string, boolean>>({});
   
   // Instant Offline Detection
-  const [loading, setLoading] = useState(() => !localStorage.getItem('edunook_universal_cache'));
+  const [loading, setLoading] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return !localStorage.getItem('edunook_universal_cache');
+  });
   const [activeTab, setActiveTab] = useState<TabType>(searchParams.tab || 'All');
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollThumbWidth, setScrollThumbWidth] = useState(100);
