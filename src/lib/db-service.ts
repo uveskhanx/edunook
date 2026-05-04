@@ -285,10 +285,11 @@ export const DbService = {
     return snapshot.exists();
   },
 
-  async enrollInCourse(courseId: string, userId: string): Promise<void> {
+  async enrollInCourse(courseId: string, userId: string, data: Record<string, any> = {}): Promise<void> {
     const enrollRef = ref(db, `enrollments/${courseId}/${userId}`);
     await set(enrollRef, {
-      enrolledAt: new Date().toISOString()
+      enrolledAt: new Date().toISOString(),
+      ...data
     });
   },
 
@@ -690,6 +691,7 @@ export const DbService = {
     // Cache snapshots to re-process cleanly
     let latestChatsSnapshot: any = null;
     let latestSettings: { pinned: Record<string, boolean>; muted: Record<string, boolean>; deletedChats: Record<string, string> } = { pinned: {}, muted: {}, deletedChats: {} };
+    const chatMetadataUnsubs = new Map<string, () => void>();
     let processing = false;
     let needsUpdate = false;
 
@@ -772,6 +774,24 @@ export const DbService = {
 
     const unsubChats = onValue(userChatsRef, (snapshot) => {
       latestChatsSnapshot = snapshot;
+      const chatIds = snapshot.exists() ? Object.keys(snapshot.val()) : [];
+      const activeChatIds = new Set(chatIds);
+
+      chatMetadataUnsubs.forEach((unsubscribe, chatId) => {
+        if (!activeChatIds.has(chatId)) {
+          unsubscribe();
+          chatMetadataUnsubs.delete(chatId);
+        }
+      });
+
+      chatIds.forEach(chatId => {
+        if (chatMetadataUnsubs.has(chatId)) return;
+        const unsubscribe = onValue(ref(db, `chats/${chatId}`), () => {
+          processConversations();
+        });
+        chatMetadataUnsubs.set(chatId, unsubscribe);
+      });
+
       processConversations();
     });
 
@@ -794,6 +814,8 @@ export const DbService = {
     return () => {
       unsubChats();
       unsubSettings();
+      chatMetadataUnsubs.forEach(unsubscribe => unsubscribe());
+      chatMetadataUnsubs.clear();
     };
   },
 
@@ -847,7 +869,7 @@ export const DbService = {
     };
   },
 
-  async sendMessage(chatId: string, senderId: string, text?: string, media?: { url: string, type: 'image' | 'video' | 'file' }): Promise<void> {
+  async sendMessage(chatId: string, senderId: string, text?: string, media?: { url: string, type: 'image' | 'video' | 'file' }): Promise<string> {
     const messagesRef = ref(db, `messages/${chatId}`);
     const newMessageRef = push(messagesRef);
     const now = new Date().toISOString();
@@ -880,6 +902,8 @@ export const DbService = {
         return (count || 0) + 1;
       });
     }
+
+    return newMessageRef.key!;
   },
 
   async unsendMessage(chatId: string, messageId: string): Promise<void> {
@@ -1014,11 +1038,6 @@ export const DbService = {
   },
 
   async markAsRead(chatId: string, userId: string): Promise<void> {
-    // Check if user has read receipts enabled
-    const profile = await this.getProfile(userId);
-    if (profile?.preferences?.privacy?.showReadReceipts === false) {
-      return;
-    }
     const chatRef = ref(db, `chats/${chatId}/unreadCounts/${userId}`);
     await set(chatRef, 0);
   },
@@ -1181,6 +1200,58 @@ export const DbService = {
         callback(0);
       }
     });
+  },
+
+  subscribeToUnreadChatCount(userId: string, callback: (count: number) => void) {
+    const userChatsRef = ref(db, `user_chats/${userId}`);
+    const chatUnsubs = new Map<string, () => void>();
+    const counts: Record<string, number> = {};
+
+    const emit = () => {
+      callback(Object.values(counts).reduce((sum, count) => sum + count, 0));
+    };
+
+    const unsubscribeChats = () => {
+      chatUnsubs.forEach(unsub => unsub());
+      chatUnsubs.clear();
+      Object.keys(counts).forEach(chatId => delete counts[chatId]);
+    };
+
+    const unsubscribeUserChats = onValue(userChatsRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        unsubscribeChats();
+        callback(0);
+        return;
+      }
+
+      const activeChatIds = new Set(Object.keys(snapshot.val()));
+
+      chatUnsubs.forEach((unsub, chatId) => {
+        if (!activeChatIds.has(chatId)) {
+          unsub();
+          chatUnsubs.delete(chatId);
+          delete counts[chatId];
+        }
+      });
+
+      activeChatIds.forEach(chatId => {
+        if (chatUnsubs.has(chatId)) return;
+
+        const unreadRef = ref(db, `chats/${chatId}/unreadCounts/${userId}`);
+        const unsub = onValue(unreadRef, (unreadSnapshot) => {
+          counts[chatId] = unreadSnapshot.exists() ? Number(unreadSnapshot.val() || 0) : 0;
+          emit();
+        });
+        chatUnsubs.set(chatId, unsub);
+      });
+
+      emit();
+    });
+
+    return () => {
+      unsubscribeUserChats();
+      unsubscribeChats();
+    };
   },
 
   async markNotificationsAsSeen(uid: string): Promise<void> {

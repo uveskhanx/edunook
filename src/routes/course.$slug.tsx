@@ -36,6 +36,28 @@ export const Route = createFileRoute('/course/$slug')({
 });
 
 type EnrichedCourse = Course & { profiles: Profile | null };
+type PaymentMode = 'razorpay' | 'test';
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: Record<string, any>) => { open: () => void };
+  }
+}
+
+const RAZORPAY_KEY_ID = import.meta.env.VITE_RAZORPAY_KEY_ID;
+
+function formatPrice(price: number) {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(price || 0);
+}
+
+function getChapterAccessLabel(course: EnrichedCourse, isEnrolled: boolean, isOwner: boolean, chapter?: Chapter | null) {
+  if (course.price <= 0 || isOwner || isEnrolled) return 'Unlocked';
+  return chapter?.isFreeDemo ? 'Free Preview' : 'Locked';
+}
 
 function CourseViewPage() {
   const { slug } = Route.useParams();
@@ -54,6 +76,8 @@ function CourseViewPage() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [checkingAccess, setCheckingAccess] = useState(true);
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>(RAZORPAY_KEY_ID ? 'razorpay' : 'test');
+  const [enrollmentError, setEnrollmentError] = useState('');
 
   const isExpired = useMemo(() => {
     if (!course?.expiresInDays) return false;
@@ -81,6 +105,16 @@ function CourseViewPage() {
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  const isOwner = !!course && currentUser?.id === course.userId;
+  const activeChapterIndex = useMemo(() => {
+    if (!activeChapter) return -1;
+    return chapters.findIndex(chapter => chapter.id === activeChapter.id);
+  }, [activeChapter, chapters]);
+  const courseProgress = chapters.length > 0 && activeChapterIndex >= 0
+    ? Math.round(((activeChapterIndex + 1) / chapters.length) * 100)
+    : 0;
+  const seekPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
+
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.error('SW failed:', err));
@@ -99,29 +133,37 @@ function CourseViewPage() {
 
   useEffect(() => {
     let unsubReviews: (() => void) | undefined;
+    let isMounted = true;
     
     async function loadData() {
+      setCheckingAccess(true);
+      setEnrollmentError('');
       // 1. Try to load from Local Offline Vault first (Instant Load)
       const offlineKey = `offline_data_${slug}`;
       const cached = localStorage.getItem(offlineKey);
       if (cached) {
         try {
           const { course: c, chapters: chs } = JSON.parse(cached);
-          setCourse(c);
-          setChapters(chs);
-          if (chs.length > 0) setActiveChapter(chs[0]);
-          setLoading(false); // Immediate transition
+          if (isMounted) {
+            setCourse(c);
+            setChapters(chs);
+            if (chs.length > 0) setActiveChapter(chs[0]);
+            setLoading(false); // Immediate transition
+          }
         } catch (e) { console.error('Cache corrupt:', e); }
       }
 
       try {
         const c = await DbService.getCourse(slug);
-        if (c) {
+        if (c && isMounted) {
           DbService.incrementCourseViews(c.id, currentUser?.id);
           const ch = await DbService.getChapters(c.id);
           setCourse(c);
           setChapters(ch);
-          if (ch.length > 0 && !activeChapter) setActiveChapter(ch[0]);
+          setActiveChapter(prev => {
+            if (prev && ch.some(chapter => chapter.id === prev.id)) return prev;
+            return ch[0] || null;
+          });
 
           unsubReviews = DbService.subscribeToCourseReviews(c.id, setReviews);
 
@@ -143,18 +185,24 @@ function CourseViewPage() {
             } else {
               setIsEnrolled(true); // Free course
             }
+          } else {
+            setIsFollowing(false);
+            setIsEnrolled(c.price <= 0);
           }
         }
       } catch (err) {
         console.error('Error loading course:', err);
+        if (isMounted) setEnrollmentError('We could not load the latest course access status. Please check your connection and try again.');
       } finally {
-        setLoading(false);
-        setCheckingAccess(false);
+        if (isMounted) {
+          setLoading(false);
+          setCheckingAccess(false);
+        }
       }
     }
     loadData();
-    return () => { if (unsubReviews) unsubReviews(); };
-  }, [slug, currentUser]);
+    return () => { isMounted = false; if (unsubReviews) unsubReviews(); };
+  }, [slug, currentUser?.id]);
 
   const nextChapter = useMemo(() => {
     if (!activeChapter) return null;
@@ -185,9 +233,10 @@ function CourseViewPage() {
   };
 
   const handleSeek = (val: number) => {
-    if (!videoRef.current) return;
-    videoRef.current.currentTime = val;
-    setCurrentTime(val);
+    if (!videoRef.current || !Number.isFinite(val) || duration <= 0) return;
+    const nextTime = Math.min(duration, Math.max(0, val));
+    videoRef.current.currentTime = nextTime;
+    setCurrentTime(nextTime);
   };
 
   const handleHoldStart = () => {
@@ -227,11 +276,11 @@ function CourseViewPage() {
   const toggleFullscreen = () => {
     if (!playerContainerRef.current) return;
     if (!document.fullscreenElement) {
-      playerContainerRef.current.requestFullscreen();
-      setIsFullscreen(true);
+      playerContainerRef.current.requestFullscreen()
+        .then(() => setIsFullscreen(true))
+        .catch(() => toast.error('Fullscreen is not available in this browser.'));
     } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
+      document.exitFullscreen().finally(() => setIsFullscreen(false));
     }
   };
 
@@ -256,6 +305,7 @@ function CourseViewPage() {
 
   const handleVideoEnded = () => {
     if (nextChapter) {
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       setShowNextOverlay(true); setCountdown(5);
       countdownIntervalRef.current = setInterval(() => {
         setCountdown(p => {
@@ -265,6 +315,22 @@ function CourseViewPage() {
       }, 1000);
     }
   };
+
+  useEffect(() => {
+    setCurrentTime(0);
+    setDuration(0);
+    setIsPlaying(false);
+    setShowNextOverlay(false);
+    setCountdown(5);
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+  }, [activeChapter?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    };
+  }, []);
 
   const toggleFollow = async () => {
     if (!currentUser || !course) return toast.error('Sign in to follow');
@@ -352,24 +418,118 @@ function CourseViewPage() {
   if (loading || checkingAccess) return <CourseViewSkeleton />;
   if (!course) return <Layout><div className="p-12 text-center text-2xl font-black text-white bg-[#050505]">Course not found</div></Layout>;
 
-  const hasAccess = isEnrolled || activeChapter?.isFreeDemo;
+  const courseIsAvailable = !isExpired || isOwner;
+  const hasAccess = courseIsAvailable && (isEnrolled || isOwner || course.price <= 0 || !!activeChapter?.isFreeDemo);
+  const isPaidCourse = course.price > 0;
+
+  const loadRazorpay = () => new Promise<boolean>((resolve) => {
+    if (window.Razorpay) {
+      resolve(true);
+      return;
+    }
+
+    const existingScript = document.querySelector<HTMLScriptElement>('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve(true), { once: true });
+      existingScript.addEventListener('error', () => resolve(false), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
 
   const handleEnroll = async () => {
     if (!currentUser) return toast.error('Please sign in to enroll');
+    if (!course || isOwner) return;
+    if (isExpired) {
+      const message = 'This course access window has expired.';
+      setEnrollmentError(message);
+      return toast.error(message);
+    }
     try {
       setCheckingAccess(true);
+      setEnrollmentError('');
       
-      // Simulated Payment Flow
-      const loadingToast = toast.loading('Initializing secure payment gateway...');
-      await new Promise(r => setTimeout(r, 1500));
-      toast.loading('Processing payment...', { id: loadingToast });
-      await new Promise(r => setTimeout(r, 2000));
-      
-      await DbService.enrollInCourse(course!.id, currentUser.id);
+      const loadingToast = toast.loading(RAZORPAY_KEY_ID ? 'Opening secure Razorpay checkout...' : 'Preparing test checkout...');
+      const finishEnrollment = async (paymentData: Record<string, any>) => {
+        await DbService.enrollInCourse(course.id, currentUser.id, {
+          courseId: course.id,
+          courseTitle: course.title,
+          creatorId: course.userId,
+          amount: course.price,
+          currency: 'INR',
+          status: 'active',
+          ...paymentData,
+        });
+      };
+
+      if (RAZORPAY_KEY_ID) {
+        const isLoaded = await loadRazorpay();
+        if (!isLoaded || !window.Razorpay) {
+          throw new Error('Payment checkout could not be loaded. Please try again.');
+        }
+
+        const RazorpayCheckout = window.Razorpay;
+        await new Promise<void>((resolve, reject) => {
+          const razorpay = new RazorpayCheckout({
+            key: RAZORPAY_KEY_ID,
+            amount: course.price * 100,
+            currency: 'INR',
+            name: 'EduNook',
+            description: course.title,
+            image: '/logo.png',
+            prefill: {
+              name: dbUser?.fullName || currentUser.displayName || '',
+              email: currentUser.email || '',
+            },
+            notes: {
+              courseId: course.id,
+              courseTitle: course.title,
+              creatorId: course.userId,
+            },
+            theme: { color: '#6366f1' },
+            handler: async (response: any) => {
+              try {
+                await finishEnrollment({
+                  paymentProvider: 'razorpay',
+                  paymentMode: 'live_checkout',
+                  paymentId: response.razorpay_payment_id || null,
+                  orderId: response.razorpay_order_id || null,
+                  signature: response.razorpay_signature || null,
+                });
+                resolve();
+              } catch (err) {
+                reject(err);
+              }
+            },
+            modal: {
+              ondismiss: () => reject(new Error('Payment was cancelled.')),
+            },
+          });
+          razorpay.open();
+        });
+      } else {
+        setPaymentMode('test');
+        toast.loading('Razorpay key not configured. Completing a safe test enrollment...', { id: loadingToast });
+        await new Promise(r => setTimeout(r, 1200));
+        await finishEnrollment({
+          paymentProvider: 'test',
+          paymentMode: 'test_checkout',
+          paymentId: `test_${Date.now()}`,
+        });
+      }
+
       setIsEnrolled(true);
-      toast.success('Payment Successful! Welcome to the cohort.', { id: loadingToast });
-    } catch (err) {
-      toast.error('Transaction failed. Please try again.');
+      toast.success('Course unlocked. Welcome to the cohort.', { id: loadingToast });
+    } catch (err: any) {
+      const message = err?.message || 'Transaction failed. Please try again.';
+      setEnrollmentError(message);
+      toast.error(message);
     } finally {
       setCheckingAccess(false);
     }
@@ -380,12 +540,12 @@ function CourseViewPage() {
       <div className={`flex flex-col ${theaterMode ? 'w-full' : 'xl:flex-row'} min-h-[calc(100vh-64px)] bg-[#050505] overflow-x-hidden`}>
         
         {/* Main Content Area */}
-        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 flex flex-col min-w-0">
           
           {/* Cinema Player */}
           <div 
             ref={playerContainerRef}
-            className={`w-full bg-black relative group/player overflow-hidden select-none transition-all duration-500 ${theaterMode ? 'aspect-[21/9] max-h-[85vh]' : 'min-h-[380px] md:aspect-video shadow-[0_30px_100px_rgba(0,0,0,0.8)]'}`}
+            className={`w-full bg-black relative group/player overflow-hidden select-none transition-all duration-500 ${theaterMode ? 'aspect-video lg:aspect-[21/9] max-h-[85vh]' : 'min-h-[220px] sm:min-h-[300px] md:min-h-[380px] md:aspect-video shadow-[0_30px_100px_rgba(0,0,0,0.8)]'}`}
             onMouseMove={resetControlsTimeout}
             onMouseLeave={() => isPlaying && setShowControls(false)}
           >
@@ -400,21 +560,32 @@ function CourseViewPage() {
                      <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/40" />
                      
                      {!hasAccess ? (
-                        <div className="relative z-10 flex flex-col items-center gap-6 md:gap-8 p-6 md:p-10 bg-black/60 backdrop-blur-3xl rounded-[2.5rem] md:rounded-[3rem] border border-white/10 shadow-2xl max-w-lg mx-auto text-center">
+                         <div className="relative z-10 flex flex-col items-center gap-5 md:gap-7 p-6 md:p-10 bg-black/70 backdrop-blur-3xl rounded-[2rem] md:rounded-[2.5rem] border border-white/10 shadow-2xl max-w-lg mx-4 text-center">
                            <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-primary/20 flex items-center justify-center border border-primary/40 shadow-[0_0_50px_rgba(var(--primary-rgb),0.3)]">
                               <ShieldAlert className="w-8 h-8 md:w-10 md:h-10 text-primary" />
                            </div>
                            <div className="space-y-2 md:space-y-3">
                               <h3 className="text-xl md:text-2xl font-black text-white uppercase tracking-tighter">Premium Content</h3>
-                              <p className="text-muted-foreground text-xs md:text-sm font-medium leading-relaxed">This module is part of the professional curriculum. Enroll now to unlock full mastery.</p>
-                           </div>
-                           <button 
-                             onClick={handleEnroll}
-                             className="w-full py-4 md:py-5 bg-primary text-white rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest shadow-2xl shadow-primary/40 hover:scale-105 transition-all flex items-center justify-center gap-3"
-                           >
-                              Unlock Course for ₹{course.price} <IndianRupee className="w-3.5 h-3.5 md:w-4 h-4" />
-                           </button>
-                        </div>
+                              <p className="text-muted-foreground text-xs md:text-sm font-medium leading-relaxed">
+                                {isExpired ? 'This course access window has expired. New enrollment is currently unavailable.' : 'This lesson is part of the paid curriculum. Unlock the course once and every module becomes available.'}
+                              </p>
+                            </div>
+                            {enrollmentError && (
+                              <p className="w-full rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs font-bold leading-relaxed text-destructive">
+                                {enrollmentError}
+                              </p>
+                            )}
+                            <button 
+                              onClick={handleEnroll}
+                              disabled={checkingAccess || isExpired}
+                              className="w-full py-4 md:py-5 bg-primary text-white rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest shadow-2xl shadow-primary/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:scale-100"
+                            >
+                               {isExpired ? 'Enrollment Closed' : currentUser ? `Unlock for ${formatPrice(course.price)}` : 'Sign in to unlock'} <IndianRupee className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                            </button>
+                            <p className="text-[10px] font-bold text-white/35 leading-relaxed">
+                              {paymentMode === 'razorpay' ? 'Secure Razorpay checkout ready.' : 'Test checkout active until your Razorpay key is added.'}
+                            </p>
+                         </div>
                      ) : (
                         <>
                            <motion.div 
@@ -479,8 +650,8 @@ function CourseViewPage() {
                   <div className="px-4 md:px-8 pb-2 md:pb-3">
                     <div className="relative h-2 md:h-1.5 w-full bg-white/10 rounded-full cursor-pointer group/seek" 
                          onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); handleSeek(((e.clientX - r.left) / r.width) * duration); }}>
-                       <div className="absolute top-0 left-0 h-full bg-primary rounded-full shadow-[0_0_15px_rgba(var(--primary-rgb),0.8)]" style={{ width: `${(currentTime/duration)*100}%` }} />
-                       <div className="absolute top-1/2 -translate-y-1/2 h-5 w-5 md:h-4 md:w-4 bg-white border-2 border-primary rounded-full scale-0 md:group-hover/seek:scale-100 transition-transform" style={{ left: `calc(${(currentTime/duration)*100}% - 10px)` }} />
+                        <div className="absolute top-0 left-0 h-full bg-primary rounded-full shadow-[0_0_15px_rgba(var(--primary-rgb),0.8)]" style={{ width: `${seekPercent}%` }} />
+                        <div className="absolute top-1/2 -translate-y-1/2 h-5 w-5 md:h-4 md:w-4 bg-white border-2 border-primary rounded-full scale-0 md:group-hover/seek:scale-100 transition-transform" style={{ left: `calc(${seekPercent}% - 10px)` }} />
                     </div>
                   </div>
                   <div className="px-4 md:px-8 py-3 md:py-6 flex items-center justify-between">
@@ -521,21 +692,32 @@ function CourseViewPage() {
             ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center bg-[#0a0a0a] gap-1 md:gap-8 p-1 md:p-10 relative overflow-hidden">
                    {!hasAccess ? (
-                      <div className="flex flex-col items-center gap-6 md:gap-8 p-6 md:p-10 bg-black/60 backdrop-blur-3xl rounded-[2.5rem] md:rounded-[3rem] border border-white/10 shadow-2xl max-w-lg mx-auto text-center relative z-10 scale-90 md:scale-100">
+                       <div className="flex flex-col items-center gap-5 md:gap-7 p-6 md:p-10 bg-black/70 backdrop-blur-3xl rounded-[2rem] md:rounded-[2.5rem] border border-white/10 shadow-2xl max-w-lg mx-4 text-center relative z-10">
                          <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-primary/20 flex items-center justify-center border border-primary/40 shadow-[0_0_50px_rgba(var(--primary-rgb),0.3)]">
                             <ShieldAlert className="w-8 h-8 md:w-10 md:h-10 text-primary" />
                          </div>
                          <div className="space-y-2 md:space-y-3">
                             <h3 className="text-xl md:text-2xl font-black text-white uppercase tracking-tighter">Skill Locked</h3>
-                            <p className="text-muted-foreground text-xs md:text-sm font-medium leading-relaxed">This external workspace requires course enrollment. Join the cohort to proceed.</p>
-                         </div>
-                         <button 
-                           onClick={handleEnroll}
-                           className="w-full py-4 md:py-5 bg-primary text-white rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest shadow-2xl shadow-primary/40 hover:scale-105 transition-all flex items-center justify-center gap-3"
-                           >
-                            Enroll for ₹{course.price} <IndianRupee className="w-3.5 h-3.5 md:w-4 h-4" />
-                         </button>
-                      </div>
+                            <p className="text-muted-foreground text-xs md:text-sm font-medium leading-relaxed">
+                              {isExpired ? 'This course access window has expired. New enrollment is currently unavailable.' : 'This workspace is included with the paid course. Enroll once to open every lesson, quiz, and resource.'}
+                            </p>
+                          </div>
+                          {enrollmentError && (
+                            <p className="w-full rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs font-bold leading-relaxed text-destructive">
+                              {enrollmentError}
+                            </p>
+                          )}
+                          <button 
+                            onClick={handleEnroll}
+                            disabled={checkingAccess || isExpired}
+                            className="w-full py-4 md:py-5 bg-primary text-white rounded-2xl font-black text-xs md:text-sm uppercase tracking-widest shadow-2xl shadow-primary/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:scale-100"
+                            >
+                             {isExpired ? 'Enrollment Closed' : currentUser ? `Enroll for ${formatPrice(course.price)}` : 'Sign in to enroll'} <IndianRupee className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                          </button>
+                          <p className="text-[10px] font-bold text-white/35 leading-relaxed">
+                            {paymentMode === 'razorpay' ? 'Secure Razorpay checkout ready.' : 'Test checkout active until your Razorpay key is added.'}
+                          </p>
+                       </div>
                     ) : (
                       <div className="relative z-10 flex flex-col items-center justify-center gap-6 md:gap-10 w-full max-w-2xl text-center px-4">
                         <div className="relative w-full p-8 md:p-16 bg-gradient-to-b from-white/[0.03] to-transparent border border-white/10 rounded-[3rem] shadow-2xl overflow-hidden group/launch">
@@ -616,9 +798,37 @@ function CourseViewPage() {
                     <div className="flex flex-wrap items-center gap-3">
                         <span className="px-4 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-black text-primary uppercase tracking-[0.2em] shadow-lg shadow-primary/5">Batch 01</span>
                         <span className="flex items-center gap-2 text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] opacity-40"><Rocket className="w-3 h-3" /> {course.category}</span>
+                        <span className={`px-3 py-1 rounded-full border text-[10px] font-black uppercase tracking-[0.2em] ${isPaidCourse ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'}`}>
+                          {isPaidCourse ? `${formatPrice(course.price)} Access` : 'Free Access'}
+                        </span>
                     </div>
                     <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white uppercase tracking-tighter leading-[0.9]">{course.title}</h1>
                 </div>
+
+                {isPaidCourse && !isEnrolled && !isOwner && (
+                  <div className={`rounded-[2rem] border p-5 md:p-6 shadow-[0_20px_60px_rgba(var(--primary-rgb),0.08)] ${isExpired ? 'border-destructive/25 bg-destructive/[0.08]' : 'border-primary/20 bg-primary/[0.06]'}`}>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+                      <div className="space-y-2">
+                        <p className={`text-[10px] font-black uppercase tracking-[0.25em] ${isExpired ? 'text-destructive' : 'text-primary'}`}>{isExpired ? 'Enrollment Closed' : 'Paid Course'}</p>
+                        <p className="text-sm md:text-base font-medium text-white/70 leading-relaxed">
+                          {isExpired ? 'The creator-set access window for this course has ended.' : 'Free previews are available. Enroll once to unlock every lesson, quiz, workspace, and future module.'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleEnroll}
+                        disabled={checkingAccess || isExpired}
+                        className="w-full md:w-auto shrink-0 rounded-2xl bg-primary px-8 py-4 text-xs font-black uppercase tracking-[0.2em] text-white shadow-2xl shadow-primary/30 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-60 disabled:scale-100"
+                      >
+                        {isExpired ? 'Closed' : currentUser ? `Unlock ${formatPrice(course.price)}` : 'Sign in to unlock'}
+                      </button>
+                    </div>
+                    {enrollmentError && (
+                      <p className="mt-4 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs font-bold leading-relaxed text-destructive">
+                        {enrollmentError}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col md:flex-row md:items-center justify-between gap-8 md:gap-12 p-6 md:p-10 bg-white/[0.02] border border-white/5 rounded-[2rem] md:rounded-[3rem] backdrop-blur-3xl relative overflow-hidden group">
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
@@ -857,12 +1067,12 @@ function CourseViewPage() {
               <div className="space-y-4 relative z-10">
                  <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-60">Your Progress</span>
-                    <span className="text-[10px] font-black text-white uppercase tracking-widest">{Math.round((chapters.findIndex(c => c.id === activeChapter?.id) / chapters.length) * 100)}%</span>
+                    <span className="text-[10px] font-black text-white uppercase tracking-widest">{courseProgress}%</span>
                  </div>
                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
                     <motion.div 
                       initial={{ width: 0 }}
-                      animate={{ width: `${(chapters.findIndex(c => c.id === activeChapter?.id) / chapters.length) * 100}%` }}
+                       animate={{ width: `${courseProgress}%` }}
                       className="h-full bg-gradient-to-r from-primary to-accent shadow-[0_0_15px_rgba(var(--primary-rgb),0.5)]"
                     />
                  </div>
@@ -882,21 +1092,27 @@ function CourseViewPage() {
                {chapters.map((ch, i) => {
                  const active = activeChapter?.id === ch.id;
                  const uniqueKey = ch.id || `chapter-${i}`;
-                 return (
-                   <button key={uniqueKey} onClick={() => { setActiveChapter(ch); setHasStarted(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                     className={`w-full group relative rounded-2xl md:rounded-[1.75rem] p-3 md:p-4 transition-all text-left flex items-center gap-3 md:gap-4 border ${active ? 'bg-primary/10 border-primary/30 shadow-lg' : 'border-transparent hover:bg-white/[0.02] hover:border-white/5'}`}>
-                      <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-[1rem] flex items-center justify-center transition-all duration-500 shrink-0 ${active ? 'bg-primary text-white scale-105 shadow-[0_8px_20px_rgba(var(--primary-rgb),0.3)]' : 'bg-white/5 text-muted-foreground group-hover:bg-white/10 group-hover:text-white'}`}>
-                         {active ? <Sparkles className="w-5 h-5 md:w-6 md:h-6 animate-pulse" /> : (
-                            ch.isFreeDemo ? <PlayCircle className="w-5 h-5 md:w-6 md:h-6 text-emerald-500 opacity-60 group-hover:opacity-100 transition-opacity" /> : <span className="text-[10px] md:text-xs font-black opacity-30">{(i+1).toString().padStart(2,'0')}</span>
-                         )}
-                      </div>
+                  const accessLabel = getChapterAccessLabel(course, isEnrolled, isOwner, ch);
+                  const isLocked = accessLabel === 'Locked';
+                  return (
+                    <button key={uniqueKey} onClick={() => { setActiveChapter(ch); setHasStarted(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                      aria-label={`${ch.title}. ${accessLabel}. ${ch.type} module`}
+                      className={`w-full group relative rounded-2xl md:rounded-[1.75rem] p-3 md:p-4 transition-all text-left flex items-center gap-3 md:gap-4 border ${active ? 'bg-primary/10 border-primary/30 shadow-lg' : isLocked ? 'border-transparent bg-white/[0.01] opacity-80 hover:bg-white/[0.03] hover:border-white/5' : 'border-transparent hover:bg-white/[0.02] hover:border-white/5'}`}>
+                       <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-[1rem] flex items-center justify-center transition-all duration-500 shrink-0 ${active ? 'bg-primary text-white scale-105 shadow-[0_8px_20px_rgba(var(--primary-rgb),0.3)]' : isLocked ? 'bg-white/5 text-white/20 group-hover:text-primary' : 'bg-white/5 text-muted-foreground group-hover:bg-white/10 group-hover:text-white'}`}>
+                          {active ? <Sparkles className="w-5 h-5 md:w-6 md:h-6 animate-pulse" /> : (
+                             ch.isFreeDemo ? <PlayCircle className="w-5 h-5 md:w-6 md:h-6 text-emerald-500 opacity-60 group-hover:opacity-100 transition-opacity" /> : <span className="text-[10px] md:text-xs font-black opacity-30">{(i+1).toString().padStart(2,'0')}</span>
+                          )}
+                       </div>
                       <div className="flex-1 min-w-0 space-y-0.5">
                          <div className="flex items-center gap-2">
                             <p className={`text-xs md:text-[14px] font-black truncate transition-colors ${active ? 'text-white' : 'text-muted-foreground group-hover:text-white'}`}>{ch.title}</p>
-                            {ch.isFreeDemo && !isEnrolled && (
-                               <span className="px-1.5 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded-md text-[6px] md:text-[7px] font-black text-emerald-500 uppercase tracking-widest whitespace-nowrap">Free</span>
-                            )}
-                         </div>
+                             {ch.isFreeDemo && !isEnrolled && (
+                                <span className="px-1.5 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded-md text-[6px] md:text-[7px] font-black text-emerald-500 uppercase tracking-widest whitespace-nowrap">Free</span>
+                             )}
+                             {isLocked && (
+                                <span className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded-md text-[6px] md:text-[7px] font-black text-white/35 uppercase tracking-widest whitespace-nowrap">Locked</span>
+                             )}
+                          </div>
                          <div className="flex items-center gap-2">
                             <div className={`w-1 h-1 rounded-full ${active ? 'bg-primary animate-pulse' : 'bg-white/10'}`} />
                             <span className="text-[7px] md:text-[8px] font-black uppercase tracking-[0.1em] opacity-30 truncate">{ch.type} Module</span>

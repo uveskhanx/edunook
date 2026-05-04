@@ -39,6 +39,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
   const searchRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [unseenCount, setUnseenCount] = useState(0);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
 
   useEffect(() => {
     setSearchValue(searchParams.q || '');
@@ -90,7 +91,32 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
       const unsubscribe = DbService.subscribeToUnseenCount(user.id, setUnseenCount);
       return () => unsubscribe();
     }
+    setUnseenCount(0);
   }, [user]);
+
+  // Real-time unread chat count
+  useEffect(() => {
+    if (user) {
+      const unsubscribe = DbService.subscribeToUnreadChatCount(user.id, setUnreadChatCount);
+      return () => unsubscribe();
+    }
+    setUnreadChatCount(0);
+  }, [user]);
+
+  const formatBadgeCount = (count: number) => count > 99 ? '99+' : String(count);
+  const getNavBadgeCount = (label: string) => {
+    if (label === 'Notifications') return unseenCount;
+    if (label === 'Chat') return unreadChatCount;
+    return 0;
+  };
+
+  const CountBadge = ({ count, className = '' }: { count: number; className?: string }) => (
+    count > 0 ? (
+      <span className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 bg-destructive text-white text-[9px] font-black rounded-full shadow-lg shadow-destructive/30 ring-2 ring-background ${className}`}>
+        {formatBadgeCount(count)}
+      </span>
+    ) : null
+  );
 
   const handleSearch = (e: React.FormEvent | string) => {
     if (typeof e !== 'string') e.preventDefault();
@@ -141,13 +167,11 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
                 {isActive && (
                   <motion.div layoutId="sidebar-active" className="absolute inset-0 bg-primary/10 rounded-2xl" />
                 )}
-                <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'opacity-70 group-hover:opacity-100'}`} />
+                <span className="relative shrink-0">
+                  <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'opacity-70 group-hover:opacity-100'}`} />
+                  <CountBadge count={getNavBadgeCount(item.label)} />
+                </span>
                 <span>{item.label}</span>
-                {item.label === 'Notifications' && unseenCount > 0 && (
-                  <span className="ml-auto min-w-[20px] h-5 flex items-center justify-center px-1.5 bg-destructive text-white text-[10px] font-black rounded-full shadow-lg shadow-destructive/20">
-                    {unseenCount > 99 ? '99+' : unseenCount}
-                  </span>
-                )}
               </Link>
             );
           })}
@@ -338,9 +362,10 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
             <Link 
               to={user ? '/chat' : '/login' as any}
               aria-label="Messages"
-              className="md:hidden p-2.5 bg-muted/20 border border-white/5 rounded-xl text-muted-foreground hover:text-primary transition-all"
+              className="md:hidden relative p-2.5 bg-muted/20 border border-white/5 rounded-xl text-muted-foreground hover:text-primary transition-all"
             >
               <MessageCircle className="w-5 h-5" />
+              <CountBadge count={unreadChatCount} />
             </Link>
             
             {/* Notification Bell - Mobile Only */}
@@ -350,11 +375,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
               className="md:hidden relative p-2 bg-card border border-border rounded-xl text-muted-foreground hover:text-foreground hover:border-primary/50 transition-all cursor-pointer group"
             >
                <Bell className="w-5 h-5 group-hover:scale-110 transition-transform" />
-               {unseenCount > 0 && (
-                 <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center px-1 bg-destructive text-white text-[9px] font-black rounded-full shadow-lg shadow-destructive/30 animate-pulse">
-                   {unseenCount > 99 ? '99+' : unseenCount}
-                 </span>
-               )}
+               <CountBadge count={unseenCount} />
             </Link>
  
             {/* Settings - Mobile Only since it's in Desktop Sidebar */}

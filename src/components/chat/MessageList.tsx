@@ -48,7 +48,7 @@ export function MessageList({
                 className={`flex ${isOwn ? 'justify-end' : 'justify-start'} message-appear`}
                 onClick={() => setSelectedId(isSelected ? null : msg.id)}
               >
-                <div className={`max-w-[85%] md:max-w-[70%] group relative flex items-center gap-2 ${isOwn ? 'flex-row' : 'flex-row-reverse'}`}>
+	                <div className={`max-w-[85%] md:max-w-[70%] min-w-0 group relative flex items-center gap-2 ${isOwn ? 'flex-row' : 'flex-row-reverse'}`}>
                   {/* Message Options Trigger - Centered Vertically */}
                   <div className={`transition-all flex items-center justify-center shrink-0 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100'}`}>
                     <DropdownMenu>
@@ -83,7 +83,7 @@ export function MessageList({
                     </DropdownMenu>
                   </div>
 
-                  <div className={`flex flex-col gap-1 flex-1 ${isOwn ? 'items-end' : 'items-start'}`}>
+	                  <div className={`flex flex-col gap-1 flex-1 min-w-0 ${isOwn ? 'items-end' : 'items-start'}`}>
                     {isLastInBlock && (
                       <div className="flex items-center gap-2 mb-1 px-1 opacity-40">
                         <p className="text-[9px] font-black text-foreground uppercase tracking-widest">
@@ -92,7 +92,7 @@ export function MessageList({
                       </div>
                     )}
 
-                    <div className={`flex flex-col gap-2 rounded-2xl shadow-sm transition-all relative w-fit ${
+	                    <div className={`flex max-w-full flex-col gap-2 rounded-2xl shadow-sm transition-all relative w-fit ${
                       isOwn 
                         ? 'bg-gradient-to-br from-primary to-indigo-600 text-white rounded-tr-none' 
                         : 'bg-foreground/5 border border-border text-foreground/90 rounded-tl-none backdrop-blur-md'
@@ -123,9 +123,9 @@ export function MessageList({
                          </div>
                       )}
                       {msg.text && (
-                         <div className="px-5 py-3 text-[14px] md:text-[15px] font-medium leading-relaxed">
-                            {msg.text}
-                         </div>
+	                         <div className="max-w-full whitespace-pre-wrap break-words px-5 py-3 text-[14px] md:text-[15px] font-medium leading-relaxed [overflow-wrap:anywhere]">
+	                            {msg.text}
+	                         </div>
                       )}
                     </div>
 

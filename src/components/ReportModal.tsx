@@ -50,8 +50,20 @@ Timestamp: ${new Date().toLocaleString()}`;
         username: dbUser?.username || 'student',
         userId: user.id
       };
-      
-      await sendFeedbackEmailAction({ data });
+
+      try {
+        const edunookUid = await DbService.getUidByUsername('edunook');
+        if (!edunookUid) {
+          throw new Error('Admin account @edunook was not found.');
+        }
+
+        const chatId = await DbService.getOrCreateChat(user.id, edunookUid);
+        const messageId = await DbService.sendMessage(chatId, user.id, `[SYSTEM SIGNAL: Account Report]\n${reportMessage}`);
+        await DbService.deleteMessageForMe(user.id, chatId, messageId);
+      } catch (chatErr) {
+        console.warn('Direct account report delivery failed; falling back to server route:', chatErr);
+        await sendFeedbackEmailAction({ data });
+      }
       
       setIsSuccess(true);
       toast.success("Intelligence Report Filed Successfully.");

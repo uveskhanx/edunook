@@ -194,45 +194,46 @@ export const sendFeedbackEmailAction = createServerFn({ method: "POST" })
 
       // 2. Route to "edunook" Admin Chat
       const usernameSnapshot = await adminDb.ref(`usernames/edunook`).get();
-      if (usernameSnapshot.exists()) {
-        const edunookUid = usernameSnapshot.val();
-        const reporterId = userId || (await adminDb.ref(`usernames/${username.toLowerCase()}`).get()).val() || 'system';
-        
-        const participants = [reporterId, edunookUid].sort();
-        const chatId = participants.join('_');
-        const now = new Date().toISOString();
+      if (!usernameSnapshot.exists()) {
+        throw new Error('Admin account @edunook was not found');
+      }
 
-        // Push chat message
-        const messagesRef = adminDb.ref(`messages/${chatId}`).push();
-        const messageId = messagesRef.key;
-        await messagesRef.set({
-          id: messageId,
-          senderId: reporterId,
-          text: `[SYSTEM SIGNAL: ${type}]\n${message}`,
-          createdAt: now,
-          seen: false
-        });
+      const edunookUid = usernameSnapshot.val();
+      const reporterId = userId || (await adminDb.ref(`usernames/${username.toLowerCase()}`).get()).val() || 'system';
+      
+      const participants = [reporterId, edunookUid].sort();
+      const chatId = participants.join('_');
+      const now = new Date().toISOString();
 
-        // Update chat metadata and user chats index
-        await adminDb.ref(`chats/${chatId}`).update({
-          lastMessage: `${type}: Signal Received`,
-          updatedAt: now,
-          lastSenderId: reporterId,
-          [`users/${reporterId}`]: true,
-          [`users/${edunookUid}`]: true
-        });
+      // Push chat message
+      const messagesRef = adminDb.ref(`messages/${chatId}`).push();
+      const messageId = messagesRef.key;
+      await messagesRef.set({
+        id: messageId,
+        senderId: reporterId,
+        text: `[SYSTEM SIGNAL: ${type}]\n${message}`,
+        createdAt: now,
+        seen: false
+      });
 
-        // Ensure chat appears in both users' sidebars
-        await adminDb.ref(`user_chats/${reporterId}/${chatId}`).set(true);
-        await adminDb.ref(`user_chats/${edunookUid}/${chatId}`).set(true);
-        
-        // Increment unread for edunook
-        await adminDb.ref(`chats/${chatId}/unreadCounts/${edunookUid}`).transaction((c: any) => (c || 0) + 1);
+      // Update chat metadata and user chats index
+      await adminDb.ref(`chats/${chatId}`).update({
+        lastMessage: `${type}: Signal Received`,
+        updatedAt: now,
+        lastSenderId: reporterId,
+        [`users/${reporterId}`]: true,
+        [`users/${edunookUid}`]: true
+      });
 
-        // If it's an Account Report, mask it from the reporter
-        if (type === 'Account Report' && reporterId !== 'system') {
-          await adminDb.ref(`user_settings/${reporterId}/deletedMessages/${chatId}/${messageId}`).set(true);
-        }
+      // Ensure chat appears in both users' sidebars
+      await adminDb.ref(`user_chats/${reporterId}/${chatId}`).set(true);
+      await adminDb.ref(`user_chats/${edunookUid}/${chatId}`).set(true);
+      
+      // Increment unread for edunook
+      await adminDb.ref(`chats/${chatId}/unreadCounts/${edunookUid}`).transaction((c: any) => (c || 0) + 1);
+
+      if (reporterId !== 'system' && messageId) {
+        await adminDb.ref(`user_settings/${reporterId}/deletedMessages/${chatId}/${messageId}`).set(true);
       }
 
       return { success: true };
