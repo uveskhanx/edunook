@@ -4,10 +4,13 @@ node_modules/
 # Build outputs
 dist/
 dist-ssr/
+.next/
 .output/
 .vinxi/
 .nitro/
 .tanstack/
+tsconfig.tsbuildinfo
+.codex/
 
 # Environment variables
 .env

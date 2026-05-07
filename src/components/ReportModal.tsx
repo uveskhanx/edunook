@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ShieldAlert, Flag, MessageSquare, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { X, ShieldAlert, Flag, MessageSquare, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { DbService } from '@/lib/db-service';
 import { useAuth } from '@/hooks/use-auth';
-import { sendFeedbackEmailAction } from '@/lib/server/email-actions';
+import { sendFeedbackEmailAction } from '@/lib/client-actions';
 
 interface ReportModalProps {
   isOpen: boolean;
@@ -186,24 +186,5 @@ Timestamp: ${new Date().toLocaleString()}`;
         </div>
       )}
     </AnimatePresence>
-  );
-}
-
-function Loader2(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-    </svg>
   );
 }

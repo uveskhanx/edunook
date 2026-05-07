@@ -1,0 +1,96 @@
+{
+  "rules": {
+    "profiles": {
+      ".read": "true",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid",
+        "subscription": {
+          ".write": "false"
+        }
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "user_settings": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "usernames": {
+      ".read": "true",
+      "$username": {
+        ".write": "auth != null && (!data.exists() || data.val() === auth.uid)"
+      }
+    },
+    "courses": {
+      ".read": "true",
+      "$courseId": {
+        ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid)"
+      }
+    },
+    "chapters": {
+      "$courseId": {
+        ".read": "true",
+        ".write": "auth != null && root.child('courses').child($courseId).child('userId').val() === auth.uid"
+      }
+    },
+    "course_reviews": {
+      "$courseId": {
+        ".read": "true",
+        "$reviewId": {
+          ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid)"
+        }
+      }
+    },
+    "community_themes": {
+      ".read": "true",
+      "$themeId": {
+        ".write": "auth != null && (!data.exists() || data.child('creatorId').val() === auth.uid)"
+      }
+    },
+    "followers": {
+      "$uid": {
+        ".read": "true",
+        "$followerUid": {
+          ".write": "auth != null && auth.uid === $followerUid"
+        }
+      }
+    },
+    "notifications": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null"
+      }
+    },
+    "enrollments": {
+      "$courseId": {
+        ".read": "auth != null && root.child('courses').child($courseId).child('userId').val() === auth.uid",
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
+    },
+    "payments": {
+      ".indexOn": [
+        "teacher_id",
+        "userId"
+      ],
+      "$paymentId": {
+        ".read": "auth != null && (data.child('userId').val() === auth.uid || data.child('teacher_id').val() === auth.uid)",
+        ".write": "auth != null && auth.uid === data.child('userId').val()"
+      }
+    },
+    "payouts": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "false"
+      }
+    }
+  }
+}

@@ -19,17 +19,43 @@ async function resolveProfile(fbUser: any): Promise<Profile | null> {
     // Run Subscription Guard to check for expirations and send warnings
     const { SubscriptionGuard } = await import('@/lib/subscription-guard');
     profile = await SubscriptionGuard.checkAndSync(profile);
+
+    // Auto-heal missing username mappings caused by legacy fallback bugs
+    if (profile.username) {
+       const mappedUid = await DbService.getUidByUsername(profile.username);
+       if (!mappedUid) {
+          await DbService.reserveUsernameTransaction(profile.username.toLowerCase(), profile.uid);
+       }
+    }
   }
 
   // Always ensure a profile exists regardless of displayName
   if (!profile) {
     const map = await DbService.ensureUsernameMapLoaded();
-    const username = map[fbUser.uid] || fbUser.email?.split('@')[0] || fbUser.uid.substring(0, 8);
-    const resolvedName = fbUser.displayName || fbUser.email?.split('@')[0] || username;
+    let baseUsername = map[fbUser.uid] || fbUser.email?.split('@')[0] || fbUser.uid.substring(0, 8);
+    baseUsername = baseUsername.toLowerCase().replace(/[^a-z0-9_]/g, '');
+
+    // Securely claim an available username
+    let claimed = await DbService.reserveUsernameTransaction(baseUsername, fbUser.uid);
+    let finalUsername = baseUsername;
+    let attempts = 0;
+    while (!claimed && attempts < 5) {
+      finalUsername = `${baseUsername}${Math.floor(Math.random() * 10000)}`;
+      claimed = await DbService.reserveUsernameTransaction(finalUsername, fbUser.uid);
+      attempts++;
+    }
+    
+    // Fallback if all attempts fail
+    if (!claimed) {
+      finalUsername = fbUser.uid.toLowerCase();
+      await DbService.reserveUsernameTransaction(finalUsername, fbUser.uid);
+    }
+
+    const resolvedName = fbUser.displayName || fbUser.email?.split('@')[0] || finalUsername;
     const newProfile: Profile = {
       uid: fbUser.uid,
       fullName: resolvedName,
-      username,
+      username: finalUsername,
       email: fbUser.email || '',
       role: 'student',
       createdAt: new Date().toISOString(),

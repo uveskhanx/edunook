@@ -8,7 +8,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { VerificationTick } from '@/components/VerificationTick';
 
 interface ChatSidebarProps {
-  user: any;
+  user: { id: string } | null;
   conversations: (Profile & { 
     chatId: string; 
     lastMessage?: string; 
@@ -70,7 +70,7 @@ export function ChatSidebar({
 
       <div className="flex-1 overflow-y-auto chat-scrollbar px-4 pb-32 md:pb-12 space-y-2 min-h-0">
         <AnimatePresence mode="popLayout">
-          {filteredConversations.map((conv, idx) => (
+          {filteredConversations.map((conv) => (
             <motion.div
               role="button"
               tabIndex={0}
@@ -186,7 +186,7 @@ export function ChatSidebar({
                   <Sparkles className="w-3 h-3" />
                   EduNook Discovery
                </p>
-               {globalResults.map((result, idx) => (
+               {globalResults.map((result) => (
                   <motion.button
                     key={result.uid}
                     initial={{ opacity: 0 }}

@@ -1,14 +1,12 @@
-const CACHE_NAME = 'edunook-offline-vault-v2';
+const CACHE_NAME = 'edunook-offline-vault-v3';
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
   '/favicon.png',
   '/logo.png'
 ];
 
 // Install Event - Pre-cache critical assets
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // Force new service worker to take over immediately
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS_TO_CACHE);
@@ -20,42 +18,51 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     Promise.all([
-      self.clients.claim(), // Take control of all clients immediately
+      self.clients.claim(),
       caches.keys().then((cacheNames) => {
         return Promise.all(
-          cacheNames.map((cacheName) => {
-            if (cacheName !== CACHE_NAME) {
-              console.log('[ServiceWorker] Removing old cache:', cacheName);
-              return caches.delete(cacheName);
-            }
-          })
+          cacheNames
+            .filter((name) => name !== CACHE_NAME)
+            .map((name) => caches.delete(name))
         );
       })
     ])
   );
 });
 
-// Fetch Event - Stale-while-revalidate strategy for better UX
+// Fetch Event - Network-first with cache fallback (only for static assets)
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
+  const url = new URL(event.request.url);
+
+  // Never intercept Next.js build chunks, HMR, or API routes — let them pass through
+  if (
+    url.pathname.startsWith('/_next/') ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.includes('__next') ||
+    url.pathname.includes('webpack')
+  ) {
+    return;
+  }
+
+  // Only cache static assets (images, fonts, icons)
+  const isStaticAsset = /\.(png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot)$/i.test(url.pathname);
+  if (!isStaticAsset) return;
+
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request).then((networkResponse) => {
-        // Cache new successful responses
-        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const clone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return networkResponse;
-      }).catch(() => {
-        // Silent catch for network failures
-      });
-
-      // Return cached version immediately if available, otherwise wait for network
-      return cachedResponse || fetchPromise;
-    })
+      })
+      .catch(() => {
+        return caches.match(event.request).then((cached) => {
+          return cached || new Response('', { status: 408, statusText: 'Offline' });
+        });
+      })
   );
 });

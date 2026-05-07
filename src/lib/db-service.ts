@@ -6,7 +6,7 @@ import {
 } from 'firebase/database';
 import { db } from './firebase';
 import { getAuth } from 'firebase/auth';
-import { sendFeedbackEmailAction } from './server/email-actions';
+import { sendFeedbackEmailAction } from './client-actions';
 
 // Types
 export interface UserPreferences {
@@ -42,6 +42,14 @@ export interface Subscription {
   lastNotifiedDaysRemaining?: number;
 }
 
+export interface CommunityTheme {
+  id: string;
+  url: string;
+  creatorId: string;
+  creatorName: string;
+  createdAt: string;
+}
+
 export interface Profile {
   uid: string;
   username: string;
@@ -57,6 +65,7 @@ export interface Profile {
   subscription?: Subscription;
   followersCount?: number;
   followingCount?: number;
+  theme?: any;
 }
 
 export interface Course {
@@ -142,6 +151,7 @@ export interface TestAttempt {
   answers?: Record<string, number>;
   hintsUsed?: string[];
   timeTaken?: number;
+  timeTakenCentiseconds?: number;
 }
 
 export interface Achievement {
@@ -206,8 +216,115 @@ export interface Presence {
   lastSeen: string | object;
 }
 
+export interface TeacherPaymentSettings {
+  razorpay_account_id: string;
+  updatedAt?: string;
+}
+
 let profileCache: Record<string, Profile> = {};
 let cachedAllProfiles: Profile[] | null = null;
+
+type FirebaseObject = Record<string, any>;
+
+const PUBLIC_PROFILE_KEYS = [
+  'uid',
+  'username',
+  'fullName',
+  'avatarUrl',
+  'bio',
+  'role',
+  'createdAt',
+  'subscription',
+  'followersCount',
+  'followingCount',
+  'theme',
+  'publicThemes',
+] as const;
+
+function pickPublicProfile(data: Partial<Profile> & FirebaseObject): FirebaseObject {
+  const clean: FirebaseObject = {};
+  PUBLIC_PROFILE_KEYS.forEach((key) => {
+    if (data[key] !== undefined) clean[key] = data[key];
+  });
+  return clean;
+}
+
+async function readNode<T = FirebaseObject>(path: string): Promise<T | null> {
+  try {
+    const snapshot = await get(ref(db, path));
+    return snapshot.exists() ? snapshot.val() as T : null;
+  } catch (err) {
+    console.warn(`[DbService] Unable to read ${path}:`, err);
+    return null;
+  }
+}
+
+async function migratePrivateProfileFields(uid: string, publicProfile: FirebaseObject | null) {
+  if (!publicProfile) return;
+
+  const updates: FirebaseObject = {};
+  ['email', 'realEmail', 'dob', 'phone'].forEach((key) => {
+    if (publicProfile[key] !== undefined) {
+      updates[`users/${uid}/${key}`] = publicProfile[key];
+      updates[`profiles/${uid}/${key}`] = null;
+    }
+  });
+
+  if (publicProfile.preferences !== undefined) {
+    updates[`user_settings/${uid}/preferences`] = publicProfile.preferences;
+    updates[`profiles/${uid}/preferences`] = null;
+  }
+  if (publicProfile.history !== undefined) {
+    updates[`user_settings/${uid}/history`] = publicProfile.history;
+    updates[`profiles/${uid}/history`] = null;
+  }
+
+  if (Object.keys(updates).length > 0) {
+    try {
+      await update(ref(db), updates);
+    } catch (err) {
+      console.warn(`[DbService] Unable to clean private profile fields for ${uid}:`, err);
+    }
+  }
+}
+
+const normalizeLeaderboardEntry = (uid: string, raw: any = {}, quizTotalQuestions?: number) => {
+  const storedScore = typeof raw.score === 'number' ? raw.score : 0;
+  const totalQuestions = typeof raw.totalQuestions === 'number' && raw.totalQuestions > 0
+    ? raw.totalQuestions
+    : quizTotalQuestions;
+  const correctAnswers = typeof raw.correctAnswers === 'number'
+    ? raw.correctAnswers
+    : totalQuestions
+      ? storedScore > totalQuestions
+        ? Math.min(totalQuestions, Math.round((storedScore / 100) * totalQuestions))
+        : storedScore
+      : storedScore;
+  const timeTakenCentiseconds = typeof raw.timeTakenCentiseconds === 'number'
+    ? raw.timeTakenCentiseconds
+    : typeof raw.timeTakenMs === 'number'
+      ? Math.round(raw.timeTakenMs / 10)
+      : typeof raw.timeTaken === 'number'
+        ? Math.round(raw.timeTaken * 100)
+        : Number.MAX_SAFE_INTEGER;
+  const accuracy = typeof raw.accuracy === 'number'
+    ? raw.accuracy
+    : totalQuestions
+      ? Math.round((correctAnswers / totalQuestions) * 100)
+      : storedScore;
+
+  return {
+    uid,
+    ...raw,
+    score: correctAnswers,
+    correctAnswers,
+    totalQuestions,
+    accuracy,
+    timeTaken: Number((timeTakenCentiseconds / 100).toFixed(2)),
+    timeTakenCentiseconds,
+    completedAt: raw.completedAt || new Date(0).toISOString()
+  };
+};
 
 // Service Functions
 export const DbService = {
@@ -227,36 +344,60 @@ export const DbService = {
   // Profiles (Consolidated for /users and backward compat)
   async getProfile(uid: string, bypassCache = false): Promise<Profile | null> {
     if (!uid) return null;
-    if (!bypassCache && profileCache[uid]) {
+    const currentUid = getAuth().currentUser?.uid;
+    const shouldReadPrivateNodes = currentUid === uid;
+    if (!bypassCache && profileCache[uid] && (!shouldReadPrivateNodes || profileCache[uid].preferences)) {
       return profileCache[uid];
     }
 
     try {
-      // Fetch both nodes in parallel for speed and consistency
-      const [userSnap, profSnap] = await Promise.all([
-        get(ref(db, `users/${uid}`)),
-        get(ref(db, `profiles/${uid}`))
+      const [publicProfile, privateUser, privateSettings] = await Promise.all([
+        readNode<FirebaseObject>(`profiles/${uid}`),
+        shouldReadPrivateNodes ? readNode<FirebaseObject>(`users/${uid}`) : Promise.resolve(null),
+        shouldReadPrivateNodes ? readNode<FirebaseObject>(`user_settings/${uid}`) : Promise.resolve(null),
       ]);
 
-      if (!userSnap.exists() && !profSnap.exists()) {
+      if (!publicProfile && !privateUser) {
         return null;
       }
 
-      const userData = userSnap.exists() ? userSnap.val() : {};
-      const profData = profSnap.exists() ? profSnap.val() : {};
+      const userData = privateUser || {};
+      const profData = publicProfile || {};
+      if (shouldReadPrivateNodes) {
+        await migratePrivateProfileFields(uid, publicProfile);
+      }
+
+      const settingsData = privateSettings || {};
+      const mergedData: FirebaseObject = {
+        ...userData,
+        ...profData,
+        preferences: settingsData.preferences || userData.preferences || (shouldReadPrivateNodes ? profData.preferences : undefined),
+      };
 
       // Merge data: prioritize profiles but fallback to users
-      const defaultName = userData.email ? userData.email.split('@')[0] : (userData.username || uid.substring(0, 8));
+      const defaultName = userData.email ? userData.email.split('@')[0] : (mergedData.username || uid.substring(0, 8));
+
+      // Auto-heal logic: If a previous bug accidentally saved the UID as the public username,
+      // restore the correct username from the private users node.
+      let resolvedUsername = mergedData.username;
+      if (resolvedUsername === uid && userData.username && userData.username !== uid) {
+        resolvedUsername = userData.username;
+        // Background heal: fix the corrupted public username (fire-and-forget)
+        update(ref(db, `profiles/${uid}`), { username: resolvedUsername }).catch(() => {});
+      }
 
       const merged: Profile = {
         uid,
-        username: profData.username || userData.username || uid.substring(0, 8),
-        fullName: profData.fullName || profData.name || userData.fullName || userData.name || profData.username || userData.username || defaultName,
-        avatarUrl: profData.avatarUrl || userData.avatarUrl || '',
-        bio: profData.bio || userData.bio || '',
-        followersCount: profData.followersCount || userData.followersCount || 0,
-        followingCount: profData.followingCount || userData.followingCount || 0,
-        ...profData // Ensure any other profile-specific fields are included
+        username: resolvedUsername || uid.substring(0, 8),
+        fullName: mergedData.fullName || mergedData.name || mergedData.username || defaultName,
+        email: userData.email || mergedData.email || '',
+        avatarUrl: mergedData.avatarUrl || '',
+        bio: mergedData.bio || '',
+        followersCount: mergedData.followersCount || 0,
+        followingCount: mergedData.followingCount || 0,
+        role: mergedData.role || 'student',
+        createdAt: mergedData.createdAt || new Date().toISOString(),
+        ...mergedData,
       };
 
       profileCache[uid] = merged;
@@ -269,12 +410,17 @@ export const DbService = {
 
   async updateProfile(uid: string, profile: Partial<Profile>) {
     const userRef = ref(db, `profiles/${uid}`);
-    await update(userRef, profile);
+    await update(userRef, {
+      ...pickPublicProfile(profile as Partial<Profile> & FirebaseObject),
+      updatedAt: new Date().toISOString(),
+    });
+    this.clearProfileCache(uid);
   },
 
   async updatePreferences(uid: string, preferences: Partial<UserPreferences>) {
-    const prefRef = ref(db, `profiles/${uid}/preferences`);
+    const prefRef = ref(db, `user_settings/${uid}/preferences`);
     await update(prefRef, preferences);
+    this.clearProfileCache(uid);
   },
 
   // ===== ENROLLMENT SYSTEM =====
@@ -287,8 +433,37 @@ export const DbService = {
 
   async enrollInCourse(courseId: string, userId: string, data: Record<string, any> = {}): Promise<void> {
     const enrollRef = ref(db, `enrollments/${courseId}/${userId}`);
+    
+    // 1. Detect device type from userAgent
+    let device = 'Desktop';
+    if (typeof navigator !== 'undefined') {
+      const ua = navigator.userAgent;
+      if (/tablet|ipad|playbook|silk/i.test(ua)) device = 'Tablet';
+      else if (/mobile|iphone|ipod|android|blackberry|opera mini|iemobile/i.test(ua)) device = 'Mobile';
+    }
+
+    // 2. Determine age bracket (Anonymized for privacy)
+    let ageBracket = 'Unknown';
+    try {
+      const profile = await this.getProfile(userId);
+      if (profile?.dob) {
+        const birth = new Date(profile.dob);
+        const age = Math.floor((new Date().getTime() - birth.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+        if (age >= 45) ageBracket = '45+';
+        else if (age >= 35) ageBracket = '35-44';
+        else if (age >= 25) ageBracket = '25-34';
+        else if (age >= 18) ageBracket = '18-24';
+        else if (age >= 13) ageBracket = '13-17';
+        else if (age >= 3) ageBracket = '3-12';
+      }
+    } catch (err) {
+      console.warn('[DbService] Could not determine age for enrollment:', err);
+    }
+
     await set(enrollRef, {
       enrolledAt: new Date().toISOString(),
+      device,
+      ageBracket,
       ...data
     });
   },
@@ -298,10 +473,51 @@ export const DbService = {
     await set(subRef, subscription);
   },
 
+  async uploadCommunityTheme(uid: string, fullName: string, file: File): Promise<string> {
+    const url = await this.uploadAvatar(uid, file); // Reuse uploadAvatar logic for themes
+    const themeRef = push(ref(db, 'community_themes'));
+    const themeData: CommunityTheme = {
+      id: themeRef.key!,
+      url,
+      creatorId: uid,
+      creatorName: fullName,
+      createdAt: new Date().toISOString()
+    };
+    await set(themeRef, themeData);
+    return url;
+  },
+
+  async getCommunityThemes(): Promise<CommunityTheme[]> {
+    const snapshot = await get(ref(db, 'community_themes'));
+    if (!snapshot.exists()) return [];
+    const data = snapshot.val();
+    return Object.keys(data).map(id => ({ ...data[id], id }));
+  },
+
+  async getTeacherPaymentSettings(uid: string): Promise<TeacherPaymentSettings> {
+    const data = await readNode<TeacherPaymentSettings>(`teachers/${uid}`);
+    return {
+      razorpay_account_id: data?.razorpay_account_id || '',
+      updatedAt: data?.updatedAt,
+    };
+  },
+
+  async updateTeacherPaymentSettings(uid: string, settings: TeacherPaymentSettings): Promise<void> {
+    const accountId = settings.razorpay_account_id.trim();
+    if (accountId && !/^acc_[A-Za-z0-9]{8,}$/.test(accountId)) {
+      throw new Error('Enter a valid Razorpay linked account ID. It usually starts with acc_.');
+    }
+
+    await update(ref(db, `teachers/${uid}`), {
+      razorpay_account_id: accountId || null,
+      updatedAt: new Date().toISOString(),
+    });
+  },
+
   // ===== HISTORY SYSTEM =====
 
   async addToHistory(userId: string, courseId: string, chapterId: string) {
-    const historyRef = ref(db, `profiles/${userId}/history/${courseId}`);
+    const historyRef = ref(db, `user_settings/${userId}/history/${courseId}`);
     await set(historyRef, {
       chapterId,
       lastVisited: new Date().toISOString()
@@ -309,12 +525,12 @@ export const DbService = {
   },
 
   async removeFromHistory(userId: string, courseId: string) {
-    const historyRef = ref(db, `profiles/${userId}/history/${courseId}`);
+    const historyRef = ref(db, `user_settings/${userId}/history/${courseId}`);
     await remove(historyRef);
   },
 
   async getHistory(userId: string): Promise<Record<string, { chapterId: string, lastVisited: string }>> {
-    const historyRef = ref(db, `profiles/${userId}/history`);
+    const historyRef = ref(db, `user_settings/${userId}/history`);
     const snap = await get(historyRef);
     return snap.exists() ? snap.val() : {};
   },
@@ -348,11 +564,15 @@ export const DbService = {
   },
 
   async getAchievements(uid: string): Promise<Achievement[]> {
-    const snapshot = await get(ref(db, `users/${uid}/achievements`));
-    if (!snapshot.exists()) return [];
+    const snapshot = await get(ref(db, `profiles/${uid}/achievements`));
+    const privateSnapshot = !snapshot.exists() && getAuth().currentUser?.uid === uid
+      ? await get(ref(db, `users/${uid}/achievements`))
+      : null;
+    const source = snapshot.exists() ? snapshot : privateSnapshot;
+    if (!source?.exists()) return [];
     
     const achievements: Achievement[] = [];
-    snapshot.forEach((child) => {
+    source.forEach((child) => {
       achievements.push({ id: child.key as string, ...child.val() });
     });
     // Sort so newest are likely first or based on earnedAt string, but for now just reverse
@@ -360,18 +580,22 @@ export const DbService = {
   },
 
   async getHighlights(uid: string): Promise<Highlight[]> {
-    const snapshot = await get(ref(db, `users/${uid}/highlights`));
-    if (!snapshot.exists()) return [];
+    const snapshot = await get(ref(db, `profiles/${uid}/highlights`));
+    const privateSnapshot = !snapshot.exists() && getAuth().currentUser?.uid === uid
+      ? await get(ref(db, `users/${uid}/highlights`))
+      : null;
+    const source = snapshot.exists() ? snapshot : privateSnapshot;
+    if (!source?.exists()) return [];
     
     const highlights: Highlight[] = [];
-    snapshot.forEach((child) => {
+    source.forEach((child) => {
       highlights.push({ id: child.key as string, ...child.val() });
     });
     return highlights.reverse();
   },
 
   async addHighlight(uid: string, highlight: Omit<Highlight, 'id'>): Promise<string> {
-    const highlightsRef = ref(db, `users/${uid}/highlights`);
+    const highlightsRef = ref(db, `profiles/${uid}/highlights`);
     const newRef = push(highlightsRef);
     await set(newRef, highlight);
     return newRef.key!;
@@ -531,7 +755,11 @@ export const DbService = {
     return { ...course, profiles: profile };
   },
 
-  async createCourse(userId: string, data: Partial<Course>): Promise<string> {
+  async deleteChapter(courseId: string, chapterId: string): Promise<void> {
+    await remove(ref(db, `chapters/${courseId}/${chapterId}`));
+  },
+
+  async createCourse(userId: string, data: Partial<Course>): Promise<{ id: string; slug: string }> {
     const coursesRef = ref(db, 'courses');
     const newCourseRef = push(coursesRef);
     const courseId = newCourseRef.key!;
@@ -554,12 +782,9 @@ export const DbService = {
       language: data.language || 'English',
     };
 
-    const updates: Record<string, any> = {};
-    updates[`courses/${courseId}`] = courseData;
-    updates[`course_slugs/${slug}`] = courseId;
-    
-    await update(ref(db), updates);
-    return courseId;
+    await set(ref(db, `courses/${courseId}`), courseData);
+    await set(ref(db, `course_slugs/${slug}`), courseId);
+    return { id: courseId, slug };
   },
 
   async createFeedback(userId: string, data: { type: string; message: string; email: string; username: string }) {
@@ -588,7 +813,7 @@ export const DbService = {
 
       if (Object.keys(batchUpdates).length > 0) {
         await update(ref(db), batchUpdates);
-        console.log(`[DbService] Backfilled publisherName on ${Object.keys(batchUpdates).length} courses for ${uid}`);
+
       }
     } catch (err) {
       console.warn('[DbService] backfillCoursePublisherNames failed:', err);
@@ -1014,7 +1239,7 @@ export const DbService = {
           const chat = chatSnap.val();
           
           if (chat.status === 'purging' && chat.pendingPurgeAt && new Date(chat.pendingPurgeAt) <= now) {
-            console.log(`[GC] Identified expired conversation: ${chatId}. Initializing secure wipe...`);
+
             
             // 1. Remove messages (if permission allowed)
             await remove(ref(db, `messages/${chatId}`)).catch(() => null);
@@ -1054,7 +1279,7 @@ export const DbService = {
 
   async uploadChatMedia(userId: string, file: File): Promise<{ url: string, type: 'image' | 'video' | 'file' }> {
     const { uploadToCloudinary } = await import('./cloudinary');
-    let folder = `edunook/chat/${userId}`;
+    const folder = `edunook/chat/${userId}`;
     const result = await uploadToCloudinary(file, folder);
     
     let type: 'image' | 'video' | 'file' = 'file';
@@ -1357,11 +1582,8 @@ export const DbService = {
       createdAt: new Date().toISOString()
     };
 
-    const updates: Record<string, any> = {};
-    updates[`tests/${testId}`] = testData;
-    updates[`test_slugs/${slug}`] = testId;
-    
-    await update(ref(db), updates);
+    await set(ref(db, `tests/${testId}`), testData);
+    await set(ref(db, `test_slugs/${slug}`), testId);
     return testId;
   },
 
@@ -1398,8 +1620,21 @@ export const DbService = {
       .sort((a, b) => b.completedAt.localeCompare(a.completedAt));
   },
 
+  async getBestTestAttemptForUser(uid: string, testId: string): Promise<TestAttempt | null> {
+    const attempts = await this.getTestAttempts(uid);
+    const matching = attempts
+      .filter(attempt => attempt.testId === testId)
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        const aTime = a.timeTakenCentiseconds ?? Math.round((a.timeTaken ?? Number.MAX_SAFE_INTEGER) * 100);
+        const bTime = b.timeTakenCentiseconds ?? Math.round((b.timeTaken ?? Number.MAX_SAFE_INTEGER) * 100);
+        return aTime - bTime;
+      });
+    return matching[0] || null;
+  },
+
   // Leaderboards
-  async saveLeaderboardEntry(idOrSlug: string, uid: string, entry: { score: number; timeTaken: number; name: string; avatar?: string | null; hintsCount?: number }) {
+  async saveLeaderboardEntry(idOrSlug: string, uid: string, entry: { score: number; timeTaken: number; name: string; avatar?: string | null; hintsCount?: number; correctAnswers?: number; totalQuestions?: number; accuracy?: number; timeTakenCentiseconds?: number }) {
     if (!idOrSlug || !uid) return;
 
     // 1. Resolve actual ID first 
@@ -1411,10 +1646,21 @@ export const DbService = {
         actualId = slugSnapshot.val();
         slug = idOrSlug;
       }
-    } catch (e) { }
+    } catch (e) {
+      console.warn('Leaderboard slug resolution failed:', e);
+    }
+
+    const correctAnswers = typeof entry.correctAnswers === 'number' ? entry.correctAnswers : entry.score;
+    const timeTakenCentiseconds = typeof entry.timeTakenCentiseconds === 'number'
+      ? entry.timeTakenCentiseconds
+      : Math.round((entry.timeTaken || 0) * 100);
 
     const data = {
       ...entry,
+      score: correctAnswers,
+      correctAnswers,
+      timeTaken: Number((timeTakenCentiseconds / 100).toFixed(2)),
+      timeTakenCentiseconds,
       completedAt: new Date().toISOString()
     };
 
@@ -1427,10 +1673,22 @@ export const DbService = {
     }
     
     // Check if we should actually update (Best score logic)
-    const snapshot = await get(ref(db, `leaderboards/${actualId}/${uid}`));
-    if (snapshot.exists()) {
-      const existing = snapshot.val();
-      if (entry.score < existing.score || (entry.score === existing.score && entry.timeTaken >= existing.timeTaken)) {
+    const existingSnapshots = await Promise.all([
+      actualId ? get(ref(db, `leaderboards/${actualId}/${uid}`)) : Promise.resolve(null),
+      slug && slug !== actualId ? get(ref(db, `leaderboards/${slug}/${uid}`)) : Promise.resolve(null)
+    ]);
+    const existing = existingSnapshots
+      .filter((snapshot): snapshot is NonNullable<typeof snapshot> => Boolean(snapshot && snapshot.exists()))
+      .map((snapshot) => normalizeLeaderboardEntry(uid, snapshot.val(), entry.totalQuestions))
+      .sort((a, b) => {
+        if (b.correctAnswers !== a.correctAnswers) return b.correctAnswers - a.correctAnswers;
+        return a.timeTakenCentiseconds - b.timeTakenCentiseconds;
+      })[0];
+    if (existing) {
+      if (
+        data.correctAnswers < existing.correctAnswers ||
+        (data.correctAnswers === existing.correctAnswers && data.timeTakenCentiseconds >= existing.timeTakenCentiseconds)
+      ) {
         return; 
       }
     }
@@ -1438,41 +1696,46 @@ export const DbService = {
     await update(ref(db), updates);
   },
 
-  subscribeToLeaderboard(testId: string, callback: (rankings: any[], error?: any) => void, slug?: string) {
-    // Perform a deep-scan across the leaderboard node to find contenders
-    const rootRef = ref(db, 'leaderboards');
-    return onValue(rootRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const allData = snapshot.val() || {};
-        
-        // Find the correct standings node (could be ID or Slug)
-        const standingsNode = allData[testId] || (slug ? allData[slug] : null);
-        
-        if (standingsNode) {
-          const list = Object.keys(standingsNode).map(uid => ({ 
-            uid, 
-            ...standingsNode[uid],
-            score: typeof standingsNode[uid].score === 'number' ? standingsNode[uid].score : 0,
-            timeTaken: typeof standingsNode[uid].timeTaken === 'number' ? standingsNode[uid].timeTaken : 9999,
-            completedAt: standingsNode[uid].completedAt || new Date(0).toISOString()
-          }));
-          
-          list.sort((a, b) => {
-            if (b.score !== a.score) return b.score - a.score;
-            if (a.timeTaken !== b.timeTaken) return a.timeTaken - b.timeTaken;
-            return (a.completedAt || "").localeCompare(b.completedAt || "");
-          });
-          
-          callback(list);
-        } else {
-          callback([]);
-        }
-      } else {
-        callback([]);
-      }
+  subscribeToLeaderboard(testId: string, callback: (rankings: any[], error?: any) => void, slug?: string, totalQuestions?: number) {
+    const leaderboardKeys = Array.from(new Set([testId, slug].filter(Boolean) as string[]));
+    const nodesByKey: Record<string, any> = {};
+    const errors: any[] = [];
+
+    const emit = () => {
+      const byUid: Record<string, any> = {};
+      Object.values(nodesByKey).forEach((standingsNode) => {
+        Object.keys(standingsNode || {}).forEach((uid) => {
+          const contender = normalizeLeaderboardEntry(uid, standingsNode[uid], totalQuestions);
+          const existing = byUid[uid];
+          if (
+            !existing ||
+            contender.correctAnswers > existing.correctAnswers ||
+            (contender.correctAnswers === existing.correctAnswers && contender.timeTakenCentiseconds < existing.timeTakenCentiseconds)
+          ) {
+            byUid[uid] = contender;
+          }
+        });
+      });
+
+      const list = Object.values(byUid).sort((a, b) => {
+        if (b.correctAnswers !== a.correctAnswers) return b.correctAnswers - a.correctAnswers;
+        if (a.timeTakenCentiseconds !== b.timeTakenCentiseconds) return a.timeTakenCentiseconds - b.timeTakenCentiseconds;
+        return (a.completedAt || "").localeCompare(b.completedAt || "");
+      });
+
+      callback(list, list.length === 0 && errors.length > 0 ? errors[0] : undefined);
+    };
+
+    const unsubscribers = leaderboardKeys.map((key) => onValue(ref(db, `leaderboards/${key}`), (snapshot) => {
+      nodesByKey[key] = snapshot.exists() ? snapshot.val() || {} : {};
+      emit();
     }, (error) => {
-      callback([], error);
-    });
+      errors.push(error);
+      nodesByKey[key] = {};
+      emit();
+    }));
+
+    return () => unsubscribers.forEach(unsubscribe => unsubscribe());
   },
 
   // Attempts
@@ -1547,44 +1810,60 @@ export const DbService = {
       }
 
       return {
-        experts: Math.max(uniqueExperts, 12),
-        enrollments: Math.max(totalEnrollments, 1250),
-        trophies: Math.max(totalPerfectScores, 840)
+        experts: uniqueExperts,
+        enrollments: totalEnrollments,
+        trophies: totalPerfectScores
       };
     } catch (err) {
-      // Return high-quality fallbacks for public users without spamming console
-      return { experts: 18, enrollments: 1420, trophies: 920 };
+      return { experts: 0, enrollments: 0, trophies: 0 };
     }
   },
 
   async getTopCreators(limit: number = 12): Promise<(Profile & { followersCount: number })[]> {
-    // Get all users from both nodes
-    const [uSnap, pSnap] = await Promise.all([
-      get(ref(db, 'users')),
-      get(ref(db, 'profiles'))
-    ]);
-    
-    const users = uSnap.exists() ? Object.values(uSnap.val()) as Profile[] : [];
-    const profiles = pSnap.exists() ? Object.values(pSnap.val()) as Profile[] : [];
-    
-    // Deduplicate by UID (preferring 'users' node data as it's newer)
-    const allProfilesMap = new Map<string, Profile>();
-    profiles.forEach(p => allProfilesMap.set(p.uid, p));
-    users.forEach(u => allProfilesMap.set(u.uid, u));
-    const allProfiles = Array.from(allProfilesMap.values());
+    const pSnap = await get(ref(db, 'profiles'));
+    const profiles = pSnap.exists()
+      ? Object.entries(pSnap.val() as Record<string, Profile>).map(([uid, profile]) => ({
+          ...profile,
+          uid: profile.uid || uid,
+        }))
+      : [];
 
     // Get follower counts
     const followersSnapshot = await get(ref(db, 'followers'));
     const followersData = followersSnapshot.exists() ? followersSnapshot.val() : {};
 
-    const enriched = allProfiles.map(user => ({
-      ...user,
-      followersCount: followersData[user.uid] ? Object.keys(followersData[user.uid]).length : 0,
-    }));
+    const enriched = profiles
+      .filter(user => user.username && user.fullName)
+      .map(user => ({
+        ...user,
+        followersCount: followersData[user.uid] ? Object.keys(followersData[user.uid]).length : 0,
+      }));
+
 
     // Sort by followers descending, take limit
     enriched.sort((a, b) => b.followersCount - a.followersCount);
     return enriched.slice(0, limit);
+  },
+
+  async getAllUsersWithFollowStatus(currentUserId?: string): Promise<(Profile & { followersCount: number; isFollowing?: boolean })[]> {
+    const [pSnap, followersSnap, followingSnap] = await Promise.all([
+      get(ref(db, 'profiles')),
+      get(ref(db, 'followers')),
+      currentUserId ? get(ref(db, `following/${currentUserId}`)) : Promise.resolve(null),
+    ]);
+
+    const profilesData = pSnap.exists() ? pSnap.val() : {};
+    const followersData = followersSnap.exists() ? followersSnap.val() : {};
+    const followingData = followingSnap?.exists() ? followingSnap.val() : {};
+
+    return Object.entries(profilesData)
+      .map(([uid, data]: [string, any]) => ({
+        ...data,
+        uid: data.uid || uid,
+        followersCount: followersData[uid] ? Object.keys(followersData[uid]).length : 0,
+        isFollowing: !!followingData[uid],
+      }))
+      .filter((u: any) => u.username && u.fullName);
   },
 
   async addCourseReview(courseId: string, publisherId: string, userId: string, content: string): Promise<void> {
@@ -1638,5 +1917,124 @@ export const DbService = {
       }));
       callback(reviews.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     });
+  },
+
+  // ===== CREATOR ANALYTICS =====
+
+  async getEnrollmentsForCourse(courseId: string): Promise<Record<string, any>> {
+    try {
+      const snapshot = await get(ref(db, `enrollments/${courseId}`));
+      return snapshot.exists() ? snapshot.val() : {};
+    } catch (err) {
+      console.warn(`[DbService] Cannot read enrollments for ${courseId}:`, err);
+      return {};
+    }
+  },
+
+  async getPaymentsForTeacher(uid: string): Promise<any[]> {
+    try {
+      const paymentsRef = ref(db, 'payments');
+      const q = query(paymentsRef, orderByChild('teacher_id'), equalTo(uid));
+      const snapshot = await get(q);
+      
+      if (!snapshot.exists()) return [];
+      
+      return Object.entries(snapshot.val())
+        .filter(([, v]: any) => v.status === 'success' && v.type === 'course')
+        .map(([id, v]: any) => ({ id, ...v }));
+    } catch (err) {
+      console.warn('[DbService] Cannot read payments using query:', err);
+      return [];
+    }
+  },
+
+  async getCourseReviewsList(courseId: string): Promise<CourseReview[]> {
+    try {
+      const snapshot = await get(ref(db, `course_reviews/${courseId}`));
+      if (!snapshot.exists()) return [];
+      const data = snapshot.val();
+      return Object.keys(data).map(id => ({ ...data[id], id } as CourseReview));
+    } catch (err) {
+      console.warn(`[DbService] Cannot read reviews for ${courseId}:`, err);
+      return [];
+    }
+  },
+
+  async getFollowersList(uid: string): Promise<string[]> {
+    try {
+      const snapshot = await get(ref(db, `followers/${uid}`));
+      if (!snapshot.exists()) return [];
+      return Object.keys(snapshot.val());
+    } catch (err) {
+      console.warn(`[DbService] Cannot read followers for ${uid}:`, err);
+      return [];
+    }
+  },
+
+  async getCreatorAnalytics(uid: string): Promise<{
+    courses: Course[];
+    enrollmentsByCourse: Record<string, any[]>;
+    payments: any[];
+    reviewsByCourse: Record<string, CourseReview[]>;
+    followers: string[];
+    totalViews: number;
+    ageDemographics: { age: string; count: number }[];
+    deviceBreakdown: { name: string; value: number }[];
+  }> {
+    // 1. Get all creator's courses
+    const allCourses = await this.getCourses({ userId: uid });
+    const courses = allCourses.map(({ profiles, ...rest }) => rest) as Course[];
+
+    // 2. Fetch enrollments, reviews, payments, and followers in parallel
+    const [enrollmentResults, reviewResults, payments, followers] = await Promise.all([
+      Promise.all(courses.map(async (c) => {
+        const enrollments = await this.getEnrollmentsForCourse(c.id);
+        return { courseId: c.id, enrollments: Object.entries(enrollments).map(([uid, data]: any) => ({ uid, ...data })) };
+      })),
+      Promise.all(courses.map(async (c) => {
+        const reviews = await this.getCourseReviewsList(c.id);
+        return { courseId: c.id, reviews };
+      })),
+      this.getPaymentsForTeacher(uid),
+      this.getFollowersList(uid),
+    ]);
+
+    const enrollmentsByCourse: Record<string, any[]> = {};
+    enrollmentResults.forEach(r => { enrollmentsByCourse[r.courseId] = r.enrollments; });
+
+    const reviewsByCourse: Record<string, CourseReview[]> = {};
+    reviewResults.forEach(r => { reviewsByCourse[r.courseId] = r.reviews; });
+
+    const totalViews = courses.reduce((sum, c) => sum + (c.views || 0), 0);
+
+    // 3. Age demographics from enrollment records (Captured at time of enrollment)
+    const allEnrollments = Object.values(enrollmentsByCourse).flat();
+    const ageBuckets: Record<string, number> = { '3-12': 0, '13-17': 0, '18-24': 0, '25-34': 0, '35-44': 0, '45+': 0, 'Existing': 0 };
+
+    allEnrollments.forEach((e: any) => {
+      const bracket = e.ageBracket || 'Existing';
+      if (ageBuckets[bracket] !== undefined) {
+        ageBuckets[bracket]++;
+      } else {
+        ageBuckets['Existing']++;
+      }
+    });
+
+    const ageDemographics = Object.entries(ageBuckets)
+      .map(([age, count]) => ({ age, count }))
+      .filter(d => d.count > 0);
+
+    // 4. Device breakdown from enrollment records
+    const deviceCounts: Record<string, number> = { Desktop: 0, Mobile: 0, Tablet: 0 };
+    allEnrollments.forEach((e: any) => {
+      const dev = e.device || 'Desktop';
+      if (deviceCounts[dev] !== undefined) deviceCounts[dev]++;
+      else deviceCounts['Desktop']++;
+    });
+    const deviceBreakdown = Object.entries(deviceCounts)
+      .map(([name, value]) => ({ name, value }))
+      .filter(d => d.value > 0);
+
+    return { courses, enrollmentsByCourse, payments, reviewsByCourse, followers, totalViews, ageDemographics, deviceBreakdown };
   },
 };

@@ -11,8 +11,18 @@ interface LeaderboardModalProps {
   onClose: () => void;
 }
 
+const formatLeaderboardTime = (centiseconds?: number) => {
+  if (typeof centiseconds !== 'number' || !Number.isFinite(centiseconds)) return '--';
+  const minutes = Math.floor(centiseconds / 6000);
+  const seconds = Math.floor((centiseconds % 6000) / 100);
+  const cs = Math.floor(centiseconds % 100);
+  return minutes > 0
+    ? `${minutes}m ${seconds.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}s`
+    : `${seconds}.${cs.toString().padStart(2, '0')}s`;
+};
+
 export function LeaderboardModal({ test, onClose }: LeaderboardModalProps) {
-  const { user } = useAuth();
+  const { user, dbUser } = useAuth();
   const [rankings, setRankings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<any>(null);
@@ -29,11 +39,44 @@ export function LeaderboardModal({ test, onClose }: LeaderboardModalProps) {
           setRankings(data);
         }
         setLoading(false);
-      }, test.slug);
+      }, test.slug, test.totalQuestions);
 
       return () => unsubscribe();
     }
   }, [test]);
+
+  useEffect(() => {
+    if (!test || !user || loading || rankings.length > 0) return;
+
+    let cancelled = false;
+    DbService.getBestTestAttemptForUser(user.id, test.id).then((attempt) => {
+      if (cancelled || !attempt) return;
+      const correctAnswers = attempt.score;
+      const totalQuestions = attempt.total || test.totalQuestions;
+      const timeTakenCentiseconds = attempt.timeTakenCentiseconds ?? Math.round((attempt.timeTaken ?? 0) * 100);
+
+      setRankings([{
+        uid: user.id,
+        name: dbUser?.fullName || user.displayName || 'You',
+        avatar: dbUser?.avatarUrl || user.photoURL || null,
+        score: correctAnswers,
+        correctAnswers,
+        totalQuestions,
+        accuracy: totalQuestions ? Math.round((correctAnswers / totalQuestions) * 100) : 0,
+        timeTaken: Number((timeTakenCentiseconds / 100).toFixed(2)),
+        timeTakenCentiseconds,
+        completedAt: attempt.completedAt,
+        fromAttemptFallback: true
+      }]);
+      setError(null);
+    }).catch((err) => {
+      if (!cancelled) setError(err);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [test, user, dbUser, loading, rankings.length]);
 
   const myRankData = useMemo(() => {
     if (!user || rankings.length === 0) return null;
@@ -113,7 +156,7 @@ export function LeaderboardModal({ test, onClose }: LeaderboardModalProps) {
                              {rank.uid === user?.id && <span className={`px-2 py-0.5 ${theme.bgPrimarySoft} ${theme.textPrimary} text-[7px] font-black uppercase rounded-full tracking-widest border ${theme.borderPrimarySoft}`}>You</span>}
                            </div>
                            <span className="text-[9px] font-bold text-white/30 uppercase tracking-[0.1em] flex items-center gap-2">
-                             <Clock className="w-2.5 h-2.5" /> {rank.timeTaken}s • Accuracy: {rank.score}%
+                             <Clock className="w-2.5 h-2.5" /> {formatLeaderboardTime(rank.timeTakenCentiseconds)} | Accuracy: {rank.accuracy}%
                            </span>
                         </div>
                       </div>
@@ -124,8 +167,8 @@ export function LeaderboardModal({ test, onClose }: LeaderboardModalProps) {
                           index === 1 ? 'text-slate-400' : 
                           index === 2 ? 'text-orange-800' : 
                           'text-white'
-                        }`}>{rank.score}</span>
-                        <span className="text-[7px] font-black text-white/20 uppercase tracking-widest">Points</span>
+                        }`}>{rank.correctAnswers}<span className="text-sm text-white/30">/{rank.totalQuestions || test.totalQuestions}</span></span>
+                        <span className="text-[7px] font-black text-white/20 uppercase tracking-widest">Correct</span>
                       </div>
                     </motion.div>
                   ))}
@@ -138,7 +181,7 @@ export function LeaderboardModal({ test, onClose }: LeaderboardModalProps) {
                     <p className="text-xs font-bold text-white/20 uppercase tracking-widest">Be the first to leave your mark in this domain.</p>
                   </div>
                   <button 
-                    onClick={() => { setLoading(true); DbService.subscribeToLeaderboard(test.id, (data) => { setRankings(data); setLoading(false); }, test.slug); }}
+                    onClick={() => { setLoading(true); DbService.subscribeToLeaderboard(test.id, (data) => { setRankings(data); setLoading(false); }, test.slug, test.totalQuestions); }}
                     className={`px-8 py-4 ${theme.bgPrimarySoft} ${theme.textPrimary} border ${theme.borderPrimarySoft} rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] hover:bg-white/10 transition-all`}
                   >
                     Force Discovery Sync

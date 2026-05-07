@@ -6,7 +6,7 @@ import {
 } from 'firebase/auth';
 import { auth } from './firebase';
 import { DbService } from './db-service';
-import { sendPasswordResetAction } from './server/email-actions';
+import { sendPasswordResetAction } from './client-actions';
 
 export const AuthService = {
   getInternalEmail(username: string): string {

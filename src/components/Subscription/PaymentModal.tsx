@@ -1,39 +1,111 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  X, ShieldCheck, CreditCard, 
-  Lock, ArrowRight, CheckCircle,
+import {
+  X, ShieldCheck, ArrowRight, CheckCircle,
   Lightning, CircleNotch, Info
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
+import {
+  createEdgeSubscription,
+  loadRazorpayCheckout,
+  RazorpaySubscriptionResponse,
+  verifyEdgeSubscription,
+} from '@/lib/razorpay-client';
 
 interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  userId: string;
+  userEmail?: string | null;
+  userName?: string | null;
   planName: string;
   amount: string;
-  billingCycle: string;
+  billingCycle: 'monthly' | 'yearly';
 }
 
-export function PaymentModal({ isOpen, onClose, onSuccess, planName, amount, billingCycle }: PaymentModalProps) {
+export function PaymentModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  userId,
+  userEmail,
+  userName,
+  planName,
+  amount,
+  billingCycle,
+}: PaymentModalProps) {
   const [step, setStep] = useState<'details' | 'processing' | 'success'>('details');
-  const [cardNumber, setCardNumber] = useState('');
-  const [expiry, setExpiry] = useState('');
-  const [cvv, setCvv] = useState('');
 
-  const handlePay = () => {
+  const resetAndClose = () => {
+    onClose();
+    setTimeout(() => setStep('details'), 250);
+  };
+
+  const handlePay = async () => {
+    if (!userId) {
+      toast.error('Please sign in before paying.');
+      return;
+    }
+
     setStep('processing');
-    setTimeout(() => {
+    const toastId = toast.loading('Creating secure subscription...');
+
+    try {
+      const [subscription, loaded] = await Promise.all([
+        createEdgeSubscription(userId, billingCycle),
+        loadRazorpayCheckout(),
+      ]);
+
+      if (!loaded || !window.Razorpay) {
+        throw new Error('Razorpay Checkout could not be loaded.');
+      }
+
+      toast.loading('Opening Razorpay Checkout...', { id: toastId });
+
+      await new Promise<void>((resolve, reject) => {
+        const razorpay = new window.Razorpay!({
+          key: subscription.key_id,
+          subscription_id: subscription.subscription_id,
+          name: 'EduNook',
+          description: `${planName} ${billingCycle} subscription`,
+          image: '/logo.png',
+          prefill: {
+            name: userName || '',
+            email: userEmail || '',
+          },
+          theme: { color: '#6366f1' },
+          handler: async (response: RazorpaySubscriptionResponse) => {
+            try {
+              toast.loading('Verifying subscription...', { id: toastId });
+              await verifyEdgeSubscription({
+                user_id: userId,
+                razorpay_subscription_id: response.razorpay_subscription_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              });
+              resolve();
+            } catch (err) {
+              reject(err);
+            }
+          },
+          modal: {
+            ondismiss: () => reject(new Error('Payment was cancelled.')),
+          },
+        });
+        razorpay.open();
+      });
+
       setStep('success');
-      toast.success("Transaction Successful!");
+      toast.success('Subscription activated!', { id: toastId });
       setTimeout(() => {
         onSuccess();
-        onClose();
-        // Reset for next time
-        setTimeout(() => setStep('details'), 500);
-      }, 2000);
-    }, 3000);
+        resetAndClose();
+      }, 1500);
+    } catch (err) {
+      setStep('details');
+      toast.error(err instanceof Error ? err.message : 'Subscription payment failed.', { id: toastId });
+    }
   };
 
   if (!isOpen) return null;
@@ -41,31 +113,34 @@ export function PaymentModal({ isOpen, onClose, onSuccess, planName, amount, bil
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-        {/* Backdrop */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={onClose}
+          onClick={step === 'processing' ? undefined : resetAndClose}
           className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         />
 
-        {/* Modal Content */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}
-          className="relative w-full max-w-md bg-card border border-border rounded-[2.5rem] shadow-2xl overflow-hidden"
+          className="relative w-full max-w-md overflow-hidden rounded-[2.5rem] border border-border bg-card shadow-2xl"
         >
-          {/* Header */}
-          <div className="p-6 border-b border-border flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-border p-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center border border-primary/20">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
                 <ShieldCheck size={24} weight="duotone" />
               </div>
-              <span className="text-sm font-black uppercase tracking-widest text-foreground">Secure Checkout</span>
+              <span className="text-sm font-black uppercase tracking-widest text-foreground">Razorpay Checkout</span>
             </div>
-            <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors p-2">
+            <button
+              type="button"
+              onClick={resetAndClose}
+              disabled={step === 'processing'}
+              className="p-2 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+              aria-label="Close checkout"
+            >
               <X size={24} />
             </button>
           </div>
@@ -73,119 +148,77 @@ export function PaymentModal({ isOpen, onClose, onSuccess, planName, amount, bil
           <div className="p-8">
             <AnimatePresence mode="wait">
               {step === 'details' && (
-                <motion.div 
+                <motion.div
                   key="details"
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 20 }}
                   className="space-y-6"
                 >
-                  {/* Plan Summary */}
-                  <div className="bg-muted p-6 rounded-3xl border border-border">
-                     <span className="text-[11px] font-black uppercase tracking-widest text-muted-foreground opacity-60">Selected Plan</span>
-                     <div className="flex items-center justify-between mt-1">
-                        <h3 className="text-xl font-black text-foreground">{planName} <span className="text-primary italic">{billingCycle}</span></h3>
-                        <span className="text-2xl font-black text-foreground">{amount}</span>
-                     </div>
-                  </div>
-
-                  {/* Card Simulation */}
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Card Number</label>
-                       <div className="relative">
-                          <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={20} />
-                          <input 
-                            type="text" 
-                            placeholder="4242 4242 4242 4242"
-                            value={cardNumber}
-                            onChange={(e) => setCardNumber(e.target.value)}
-                            className="w-full h-14 bg-muted border border-border rounded-2xl pl-12 pr-4 text-sm font-bold focus:border-primary outline-none transition-all"
-                          />
-                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                       <div className="space-y-2">
-                          <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Expiry Date</label>
-                          <input 
-                            type="text" 
-                            placeholder="MM/YY"
-                            value={expiry}
-                            onChange={(e) => setExpiry(e.target.value)}
-                            className="w-full h-14 bg-muted border border-border rounded-2xl px-4 text-sm font-bold focus:border-primary outline-none transition-all"
-                          />
-                       </div>
-                       <div className="space-y-2">
-                          <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">CVV</label>
-                          <div className="relative">
-                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
-                             <input 
-                               type="password" 
-                               placeholder="***"
-                               maxLength={3}
-                               value={cvv}
-                               onChange={(e) => setCvv(e.target.value)}
-                               className="w-full h-14 bg-muted border border-border rounded-2xl pl-11 pr-4 text-sm font-bold focus:border-primary outline-none transition-all"
-                             />
-                          </div>
-                       </div>
+                  <div className="rounded-3xl border border-border bg-muted p-6">
+                    <span className="text-[11px] font-black uppercase tracking-widest text-muted-foreground opacity-70">Selected Plan</span>
+                    <div className="mt-2 flex items-center justify-between gap-4">
+                      <h3 className="text-xl font-black text-foreground">
+                        {planName} <span className="text-primary italic">{billingCycle}</span>
+                      </h3>
+                      <span className="text-2xl font-black text-foreground">{amount}</span>
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10 flex gap-3">
-                     <Info size={18} className="text-primary shrink-0" />
-                     <p className="text-[10px] font-medium text-primary leading-relaxed">
-                        This is a secure mock payment. No real funds will be deducted from your account. Enjoy your premium experience!
-                     </p>
+                  <div className="flex gap-3 rounded-2xl border border-primary/10 bg-primary/5 p-4">
+                    <Info size={18} className="shrink-0 text-primary" />
+                    <p className="text-[11px] font-medium leading-relaxed text-primary">
+                      EduNook Edge subscriptions are processed by Razorpay. No split transfer is created for this plan; it goes fully to the platform.
+                    </p>
                   </div>
 
-                  <button 
+                  <button
+                    type="button"
                     onClick={handlePay}
-                    disabled={!cardNumber || !expiry || !cvv}
-                    className="w-full h-16 bg-primary text-white rounded-[1.5rem] font-black text-sm uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:active:scale-100"
+                    className="flex h-16 w-full items-center justify-center gap-2 rounded-[1.5rem] bg-primary text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-primary/20 transition-all hover:scale-[1.02] active:scale-95"
                   >
-                    Pay & Unlock {planName}
+                    Pay with Razorpay
                     <ArrowRight weight="bold" />
                   </button>
                 </motion.div>
               )}
 
               {step === 'processing' && (
-                <motion.div 
+                <motion.div
                   key="processing"
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
-                  className="py-12 flex flex-col items-center text-center space-y-6"
+                  className="flex flex-col items-center space-y-6 py-12 text-center"
                 >
                   <div className="relative">
-                    <CircleNotch size={80} className="text-primary animate-spin" weight="thin" />
-                    <Lightning size={32} className="absolute inset-0 m-auto text-primary animate-pulse" weight="duotone" />
+                    <CircleNotch size={80} className="animate-spin text-primary" weight="thin" />
+                    <Lightning size={32} className="absolute inset-0 m-auto animate-pulse text-primary" weight="duotone" />
                   </div>
                   <div>
                     <h3 className="text-2xl font-black text-foreground italic">Verifying Payment</h3>
-                    <p className="text-sm text-muted-foreground font-medium">Securing your EduNook account...</p>
+                    <p className="text-sm font-medium text-muted-foreground">Waiting for secure Razorpay confirmation...</p>
                   </div>
                 </motion.div>
               )}
 
               {step === 'success' && (
-                <motion.div 
+                <motion.div
                   key="success"
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
-                  className="py-12 flex flex-col items-center text-center space-y-6"
+                  className="flex flex-col items-center space-y-6 py-12 text-center"
                 >
-                   <div className="w-24 h-24 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 flex items-center justify-center">
-                      <CheckCircle size={56} weight="duotone" />
-                   </div>
-                   <div>
-                      <h3 className="text-3xl font-black text-foreground italic">Welcome to {planName}!</h3>
-                      <p className="text-sm text-muted-foreground font-medium px-8 leading-relaxed mt-2">
-                        Your transaction was successful. All premium benefits are now active on your profile.
-                      </p>
-                   </div>
+                  <div className="flex h-24 w-24 items-center justify-center rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-500">
+                    <CheckCircle size={56} weight="duotone" />
+                  </div>
+                  <div>
+                    <h3 className="text-3xl font-black text-foreground italic">Welcome to {planName}!</h3>
+                    <p className="mt-2 px-8 text-sm font-medium leading-relaxed text-muted-foreground">
+                      Your payment was verified and premium benefits are active.
+                    </p>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>

@@ -1,38 +1,52 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createServerFn } from '@tanstack/react-start';
 import { Resend } from 'resend';
 import { adminAuth } from './admin';
 import { z } from 'zod';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+const defaultFrontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || process.env.VITE_FRONTEND_URL || 'http://localhost:3000';
+const verificationFrom = process.env.EMAIL_FROM_VERIFICATION || 'EduNook Verification <verify@resend.dev>';
+const securityFrom = process.env.EMAIL_FROM_SECURITY || 'EduNook Security <security@resend.dev>';
+const onboardingFrom = process.env.EMAIL_FROM_ONBOARDING || 'EduNook <onboarding@resend.dev>';
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function otpStorageKey(email: string) {
+  return encodeURIComponent(email.toLowerCase().trim()).replace(/[.#$/[\]]/g, '_');
+}
 
 const emailSchema = z.object({
   email: z.string().email(),
   fullName: z.string()
 });
 
-export const sendVerificationEmailAction = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => emailSchema.parse(d))
-  .handler(async ({ data }) => {
-    const { email, fullName } = data;
-    console.log(`[EmailAction] Attempting to send verification to: ${email}`);
+export async function sendVerificationEmailAction({ data }: { data: unknown }) {
+    const { email, fullName } = emailSchema.parse(data);
+    const safeFullName = escapeHtml(fullName);
 
     try {
       // 1. Generate the Firebase verification link
-      const authDomain = process.env.VITE_FIREBASE_AUTH_DOMAIN || 'localhost:8080';
+      const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN || 'localhost:3000';
       const actionCodeSettings = {
-        url: `${process.env.NODE_ENV === 'development' ? 'http://localhost:8080' : `https://${authDomain}`}/login`,
+        url: `${process.env.NODE_ENV === 'development' ? defaultFrontendUrl : `https://${authDomain}`}/login`,
         handleCodeInApp: false,
       };
 
       const link = await adminAuth.generateEmailVerificationLink(email, actionCodeSettings);
-      console.log(`[EmailAction] Generated link for ${email}`);
+      const safeLink = escapeHtml(link);
 
       // 2. Send the premium email via Resend
       const { data: resendData, error } = await resend.emails.send({
-        from: 'EduNook <onboarding@resend.dev>',
+        from: onboardingFrom,
         to: [email],
-        subject: `Verify your account, ${fullName.split(' ')[0]}!`,
+        subject: `Verify your account, ${fullName.split(' ')[0] || 'learner'}!`,
         html: `
           <div style="font-family: 'Inter', -apple-system, sans-serif; background-color: #050505; color: #ffffff; padding: 40px; border-radius: 32px; max-width: 600px; margin: auto; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
             <div style="text-align: center; margin-bottom: 40px;">
@@ -43,12 +57,12 @@ export const sendVerificationEmailAction = createServerFn({ method: "POST" })
             <div style="background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%); padding: 40px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); text-align: center;">
               <h2 style="font-size: 24px; font-weight: 900; margin-top: 0; margin-bottom: 16px; color: #ffffff;">Welcome to the future.</h2>
               <p style="color: rgba(255,255,255,0.4); line-height: 1.8; font-size: 15px; font-weight: 500; margin-bottom: 32px;">
-                Hello ${fullName},<br/>
+                Hello ${safeFullName},<br/>
                 We're excited to have you on board! To unlock your full student experience, please confirm your email address below.
               </p>
 
               <div style="margin: 40px 0;">
-                <a href="${link}" style="background-color: #ffffff; color: #000000; padding: 18px 40px; border-radius: 16px; text-decoration: none; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em; display: inline-block; box-shadow: 0 10px 30px rgba(255,255,255,0.1);">
+                <a href="${safeLink}" style="background-color: #ffffff; color: #000000; padding: 18px 40px; border-radius: 16px; text-decoration: none; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em; display: inline-block; box-shadow: 0 10px 30px rgba(255,255,255,0.1);">
                   Verify Account
                 </a>
               </div>
@@ -66,34 +80,30 @@ export const sendVerificationEmailAction = createServerFn({ method: "POST" })
       });
 
       if (error) {
-        console.error('[EmailAction] Resend Error:', error);
         throw error;
       }
 
-      console.log(`[EmailAction] Successfully sent email to ${email}`);
       return { success: true, data: resendData };
     } catch (err: any) {
       console.error('Server Email Error:', err);
       throw new Error(err.message || 'Internal server error');
     }
-  });
+}
 
 const resetSchema = z.object({
-  username: z.string().min(3)
+  username: z.string().min(3).max(32).regex(/^[a-z0-9_]+$/i, 'Use a valid EduNook username')
 });
 
-export const sendPasswordResetAction = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => resetSchema.parse(d))
-  .handler(async ({ data }) => {
-    const { username } = data;
+export async function sendPasswordResetAction({ data }: { data: unknown }) {
+    const { username } = resetSchema.parse(data);
     const adminDb = (await import('./admin')).adminDb;
     const adminAuth = (await import('./admin')).adminAuth;
-
-    console.log(`[EmailAction] Starting password reset for: ${username}`);
+    const normalizedUsername = username.toLowerCase();
+    const safeUsername = escapeHtml(normalizedUsername);
 
     try {
       // 1. Resolve Username to UID and Real Email
-      const usernameSnapshot = await adminDb.ref(`usernames/${username.toLowerCase()}`).get();
+      const usernameSnapshot = await adminDb.ref(`usernames/${normalizedUsername}`).get();
       if (!usernameSnapshot.exists()) {
         throw new Error('Username not found');
       }
@@ -108,21 +118,20 @@ export const sendPasswordResetAction = createServerFn({ method: "POST" })
       const realEmail = userData.realEmail || userData.email;
       const internalEmail = userData.email; // username@edunook.com
 
-      console.log(`[EmailAction] Found recovery details. Real: ${realEmail}, Internal: ${internalEmail}`);
-
       // 2. Generate Reset Link (for the internal email)
       const actionCodeSettings = {
-        url: `${process.env.VITE_FRONTEND_URL || 'http://localhost:8080'}/login`,
+        url: `${defaultFrontendUrl}/login`,
         handleCodeInApp: false,
       };
 
       const link = await adminAuth.generatePasswordResetLink(internalEmail, actionCodeSettings);
+      const safeLink = escapeHtml(link);
 
       // 3. Send Email via Resend to the REAL Email
       const { data: resendData, error } = await resend.emails.send({
-        from: 'EduNook Security <security@resend.dev>',
+        from: securityFrom,
         to: [realEmail],
-        subject: `Reset your EduNook password, @${username}`,
+        subject: `Reset your EduNook password, @${normalizedUsername}`,
         html: `
           <div style="font-family: 'Inter', -apple-system, sans-serif; background-color: #050505; color: #ffffff; padding: 40px; border-radius: 32px; max-width: 600px; margin: auto; border: 1px solid rgba(255,255,255,0.05);">
             <div style="text-align: center; margin-bottom: 40px;">
@@ -132,12 +141,12 @@ export const sendPasswordResetAction = createServerFn({ method: "POST" })
             <div style="background-color: rgba(255,255,255,0.02); padding: 40px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); text-align: center;">
               <h2 style="font-size: 20px; font-weight: 900; margin-top: 0; color: #ffffff;">Password Recovery</h2>
               <p style="color: rgba(255,255,255,0.4); line-height: 1.8; font-size: 15px; margin-bottom: 32px;">
-                Hello @${username},<br/><br/>
+                Hello @${safeUsername},<br/><br/>
                 We received a request to reset your password. Click the secure button below to choose a new password for your account.
               </p>
 
               <div style="margin: 40px 0;">
-                <a href="${link}" style="background: linear-gradient(to right, #6366f1, #8b5cf6); color: white; padding: 18px 40px; border-radius: 16px; text-decoration: none; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em; display: inline-block;">
+                <a href="${safeLink}" style="background: linear-gradient(to right, #6366f1, #8b5cf6); color: white; padding: 18px 40px; border-radius: 16px; text-decoration: none; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em; display: inline-block;">
                   Set New Password
                 </a>
               </div>
@@ -148,7 +157,7 @@ export const sendPasswordResetAction = createServerFn({ method: "POST" })
             </div>
 
             <div style="text-align: center; margin-top: 40px; color: rgba(255,255,255,0.1); font-size: 10px; font-weight: 700; text-transform: uppercase;">
-              &copy; ${new Date().getFullYear()} EduNook — Account Protection
+              &copy; ${new Date().getFullYear()} EduNook - Account Protection
             </div>
           </div>
         `,
@@ -161,7 +170,7 @@ export const sendPasswordResetAction = createServerFn({ method: "POST" })
       console.error('[EmailAction] Password Reset Error:', err);
       throw new Error(err.message || 'Recovery failed');
     }
-  });
+}
 
 const feedbackSchema = z.object({
   data: z.object({
@@ -173,11 +182,9 @@ const feedbackSchema = z.object({
   })
 });
 
-export const sendFeedbackEmailAction = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => feedbackSchema.parse(d))
-  .handler(async ({ data }) => {
-    const { email, type, message, username, userId } = data.data;
-    console.log(`[EmailAction] Sending feedback from: ${username} (${email})`);
+export async function sendFeedbackEmailAction({ data }: { data: unknown }) {
+    const { data: feedback } = feedbackSchema.parse(data);
+    const { email, type, message, username, userId } = feedback;
 
     try {
       // 1. Store in Global Feedback Node
@@ -241,30 +248,29 @@ export const sendFeedbackEmailAction = createServerFn({ method: "POST" })
       console.error('[EmailAction] Feedback Error:', err);
       throw new Error(err.message || 'Failed to send feedback');
     }
-  });
+}
 
 const signupOtpSchema = z.object({
   email: z.string().email(),
-  username: z.string()
+  username: z.string().min(3).max(32).regex(/^[a-z0-9_]+$/i, 'Use a valid EduNook username')
 });
 
-export const sendSignupOTPEmailAction = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => signupOtpSchema.parse(d))
-  .handler(async ({ data }) => {
-    const { email, username } = data;
+export async function sendSignupOTPEmailAction({ data }: { data: unknown }) {
+    const { email, username } = signupOtpSchema.parse(data);
+    const safeUsername = escapeHtml(username.toLowerCase());
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const adminDb = (await import('./admin')).adminDb;
     
     try {
       // 1. Store OTP in DB (expires in 10 mins)
-      await adminDb.ref(`temp_otps/${email.replace(/\./g, '_')}`).set({
+      await adminDb.ref(`temp_otps/${otpStorageKey(email)}`).set({
         code: otp,
         expiresAt: Date.now() + 600000 
       });
 
       // 2. Send Email
       await resend.emails.send({
-        from: 'EduNook Verification <verify@resend.dev>',
+        from: verificationFrom,
         to: [email],
         subject: `${otp} is your EduNook verification code`,
         html: `
@@ -275,7 +281,7 @@ export const sendSignupOTPEmailAction = createServerFn({ method: "POST" })
             </div>
 
             <div style="background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%); padding: 40px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); text-align: center;">
-              <p style="color: rgba(255,255,255,0.4); font-size: 14px; margin-bottom: 32px; font-weight: 500;">Hello @${username}, enter the code below to secure your new account.</p>
+              <p style="color: rgba(255,255,255,0.4); font-size: 14px; margin-bottom: 32px; font-weight: 500;">Hello @${safeUsername}, enter the code below to secure your new account.</p>
               
               <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 32px; border-radius: 20px; margin: 24px 0;">
                 <span style="font-size: 48px; font-weight: 900; letter-spacing: 0.3em; color: #ffffff; font-family: 'Courier New', monospace;">${otp}</span>
@@ -296,19 +302,17 @@ export const sendSignupOTPEmailAction = createServerFn({ method: "POST" })
       console.error('[EmailAction] Signup OTP Error:', err);
       throw new Error('Failed to send verification email');
     }
-  });
+}
 
 const verifyOtpSchema = z.object({
   email: z.string().email(),
   code: z.string().length(6)
 });
 
-export const verifySignupOTPAction = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => verifyOtpSchema.parse(d))
-  .handler(async ({ data }) => {
-    const { email, code } = data;
+export async function verifySignupOTPAction({ data }: { data: unknown }) {
+    const { email, code } = verifyOtpSchema.parse(data);
     const adminDb = (await import('./admin')).adminDb;
-    const ref = adminDb.ref(`temp_otps/${email.replace(/\./g, '_')}`);
+    const ref = adminDb.ref(`temp_otps/${otpStorageKey(email)}`);
     const snapshot = await ref.get();
     
     if (!snapshot.exists()) throw new Error('OTP expired or not found');
@@ -323,4 +327,4 @@ export const verifySignupOTPAction = createServerFn({ method: "POST" })
     
     await ref.remove(); 
     return { success: true };
-  });
+}
