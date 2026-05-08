@@ -1,38 +1,27 @@
 {
   "rules": {
+    ".read": "false",
+    ".write": "false",
+
     "users": {
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
-        ".write": "auth != null && (auth.uid === $uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+        ".read": "auth != null && (auth.uid === $uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')",
+        ".write": "auth != null && auth.uid === $uid"
       }
     },
 
     "profiles": {
       ".read": "true",
       "$uid": {
-        ".write": "auth != null && (auth.uid === $uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        ".write": "auth != null && (auth.uid === $uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')",
         ".validate": "!newData.hasChild('realEmail') && !newData.hasChild('phone') && !newData.hasChild('dob') && !newData.hasChild('email') && !newData.hasChild('preferences') && !newData.hasChild('history')"
-      }
-    },
-
-    "user_settings": {
-      "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
-        ".write": "auth != null && (auth.uid === $uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
-      }
-    },
-
-    "teachers": {
-      "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
-        ".write": "auth != null && (auth.uid === $uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
       }
     },
 
     "usernames": {
       ".read": "true",
       "$username": {
-        ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && !newData.exists()) || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+        ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && !newData.exists()) || root.child('profiles').child(auth.uid).child('role').val() === 'admin')"
       }
     },
 
@@ -55,23 +44,14 @@
     "chapters": {
       "$courseId": {
         ".read": "true",
-        ".write": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || data.parent().parent().child('courses').child($courseId).child('userId').val() === auth.uid)"
+        ".write": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')"
       }
     },
 
     "videos": {
       ".read": "true",
       "$courseId": {
-        ".write": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || data.parent().parent().child('courses').child($courseId).child('userId').val() === auth.uid)"
-      }
-    },
-
-    "unique_views": {
-      "$courseId": {
-        "$uid": {
-          ".read": "auth != null && (auth.uid === $uid || root.child('courses').child($courseId).child('userId').val() === auth.uid)",
-          ".write": "auth != null && auth.uid === $uid"
-        }
+        ".write": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')"
       }
     },
 
@@ -79,7 +59,7 @@
       "$courseId": {
         ".read": "true",
         "$reviewId": {
-          ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid)"
+          ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid || root.child('courses').child($courseId).child('userId').val() === auth.uid)"
         }
       }
     },
@@ -95,6 +75,7 @@
     },
 
     "following": {
+      ".read": "true",
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
         "$targetUid": {
@@ -135,13 +116,6 @@
       }
     },
 
-    "presence": {
-      ".read": "true",
-      "$uid": {
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-
     "tests": {
       ".read": "true",
       ".indexOn": ["slug"],
@@ -158,36 +132,11 @@
       }
     },
 
-    "test_attempts": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-
-    "attempts": {
-      "$testId": {
-        "$uid": {
-          ".read": "auth != null && (auth.uid === $uid || root.child('tests').child($testId).child('creatorId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
-          ".write": "auth != null && auth.uid === $uid && !data.exists()"
-        }
-      }
-    },
-
-    "leaderboards": {
-      ".read": "true",
-      "$testId": {
-        "$uid": {
-          ".write": "auth != null && auth.uid === $uid"
-        }
-      }
-    },
-
     "enrollments": {
       "$courseId": {
-        ".read": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        ".read": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')",
         "$uid": {
-          ".read": "auth != null && (auth.uid === $uid || root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+          ".read": "auth != null && (auth.uid === $uid || root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')",
           ".write": "auth != null && auth.uid === $uid"
         }
       }
@@ -202,14 +151,11 @@
       }
     },
 
-    "feedback": {
-      ".read": "false",
-      ".write": "false"
-    },
-
-    "temp_otps": {
-      ".read": "false",
-      ".write": "false"
+    "presence": {
+      ".read": "true",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
     }
   }
 }
