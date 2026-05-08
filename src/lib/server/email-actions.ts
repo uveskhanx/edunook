@@ -5,8 +5,8 @@ import { z } from 'zod';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const defaultFrontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || process.env.VITE_FRONTEND_URL || 'http://localhost:3000';
-const verificationFrom = process.env.EMAIL_FROM_VERIFICATION || 'EduNook Verification <verify@resend.dev>';
-const securityFrom = process.env.EMAIL_FROM_SECURITY || 'EduNook Security <security@resend.dev>';
+const verificationFrom = process.env.EMAIL_FROM_VERIFICATION || 'EduNook <onboarding@resend.dev>';
+const securityFrom = process.env.EMAIL_FROM_SECURITY || 'EduNook <onboarding@resend.dev>';
 const onboardingFrom = process.env.EMAIL_FROM_ONBOARDING || 'EduNook <onboarding@resend.dev>';
 
 function escapeHtml(value: string) {
@@ -261,7 +261,7 @@ export async function sendSignupOTPEmailAction({ data }: { data: unknown }) {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const adminDb = (await import('./admin')).adminDb;
     
-    try {
+        try {
       // 1. Store OTP in DB (expires in 10 mins)
       await adminDb.ref(`temp_otps/${otpStorageKey(email)}`).set({
         code: otp,
@@ -269,7 +269,8 @@ export async function sendSignupOTPEmailAction({ data }: { data: unknown }) {
       });
 
       // 2. Send Email
-      await resend.emails.send({
+      console.log(`[EmailService] Handoff started for ${email}...`);
+      const { data: resendData, error: resendError } = await resend.emails.send({
         from: verificationFrom,
         to: [email],
         subject: `${otp} is your EduNook verification code`,
@@ -297,10 +298,16 @@ export async function sendSignupOTPEmailAction({ data }: { data: unknown }) {
         `,
       });
 
+      if (resendError) {
+        console.error('[EmailService] Resend API Error:', resendError);
+        throw resendError;
+      }
+
+      console.log(`[EmailService] OTP successfully sent to ${email}. ID: ${resendData?.id}`);
       return { success: true };
     } catch (err: any) {
-      console.error('[EmailAction] Signup OTP Error:', err);
-      throw new Error('Failed to send verification email');
+      console.error('[EmailService] Critical Failure:', err);
+      throw new Error(err.message || 'Failed to send verification email');
     }
 }
 

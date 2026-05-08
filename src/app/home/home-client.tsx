@@ -3,14 +3,15 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DbService, Course, Profile } from '@/lib/db-service';
-import { CourseCard } from '@/components/CourseCard';
 import { Layout } from '@/components/Layout';
 import { CourseCardSkeleton } from '@/components/SkeletonLoader';
-import { Plus, Search, BookOpen, Filter, PlayCircle, Clock, Trash2, MoreVertical, Sparkles, TrendingUp, Globe } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { TrendingUp, BookOpen, Globe, ChevronLeft, ChevronRight, Play, Eye, MoreVertical, Settings, User, Plus, Search, Filter, PlayCircle, Clock, Trash2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/use-auth';
+
+import { CourseCard } from '@/components/CourseCard';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+
 
 type EnrichedCourse = Course & { profiles: Profile | null };
 type TabType = 'All' | 'Free' | 'Paid';
@@ -23,9 +24,21 @@ export default function HomeClient() {
 
   const { user, dbUser, loading: authLoading, refreshProfile } = useAuth();
   
-  const [courses, setCourses] = useState<EnrichedCourse[]>([]);
-  const [history, setHistory] = useState<Record<string, { chapterId: string, lastVisited: string }>>({});
-  const [enrollmentMap, setEnrollmentMap] = useState<Record<string, boolean>>({});
+  const [courses, setCourses] = useState<EnrichedCourse[]>(() => {
+    if (typeof window === 'undefined') return [];
+    const cache = localStorage.getItem('edunook_universal_cache');
+    try { return cache ? JSON.parse(cache).courses : []; } catch { return []; }
+  });
+  const [history, setHistory] = useState<Record<string, { chapterId: string, lastVisited: string }>>(() => {
+    if (typeof window === 'undefined') return {};
+    const cache = localStorage.getItem('edunook_universal_cache');
+    try { return cache ? JSON.parse(cache).history || {} : {}; } catch { return {}; }
+  });
+  const [enrollmentMap, setEnrollmentMap] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {};
+    const cache = localStorage.getItem('edunook_universal_cache');
+    try { return cache ? JSON.parse(cache).enrollmentMap || {} : {}; } catch { return {}; }
+  });
   
   // Instant Offline Detection
   const [loading, setLoading] = useState(() => {
@@ -99,27 +112,16 @@ export default function HomeClient() {
   // Load Data logic
   useEffect(() => {
     async function loadData() {
-      // 1. Instant Recovery from Universal Cache (Zero-latency)
-      const universalCache = localStorage.getItem('edunook_universal_cache');
-      if (universalCache) {
-        try {
-          const { courses: c, history: h, enrollmentMap: e } = JSON.parse(universalCache);
-          setCourses(c);
-          if (h) setHistory(h);
-          if (e) setEnrollmentMap(e);
-          setLoading(false);
-        } catch (err) { console.error('Universal cache corrupt:', err); }
-      }
-
-      // 2. Network Sync (If online)
+      // Network Sync (If online)
       try {
-        await DbService.ensureUsernameMapLoaded();
-        const courseData = await DbService.getCourses({ isPublished: true });
-        let historyData = {};
+        const [courseData, historyData] = await Promise.all([
+          DbService.getCourses({ isPublished: true }),
+          user ? DbService.getHistory(user.id) : Promise.resolve({})
+        ]);
+
         const enrollments: Record<string, boolean> = {};
 
         if (user) {
-          historyData = await DbService.getHistory(user.id);
           const historyCourseIds = Object.keys(historyData || {});
           await Promise.all(
             historyCourseIds.map(async (cId) => {
@@ -274,8 +276,8 @@ export default function HomeClient() {
     <Layout>
       {/* Background Aurora Effects (Hidden on mobile for performance) */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 hidden md:block">
-        <div className="absolute top-[10%] right-[-10%] w-[50%] h-[40%] bg-primary/5 rounded-full blur-[120px] animate-pulse" />
-        <div className="absolute bottom-[20%] left-[-5%] w-[40%] h-[30%] bg-accent/5 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: '1s' }} />
+        <div className="absolute top-[10%] right-[-10%] w-[50%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
+        <div className="absolute bottom-[20%] left-[-5%] w-[40%] h-[30%] bg-accent/5 rounded-full blur-[100px]" />
       </div>
 
       {/* Filter Tabs - Sticky below Header with ZERO gap */}
@@ -293,10 +295,7 @@ export default function HomeClient() {
                   }`}
                 >
                   {activeTab === tab && (
-                    <motion.div 
-                      layoutId="tab-pill" 
-                      className="absolute inset-0 bg-primary rounded-2xl shadow-[0_0_20px_rgba(59,130,246,0.3)]" 
-                    />
+                    <div className="absolute inset-0 bg-primary rounded-2xl shadow-[0_0_20px_rgba(59,130,246,0.3)] border border-white/10" />
                   )}
                   <span className="relative z-10 uppercase tracking-[0.15em]">{tab}</span>
                 </button>
@@ -311,13 +310,8 @@ export default function HomeClient() {
 
       <div className="w-full max-w-[1600px] mx-auto overflow-x-hidden px-4 md:px-10 py-6 md:py-10 space-y-10 md:space-y-16">
         {/* Continue Watching */}
-        <AnimatePresence>
           {historyCourses.length > 0 && !queryQ && activeTab === 'All' && (
-            <motion.section 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="space-y-4 md:space-y-6 w-full max-w-full min-w-0"
-            >
+              <section className="space-y-4 md:space-y-6 w-full max-w-full min-w-0">
                 {/* Header */}
                 <div className="flex items-center justify-between w-full px-1">
                   <div className="flex items-center gap-4">
@@ -395,11 +389,10 @@ export default function HomeClient() {
                     </div>
                   )}
                 </div>
-              </motion.section>
+              </section>
             )}
-          </AnimatePresence>
 
-          <section className="space-y-10 relative z-10">
+          <section className="space-y-10 relative z-10 min-h-[600px]">
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center gap-5">
                 <div className="w-12 h-12 md:w-14 md:h-14 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -422,34 +415,15 @@ export default function HomeClient() {
             </div>
 
             {filteredCourses.length > 0 ? (
-              <motion.div 
-                layout
-                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-10"
-              >
-                <AnimatePresence mode="popLayout">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-10">
                   {filteredCourses.map((course, index) => (
-                    <motion.div
-                      key={course.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ 
-                        duration: 0.3, 
-                        delay: Math.min(index * 0.05, 0.4),
-                        ease: "easeOut"
-                      }}
-                    >
+                    <div key={course.id}>
                       <CourseCard course={course} priority={index < 4} />
-                    </motion.div>
+                    </div>
                   ))}
-                </AnimatePresence>
-              </motion.div>
+                </div>
             ) : (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="py-24 md:py-40 flex flex-col items-center justify-center text-center space-y-10 px-6"
-            >
+            <div className="py-24 md:py-40 flex flex-col items-center justify-center text-center space-y-10 px-6">
               <div className="relative">
                 <div className="absolute inset-0 bg-primary/20 blur-[60px] rounded-full animate-pulse" />
                 <div className="w-24 h-24 md:w-32 md:h-32 rounded-3xl bg-white/[0.03] border border-white/10 flex items-center justify-center backdrop-blur-2xl relative z-10">
@@ -476,26 +450,20 @@ export default function HomeClient() {
                   </span>
                 </button>
               )}
-            </motion.div>
+            </div>
             )}
            </section>
 
-           {/* Mobile Create Floating Action Button (Optional) */}
-           <AnimatePresence>
-             {!loading && dbUser?.username && (
-               <motion.button
-                 initial={{ scale: 0, opacity: 0 }}
-                 animate={{ scale: 1, opacity: 1 }}
-                 whileHover={{ scale: 1.1 }}
-                 whileTap={{ scale: 0.9 }}
-                 onClick={() => router.push(`/${dbUser.username}`)}
-                 className="md:hidden fixed bottom-24 right-6 w-14 h-14 bg-primary text-white rounded-2xl shadow-2xl shadow-primary/40 flex items-center justify-center z-[45]"
-                 aria-label="Create a new course"
-               >
-                 <Plus className="w-7 h-7" />
-               </motion.button>
-             )}
-           </AnimatePresence>
+           {/* Mobile Create Floating Action Button */}
+            {!loading && dbUser?.username && (
+                <button
+                  onClick={() => router.push(`/${dbUser.username}`)}
+                  className="md:hidden fixed bottom-24 right-6 w-14 h-14 bg-primary text-white rounded-2xl shadow-2xl shadow-primary/40 flex items-center justify-center z-[45] hover:scale-110 active:scale-90 transition-transform"
+                  aria-label="Create a new course"
+                >
+                  <Plus className="w-7 h-7" />
+                </button>
+              )}
         </div>
     </Layout>
   );

@@ -5,7 +5,7 @@ import { Providers } from './providers';
 
 const inter = Inter({
   subsets: ['latin'],
-  display: 'optional',
+  display: 'swap',
   variable: '--font-inter',
 });
 
@@ -20,9 +20,7 @@ export const metadata: Metadata = {
   description: 'Learn and teach with EduNook. Browse courses, create content, take assessments, and connect with educators.',
   applicationName: 'EduNook',
   authors: [{ name: 'EduNook' }],
-  alternates: {
-    canonical: '/',
-  },
+
   openGraph: {
     type: 'website',
     siteName: 'EduNook',
@@ -72,6 +70,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${inter.variable} scroll-smooth`} data-scroll-behavior="smooth">
       <head>
         <link rel="preconnect" href="https://res.cloudinary.com" />
+        <link rel="dns-prefetch" href="https://res.cloudinary.com" />
+        <link rel="preconnect" href="https://identitytoolkit.googleapis.com" />
+        <link rel="dns-prefetch" href="https://identitytoolkit.googleapis.com" />
+        <link rel="preconnect" href="https://edunook-website.firebaseapp.com" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <script

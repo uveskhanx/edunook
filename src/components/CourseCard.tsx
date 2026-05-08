@@ -2,7 +2,6 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Play, User, Sparkles, Eye, MoreVertical, Settings } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/use-auth';
 import { formatRelativeTime } from '@/lib/time';
 import { optimizeCloudinaryUrl } from '@/lib/image-utils';
@@ -10,12 +9,12 @@ import { VerificationTick } from './VerificationTick';
 import { calculateDiscountedPrice, getDiscountLabel, isPremium } from '@/lib/subscription-utils';
 
 import { Course, Profile } from '@/lib/db-service';
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuTrigger 
-} from '@/components/ui/dropdown-menu';
+import dynamic from 'next/dynamic';
+
+const DropdownMenu = dynamic(() => import('@/components/ui/dropdown-menu').then(m => m.DropdownMenu));
+const DropdownMenuContent = dynamic(() => import('@/components/ui/dropdown-menu').then(m => m.DropdownMenuContent));
+const DropdownMenuItem = dynamic(() => import('@/components/ui/dropdown-menu').then(m => m.DropdownMenuItem));
+const DropdownMenuTrigger = dynamic(() => import('@/components/ui/dropdown-menu').then(m => m.DropdownMenuTrigger));
 
 interface CourseCardProps {
   course: Course & {
@@ -39,12 +38,8 @@ export function CourseCard({ course, priority = false, showManagement = false }:
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      whileHover={{ y: -6, scale: 1.01 }}
-      className="group cursor-pointer"
+    <div
+      className="group cursor-pointer transform transition-all duration-300 hover:-translate-y-1.5 hover:scale-[1.01]"
       onClick={handleCardClick}
     >
       <div className="block space-y-2 md:space-y-3">
@@ -52,11 +47,14 @@ export function CourseCard({ course, priority = false, showManagement = false }:
         <div className="relative aspect-video rounded-[1.5rem] overflow-hidden bg-card border border-border transition-all duration-500 group-hover:border-primary/50 group-hover:shadow-[0_0_20px_rgba(var(--primary-rgb),0.15)]">
           {course.thumbnailUrl ? (
             <Image 
-              src={optimizeCloudinaryUrl(course.thumbnailUrl, 480)} 
+              src={optimizeCloudinaryUrl(course.thumbnailUrl, 400)} 
               alt={course.title}
-              width={480}
-              height={270}
+              width={400}
+              height={225}
               priority={priority}
+              fetchPriority={priority ? 'high' : 'auto'}
+              decoding="async"
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
               className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
             />
           ) : (
@@ -167,6 +165,6 @@ export function CourseCard({ course, priority = false, showManagement = false }:
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

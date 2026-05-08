@@ -16,7 +16,7 @@ export function getAdminApp() {
 
   return admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    databaseURL: process.env.VITE_FIREBASE_DATABASE_URL,
+    databaseURL: process.env.VITE_FIREBASE_DATABASE_URL || process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
   });
 }
 

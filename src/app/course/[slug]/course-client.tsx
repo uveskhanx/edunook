@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState, useRef, useMemo } from 'react';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DbService, Course, Video, Chapter, Profile, CourseReview } from '@/lib/db-service';
 import { Layout } from '@/components/Layout';
@@ -603,7 +604,15 @@ export default function CourseClient({ slug }: { slug: string }) {
                     className="absolute inset-0 z-[60] flex flex-col items-center justify-center cursor-pointer"
                     onClick={hasAccess ? togglePlay : undefined}
                   >
-                     {course.thumbnailUrl && <img src={optimizeCloudinaryUrl(course.thumbnailUrl, 1920)} className="absolute inset-0 w-full h-full object-cover opacity-50 blur-sm scale-105" alt="" />}
+                     {course.thumbnailUrl && (
+                       <Image 
+                         src={optimizeCloudinaryUrl(course.thumbnailUrl, 1920)} 
+                         fill
+                         priority
+                         className="object-cover opacity-50 blur-sm scale-105" 
+                         alt="" 
+                       />
+                     )}
                      <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/40" />
                      
                      {!hasAccess ? (

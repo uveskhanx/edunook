@@ -15,27 +15,48 @@ async function fetchCourseBySlug(slug: string, dbUrl?: string | null) {
     return null;
   }
 
-  const slugMapRes = await fetch(`${dbUrl}/course_slugs/${slug}.json`, { next: { revalidate: 3600 } });
-  if (!slugMapRes.ok) {
-    return null;
+  let courseId: string | null = null;
+  let course: CourseRecord | null = null;
+
+  const params = new URLSearchParams({
+    orderBy: JSON.stringify('slug'),
+    equalTo: JSON.stringify(slug),
+    limitToFirst: '1',
+  });
+  const courseQueryRes = await fetch(`${dbUrl}/courses.json?${params.toString()}`, { next: { revalidate: 3600 } });
+  if (courseQueryRes.ok) {
+    const queryPayload = await courseQueryRes.json() as Record<string, CourseRecord> | null;
+    const [resolvedCourseId, resolvedCourse] = Object.entries(queryPayload || {})[0] || [];
+    if (resolvedCourseId && resolvedCourse) {
+      courseId = resolvedCourseId;
+      course = resolvedCourse;
+    }
   }
 
-  const courseId = await slugMapRes.json();
-  if (!courseId) {
-    return null;
-  }
-
-  const courseRes = await fetch(`${dbUrl}/courses/${courseId}.json`, { next: { revalidate: 3600 } });
-  if (!courseRes.ok) {
-    return null;
-  }
-
-  const course = await courseRes.json();
   if (!course) {
+    const slugMapRes = await fetch(`${dbUrl}/course_slugs/${slug}.json`, { next: { revalidate: 3600 } });
+    if (!slugMapRes.ok) {
+      return null;
+    }
+
+    courseId = await slugMapRes.json();
+    if (!courseId) {
+      return null;
+    }
+
+    const courseRes = await fetch(`${dbUrl}/courses/${courseId}.json`, { next: { revalidate: 3600 } });
+    if (!courseRes.ok) {
+      return null;
+    }
+
+    course = await courseRes.json();
+  }
+
+  if (!courseId || !course) {
     return null;
   }
 
-  return { courseId, course: course as CourseRecord };
+  return { courseId, course };
 }
 
 export async function generateMetadata(

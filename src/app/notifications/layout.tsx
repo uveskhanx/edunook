@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Notifications — EduNook',
+  title: 'Notifications | EduNook',
   description: 'View your latest notifications and activity on EduNook.',
 };
 

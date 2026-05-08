@@ -20,7 +20,7 @@ export function SkeletonLoader({ className = '', variant = 'rectangular' }: Skel
 
 export function CourseCardSkeleton() {
   return (
-    <div className="space-y-2 md:space-y-3">
+    <div className="space-y-2 md:space-y-3 opacity-70">
       <div className="relative aspect-video rounded-[1.5rem] bg-muted/10 border border-border overflow-hidden shimmer" />
       <div className="flex gap-3 md:gap-4 pt-0.5 md:pt-1">
         <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-muted/20 shimmer shrink-0" />

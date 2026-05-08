@@ -671,11 +671,12 @@ export default function ProfileClient({ username }: { username: string }) {
 
               {courses.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    {courses.map(course => (
+                    {courses.map((course, index) => (
                       <div key={course.id} className="relative group">
                         <CourseCard 
                           course={{...course, profiles: profile}} 
                           showManagement={isOwnProfile}
+                          priority={index < 4}
                         />
                       </div>
                    ))}

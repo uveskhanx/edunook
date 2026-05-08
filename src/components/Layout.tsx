@@ -11,10 +11,16 @@ import {
 import Image from 'next/image';
 import { useAuth } from '@/hooks/use-auth';
 import { DbService } from '@/lib/db-service';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef, useEffect } from 'react';
 import { VerificationTick } from './VerificationTick';
 import { isPremium } from '@/lib/subscription-utils';
+
+import dynamic from 'next/dynamic';
+
+const Sidebar = dynamic(() => import('./Sidebar').then(m => m.Sidebar), {
+  ssr: true,
+  loading: () => <aside className="hidden md:flex w-[280px] bg-background border-r border-border animate-pulse" />
+});
 
 export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, showSettings }: { children: React.ReactNode; hideNavigation?: boolean; hideMobileNav?: boolean; hideHeader?: boolean; showSettings?: boolean }) {
   const pathname = usePathname();
@@ -144,122 +150,16 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
     <div className="flex min-h-screen w-full bg-background text-foreground font-sans overflow-x-clip">
       {/* Desktop Sidebar (Left) */}
       {!hideNavigation && (
-        <aside className="hidden md:flex flex-col w-[280px] h-screen sticky top-0 left-0 bg-background border-r border-border z-50">
-        <div className="p-8">
-          <Link href="/" className="flex items-center gap-4 group" aria-label="EduNook Home">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform overflow-hidden shadow-2xl shadow-primary/10 border border-white/5 shrink-0 relative">
-              <Image 
-                src="/logo.png" 
-                width={56}
-                height={56}
-                className="w-full h-full object-cover" 
-                alt="EduNook Logo" 
-                priority
-              />
-            </div>
-            <span className="text-2xl font-black text-foreground tracking-tighter group-hover:text-primary transition-colors">EduNook</span>
-          </Link>
-        </div>
-
-        <nav className="flex-1 px-4 space-y-1 overflow-y-auto no-scrollbar py-2">
-          {navItems.map((item) => {
-            const isHome = item.to === '/home' && (pathname === '/' || pathname === '/home');
-            const isActive = isHome || (pathname === item.to && item.to !== '/home');
-            
-            return (
-              <Link
-                key={item.label}
-                href={item.to}
-                className={`relative flex items-center gap-4 px-5 py-3.5 rounded-2xl text-[14px] font-bold transition-all group overflow-hidden ${
-                  isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted/5'
-                }`}
-              >
-                {isActive && (
-                  <motion.div layoutId="sidebar-active" className="absolute inset-0 bg-primary/10 rounded-2xl" />
-                )}
-                <span className="relative shrink-0">
-                  <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : 'opacity-70 group-hover:opacity-100'}`} />
-                  <CountBadge count={getNavBadgeCount(item.label)} />
-                </span>
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="p-4 mt-auto border-t border-border bg-background/80 backdrop-blur-md">
-          {loading ? (
-             // Sidebar Loading Skeleton
-             <div className="flex items-center gap-3 p-3 rounded-3xl border border-border bg-card/50 animate-pulse">
-                <div className="w-10 h-10 rounded-xl bg-white/5" />
-                <div className="flex-1 space-y-2">
-                   <div className="h-3 w-24 bg-white/5 rounded" />
-                   <div className="h-2 w-16 bg-white/5 rounded opacity-50" />
-                </div>
-             </div>
-          ) : user ? (
-            <div className="space-y-3">
-               <Link 
-                  href={`/${dbUser?.username || 'user'}`}
-                  className={`block p-3 rounded-3xl border transition-all group/profile-box ${
-                    pathname === `/${dbUser?.username}`
-                    ? 'bg-primary/10 border-primary/30'
-                    : 'bg-card border-border hover:border-primary/30 hover:bg-muted/50'
-                  }`}
-               >
-                 <div className="flex items-center gap-3">
-                   <div className="relative shrink-0">
-                      <div className="w-10 h-10 rounded-xl overflow-hidden border border-border group-hover/profile-box:border-primary/50 transition-colors relative">
-                        <Image 
-                          src={dbUser?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${dbUser?.uid}`} 
-                          width={40}
-                          height={40}
-                          className="w-full h-full object-cover group-hover/profile-box:scale-105 transition-transform" 
-                          alt={`${dbUser?.fullName || 'User'}'s avatar`} 
-                        />
-                      </div>
-                      {dbUser?.subscription?.planId === 'edge' && (
-                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center border-2 border-card shadow-lg">
-                          <Sparkles className="w-2 h-2 text-white fill-white" />
-                        </div>
-                      )}
-                   </div>
-                   <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1">
-                        <p className="text-[13px] font-black truncate text-foreground group-hover/profile-box:text-primary transition-colors">
-                          {dbUser?.fullName || user.email?.split('@')[0]}
-                        </p>
-                        <VerificationTick planId={dbUser?.subscription?.planId} size={14} />
-                      </div>
-                      <div className="flex items-center gap-1.5 overflow-hidden">
-                         <p className="text-[9px] text-muted-foreground truncate uppercase tracking-[0.15em] font-black opacity-50">@{dbUser?.username || 'student'}</p>
-                         {isPremium(dbUser?.subscription?.planId) && (
-                           <span className="text-[7px] font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded-full border border-primary/20 ml-auto whitespace-nowrap animate-pulse">SAVINGS ACTIVE</span>
-                         )}
-                         {!isPremium(dbUser?.subscription?.planId) && (
-                           <span className="text-[8px] font-black text-primary opacity-0 group-hover/profile-box:opacity-100 transition-opacity uppercase ml-auto whitespace-nowrap">View Profile</span>
-                         )}
-                      </div>
-                   </div>
-                 </div>
-               </Link>
-
-                <button 
-                  onClick={signOut} 
-                  aria-label="Sign out"
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl text-[10px] font-black text-muted-foreground hover:text-destructive bg-muted/30 hover:bg-destructive/10 transition-all border border-transparent hover:border-destructive/20"
-                >
-                 <LogOut className="w-3.5 h-3.5" />
-                 <span>LOGOUT</span>
-               </button>
-            </div>
-          ) : (
-            <Link href="/login" className="flex items-center justify-center w-full py-4 bg-primary text-white rounded-2xl font-black shadow-lg shadow-primary/20">
-                SIGN IN
-            </Link>
-          )}
-        </div>
-      </aside>
+        <Sidebar 
+          navItems={navItems as any}
+          pathname={pathname}
+          loading={loading}
+          user={user}
+          dbUser={dbUser}
+          signOut={signOut}
+          getNavBadgeCount={getNavBadgeCount}
+          CountBadge={CountBadge}
+        />
       )}
 
       {/* Main Container */}
@@ -269,7 +169,14 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
           <header className="sticky top-0 z-50 h-[60px] md:h-[72px] bg-background/95 backdrop-blur-xl border-b border-border px-4 md:px-10 flex items-center justify-between gap-4 md:gap-6">
           {/* Mobile Logo */}
           <Link href="/" className="md:hidden flex items-center gap-3 flex-shrink-0" aria-label="EduNook Home">
-            <Image src="/logo.png" width={40} height={40} className="w-10 h-10 object-contain" alt="EduNook Logo" />
+            <Image 
+              src="/logo.png" 
+              width={40} 
+              height={40} 
+              className="w-10 h-10 object-contain" 
+              alt="EduNook Logo" 
+              priority
+            />
             <span className="text-xl font-black text-foreground tracking-tighter">EduNook</span>
           </Link>
 
@@ -310,49 +217,39 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
                    />
                    
                    <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                     <AnimatePresence>
-                       {searchValue && (
-                          <motion.button
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.8 }}
-                            type="button"
-                            onClick={clearSearch}
-                            className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </motion.button>
-                       )}
-                     </AnimatePresence>
+                     {searchValue && (
+                           <button
+                             type="button"
+                             onClick={clearSearch}
+                             className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                           >
+                             <X className="w-4 h-4" />
+                           </button>
+                        )}
                    </div>
                  </div>
                </form>
    
                {/* Suggestions Dropdown */}
-               <AnimatePresence>
-                  {showSuggestions && suggestions.length > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className={`absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-[80] ${isMobileSearchOpen ? 'mx-4' : 'max-w-[600px] mx-auto'}`}
-                    >
-                      {suggestions.map((item, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => {
-                            handleSearch(item);
-                            setIsMobileSearchOpen(false);
-                          }}
-                          className="w-full text-left px-5 py-3.5 hover:bg-white/5 text-[14px] font-medium text-muted-foreground hover:text-white transition-colors flex items-center gap-3"
-                        >
-                          <SearchIcon className="w-4 h-4 opacity-30" />
-                          {item}
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-               </AnimatePresence>
+               {showSuggestions && suggestions.length > 0 && (
+                     <div
+                       className={`absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-[80] ${isMobileSearchOpen ? 'mx-4' : 'max-w-[600px] mx-auto'}`}
+                     >
+                       {suggestions.map((item, idx) => (
+                         <button
+                           key={idx}
+                           onClick={() => {
+                             handleSearch(item);
+                             setIsMobileSearchOpen(false);
+                           }}
+                           className="w-full text-left px-5 py-3.5 hover:bg-white/5 text-[14px] font-medium text-muted-foreground hover:text-white transition-colors flex items-center gap-3"
+                         >
+                           <SearchIcon className="w-4 h-4 opacity-30" />
+                           {item}
+                         </button>
+                       ))}
+                     </div>
+                   )}
             </div>
           ) : (
             <div className="flex-1" />
@@ -406,18 +303,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
 
         {/* Page Content */}
         <main className={`flex-1 flex flex-col ${(!hideNavigation && !hideMobileNav) ? 'pb-[72px] md:pb-0' : ''}`}>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={pathname}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex-1 flex flex-col"
-            >
-              {children}
-            </motion.div>
-          </AnimatePresence>
+          {children}
         </main>
 
         {/* Mobile Bottom Nav */}

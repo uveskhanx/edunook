@@ -249,8 +249,24 @@ function pickPublicProfile(data: Partial<Profile> & FirebaseObject): FirebaseObj
   return clean;
 }
 
+/**
+ * Validates if a string is a valid Firebase Realtime Database key.
+ * Keys cannot contain ".", "#", "$", "[", or "]"
+ */
+function isValidFirebaseKey(key: string): boolean {
+  if (!key || typeof key !== 'string') return false;
+  return !/[.#$[\]]/.test(key);
+}
+
 async function readNode<T = FirebaseObject>(path: string): Promise<T | null> {
   try {
+    // Validate path segments to prevent "invalid path" crashes
+    const segments = path.split('/');
+    if (segments.some(s => s && !isValidFirebaseKey(s))) {
+      console.warn(`[DbService] Blocked read for invalid path: ${path}`);
+      return null;
+    }
+
     const snapshot = await get(ref(db, path));
     return snapshot.exists() ? snapshot.val() as T : null;
   } catch (err) {
@@ -328,6 +344,33 @@ const normalizeLeaderboardEntry = (uid: string, raw: any = {}, quizTotalQuestion
 
 // Service Functions
 export const DbService = {
+  updatePresence(userId: string, showOnlineStatus: boolean = true) {
+    const userPresenceRef = ref(db, `presence/${userId}`);
+    if (!showOnlineStatus) {
+      remove(userPresenceRef);
+      return;
+    }
+    onValue(ref(db, '.info/connected'), (snap) => {
+      if (snap.val() === true) {
+        onDisconnect(userPresenceRef).set({ status: 'offline', lastSeen: serverTimestamp() });
+        set(userPresenceRef, { status: 'online', lastSeen: serverTimestamp() });
+      }
+    });
+  },
+
+  subscribeToPresence(userId: string, callback: (presence: Presence | null) => void) {
+    return onValue(ref(db, `presence/${userId}`), (snapshot) => callback(snapshot.exists() ? snapshot.val() : null));
+  },
+
+  subscribeToTyping(chatId: string, callback: (typing: Record<string, boolean>) => void) {
+    return onValue(ref(db, `chats/${chatId}/typing`), (snapshot) => callback(snapshot.exists() ? snapshot.val() : {}));
+  },
+
+  async getChatMetadata(chatId: string): Promise<{ users: Record<string, boolean>; lastMessage?: string; updatedAt?: string } | null> {
+    const snapshot = await get(ref(db, `chats/${chatId}`));
+    return snapshot.exists() ? snapshot.val() : null;
+  },
+
   // Helpers
   async ensureUsernameMapLoaded(): Promise<Record<string, string>> {
      return {}; // Removed aggressive offline caching
@@ -655,6 +698,7 @@ export const DbService = {
     return profile ? profile.email : null;
   },
 
+
   async uploadAvatar(uid: string, file: File): Promise<string> {
     const { uploadToCloudinary } = await import('./cloudinary');
     const result = await uploadToCloudinary(file, `edunook/avatars/${uid}`);
@@ -662,6 +706,10 @@ export const DbService = {
   },
 
   // Utilities
+  isValidFirebaseKey(key: string): boolean {
+    return /^[^.$#[\]/]+$/.test(key);
+  },
+
   slugify(text: string): string {
     return text
       .toString()
@@ -675,6 +723,7 @@ export const DbService = {
   },
 
   async getUidByUsername(username: string): Promise<string | null> {
+    if (!isValidFirebaseKey(username)) return null;
     const snapshot = await get(ref(db, `usernames/${username.toLowerCase()}`));
     return snapshot.exists() ? snapshot.val() : null;
   },
@@ -685,17 +734,11 @@ export const DbService = {
     // Ensure cache is populated
     if (!cachedAllProfiles) {
       try {
-        const [uSnap, pSnap] = await Promise.all([
-          get(ref(db, 'users')),
-          get(ref(db, 'profiles'))
-        ]);
-        
-        const users = uSnap.exists() ? Object.entries(uSnap.val()).map(([uid, data]: any) => ({ ...data, uid })) : [];
+        const pSnap = await get(ref(db, 'profiles'));
         const profiles = pSnap.exists() ? Object.entries(pSnap.val()).map(([uid, data]: any) => ({ ...data, uid })) : [];
         
-        const all = [...users, ...profiles];
-        // Deduplicate by UID
-        cachedAllProfiles = Array.from(new Map(all.map(p => [p.uid, p])).values());
+        // Deduplicate by UID (though profiles should already be unique by UID)
+        cachedAllProfiles = Array.from(new Map(profiles.map(p => [p.uid, p])).values());
       } catch (err) {
         console.error('[DbService] Failed to load search cache:', err);
         return [];
@@ -705,7 +748,7 @@ export const DbService = {
     const lower = queryText.trim().toLowerCase();
     
     // Perform search
-    return cachedAllProfiles.filter(p => {
+    return (cachedAllProfiles || []).filter(p => {
       const username = (p.username || '').toLowerCase();
       const fullName = (p.fullName || '').toLowerCase();
       return username.includes(lower) || fullName.includes(lower);
@@ -744,9 +787,20 @@ export const DbService = {
   },
 
   async getCourse(idOrSlug: string): Promise<(Course & { profiles: Profile | null }) | null> {
-    // 1. Try resolving by slug first
-    const slugSnapshot = await get(ref(db, `course_slugs/${idOrSlug}`));
-    const actualId = slugSnapshot.exists() ? slugSnapshot.val() : idOrSlug;
+    let actualId = idOrSlug;
+
+    try {
+      const slugQuery = query(ref(db, 'courses'), orderByChild('slug'), equalTo(idOrSlug));
+      const slugMatchSnapshot = await get(slugQuery);
+      if (slugMatchSnapshot.exists()) {
+        const [matchedCourseId] = Object.keys(slugMatchSnapshot.val() || {});
+        if (matchedCourseId) {
+          actualId = matchedCourseId;
+        }
+      }
+    } catch (err) {
+      console.warn(`[DbService] courses slug query failed for ${idOrSlug}:`, err);
+    }
 
     const snapshot = await get(ref(db, `courses/${actualId}`));
     if (!snapshot.exists()) return null;
@@ -910,6 +964,7 @@ export const DbService = {
 
   // Chat Subscriptions
   subscribeToUserConversations(userId: string, callback: (convs: (Profile & { chatId: string; lastMessage?: string; updatedAt?: string; lastSenderId?: string; unreadCount?: number; isPinned?: boolean; isMuted?: boolean })[]) => void) {
+    if (!isValidFirebaseKey(userId)) { callback([]); return () => {}; }
     const userChatsRef = ref(db, `user_chats/${userId}`);
     const settingsRef = ref(db, `user_settings/${userId}`);
     
@@ -1045,6 +1100,7 @@ export const DbService = {
   },
 
   subscribeToMessages(chatId: string, userId: string, callback: (messages: Message[]) => void) {
+    if (!isValidFirebaseKey(chatId) || !isValidFirebaseKey(userId)) { callback([]); return () => {}; }
     const messagesRef = ref(db, `messages/${chatId}`);
     const settingsRef = ref(db, `user_settings/${userId}/deletedChats/${chatId}`);
     
@@ -1277,78 +1333,24 @@ export const DbService = {
     }
   },
 
-  async uploadChatMedia(userId: string, file: File): Promise<{ url: string, type: 'image' | 'video' | 'file' }> {
+    async uploadChatMedia(userId: string, file: File): Promise<{ url: string, type: 'image' | 'video' | 'file' }> {
     const { uploadToCloudinary } = await import('./cloudinary');
-    const folder = `edunook/chat/${userId}`;
-    const result = await uploadToCloudinary(file, folder);
-    
+    const result = await uploadToCloudinary(file, `edunook/chat/${userId}`);
     let type: 'image' | 'video' | 'file' = 'file';
     if (file.type.startsWith('image/')) type = 'image';
     else if (file.type.startsWith('video/')) type = 'video';
-    
     return { url: result.secure_url, type };
   },
 
-  updatePresence(userId: string, showOnlineStatus: boolean = true) {
-    const userPresenceRef = ref(db, `presence/${userId}`);
-    const connectedRef = ref(db, '.info/connected');
-
-    if (!showOnlineStatus) {
-      // If user wants to be hidden, remove the presence node entirely or set to offline
-      remove(userPresenceRef);
-      return;
-    }
-
-    onValue(connectedRef, (snap) => {
-      if (snap.val() === true) {
-        onDisconnect(userPresenceRef).set({
-          status: 'offline',
-          lastSeen: serverTimestamp()
-        });
-
-        set(userPresenceRef, {
-          status: 'online',
-          lastSeen: serverTimestamp()
-        });
-      }
-    });
-  },
-
-  subscribeToPresence(userId: string, callback: (presence: Presence | null) => void) {
-    const userPresenceRef = ref(db, `presence/${userId}`);
-    return onValue(userPresenceRef, (snapshot) => {
-      callback(snapshot.exists() ? snapshot.val() : null);
-    });
-  },
-
-  subscribeToTyping(chatId: string, callback: (typing: Record<string, boolean>) => void) {
-    const typingRef = ref(db, `chats/${chatId}/typing`);
-    return onValue(typingRef, (snapshot) => {
-      callback(snapshot.exists() ? snapshot.val() : {});
-    });
-  },
-
-  async getChatMetadata(chatId: string): Promise<{ users: Record<string, boolean>; lastMessage?: string; updatedAt?: string } | null> {
-    const snapshot = await get(ref(db, `chats/${chatId}`));
-    return snapshot.exists() ? snapshot.val() : null;
-  },
-
   // ===== FOLLOWERS SYSTEM =====
-
   async followUser(currentUid: string, targetUid: string): Promise<void> {
     const now = new Date().toISOString();
     const updates: Record<string, any> = {};
     updates[`followers/${targetUid}/${currentUid}`] = true;
     updates[`following/${currentUid}/${targetUid}`] = true;
     await update(ref(db), updates);
-
-    // Create follow notification
     await this.createNotification(targetUid, {
-      type: 'follow',
-      fromUid: currentUid,
-      text: 'started following you',
-      createdAt: now,
-      seen: false,
+      type: 'follow', fromUid: currentUid, text: 'started following you', createdAt: now, seen: false,
     });
   },
 
@@ -1363,50 +1365,42 @@ export const DbService = {
   },
 
   subscribeToFollowerCount(uid: string, callback: (count: number) => void) {
+    if (!isValidFirebaseKey(uid)) { callback(0); return () => {}; }
     return onValue(ref(db, `followers/${uid}`), (snapshot) => {
       callback(snapshot.exists() ? Object.keys(snapshot.val()).length : 0);
     });
   },
 
   subscribeToFollowingCount(uid: string, callback: (count: number) => void) {
+    if (!isValidFirebaseKey(uid)) { callback(0); return () => {}; }
     return onValue(ref(db, `following/${uid}`), (snapshot) => {
       callback(snapshot.exists() ? Object.keys(snapshot.val()).length : 0);
     });
   },
 
   // ===== NOTIFICATIONS SYSTEM =====
-
   async createNotification(targetUid: string, data: Omit<Notification, 'id'>): Promise<void> {
-    // 1. Check Preferences (Default to true if profile or prefs missing)
     try {
       const profile = await this.getProfile(targetUid);
       const prefs = profile?.preferences?.notifications;
-      
       if (prefs) {
         if (data.type === 'follow' && !prefs.followers) return;
         if (data.type === 'update' && !prefs.courseUpdates) return;
         if ((data.type === 'test' || data.type === 'quiz') && !prefs.quizResults) return;
       }
-    } catch (err) {
-      console.warn(`[DbService] Error checking notification preferences for ${targetUid}:`, err);
-    }
-
-    // 2. Create Notification
-    const notifRef = ref(db, `notifications/${targetUid}`);
-    const newRef = push(notifRef);
-    await set(newRef, {
-      ...data,
-      createdAt: data.createdAt || new Date().toISOString(),
-      seen: data.seen ?? false
-    });
+      const notifRef = ref(db, `notifications/${targetUid}`);
+      const newNotifRef = push(notifRef);
+      await set(newNotifRef, { ...data, id: newNotifRef.key });
+    } catch (err) { console.error('[DbService] Notification error:', err); }
   },
 
   subscribeToNotifications(uid: string, callback: (notifications: Notification[]) => void) {
+    if (!isValidFirebaseKey(uid)) { callback([]); return () => {}; }
     const notifRef = ref(db, `notifications/${uid}`);
     return onValue(notifRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
-        const list: Notification[] = Object.keys(data).map(id => ({ ...data[id], id }));
+        const list = Object.keys(data).map(id => ({ ...data[id], id } as Notification));
         callback(list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
       } else {
         callback([]);
@@ -1414,7 +1408,7 @@ export const DbService = {
     });
   },
 
-  subscribeToUnseenCount(uid: string, callback: (count: number) => void) {
+subscribeToUnseenCount(uid: string, callback: (count: number) => void) {
     const notifRef = ref(db, `notifications/${uid}`);
     return onValue(notifRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -1478,6 +1472,8 @@ export const DbService = {
       unsubscribeChats();
     };
   },
+
+
 
   async markNotificationsAsSeen(uid: string): Promise<void> {
     const snapshot = await get(ref(db, `notifications/${uid}`));

@@ -29,8 +29,23 @@
     },
     "courses": {
       ".read": "true",
+      ".indexOn": ["slug"],
       "$courseId": {
-        ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid)"
+        ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid)",
+        "views": {
+          ".write": "auth != null"
+        },
+        "enrollmentsCount": {
+          ".write": "auth != null"
+        }
+      }
+    },
+    "unique_views": {
+      "$courseId": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
+        }
       }
     },
     "chapters": {
@@ -54,10 +69,19 @@
       }
     },
     "followers": {
+      ".read": "true",
       "$uid": {
         ".read": "true",
         "$followerUid": {
           ".write": "auth != null && auth.uid === $followerUid"
+        }
+      }
+    },
+    "following": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$targetUid": {
+          ".write": "auth != null && auth.uid === $uid"
         }
       }
     },
@@ -69,7 +93,7 @@
     },
     "enrollments": {
       "$courseId": {
-        ".read": "auth != null && root.child('courses').child($courseId).child('userId').val() === auth.uid",
+        ".read": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || data.child(auth.uid).exists())",
         "$uid": {
           ".read": "auth != null && auth.uid === $uid",
           ".write": "auth != null && auth.uid === $uid"
@@ -77,10 +101,7 @@
       }
     },
     "payments": {
-      ".indexOn": [
-        "teacher_id",
-        "userId"
-      ],
+      ".indexOn": ["teacher_id", "userId"],
       "$paymentId": {
         ".read": "auth != null && (data.child('userId').val() === auth.uid || data.child('teacher_id').val() === auth.uid)",
         ".write": "auth != null && auth.uid === data.child('userId').val()"
@@ -90,6 +111,78 @@
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
         ".write": "false"
+      }
+    },
+    "test_attempts": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "teachers": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "presence": {
+      ".read": "true",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "user_chats": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$chatId": {
+          ".write": "auth != null && (auth.uid === $uid || $chatId.contains(auth.uid))"
+        }
+      }
+    },
+    "chats": {
+      "$chatId": {
+        ".read": "auth != null && (!data.exists() || data.child('users').child(auth.uid).exists())",
+        ".write": "auth != null && (!data.exists() || data.child('users').child(auth.uid).exists())"
+      }
+    },
+    "course_slugs": {
+      ".read": "true",
+      "$slug": {
+        ".write": "auth != null"
+      }
+    },
+    "test_slugs": {
+      ".read": "true",
+      "$slug": {
+        ".write": "auth != null"
+      }
+    },
+    "messages": {
+      "$chatId": {
+        ".read": "auth != null && root.child('chats').child($chatId).child('users').child(auth.uid).exists()",
+        "$msgId": {
+          ".write": "auth != null && root.child('chats').child($chatId).child('users').child(auth.uid).exists()"
+        }
+      }
+    },
+    "tests": {
+      ".read": "true",
+      "$testId": {
+        ".write": "auth != null && (!data.exists() || data.child('creatorId').val() === auth.uid)"
+      }
+    },
+    "quizzes": {
+      ".read": "true",
+      "$quizId": {
+        ".write": "auth != null && (!data.exists() || data.child('creatorId').val() === auth.uid)"
+      }
+    },
+    "leaderboards": {
+      ".read": "true",
+      "$id": {
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid"
+        }
       }
     }
   }

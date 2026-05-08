@@ -1,30 +1,16 @@
-import { Layout } from '@/components/Layout';
-import { Bell, Sparkles } from 'lucide-react';
 import { Suspense } from 'react';
+import NotificationsClientWrapper from './notifications-client-wrapper';
 
 export default function NotificationsPage() {
   return (
-    <Suspense fallback={null}>
-      <Layout>
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-8">
-          <div className="relative">
-            <div className="absolute inset-0 bg-primary/20 blur-[60px] rounded-full animate-pulse" />
-            <div className="w-24 h-24 rounded-3xl bg-white/[0.03] border border-white/10 flex items-center justify-center backdrop-blur-2xl relative z-10">
-              <Bell className="w-10 h-10 text-primary" />
-            </div>
-          </div>
-          <div className="space-y-4 max-w-md">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-primary/10 border border-primary/20 rounded-full">
-              <Sparkles className="w-3 h-3 text-primary" />
-              <span className="text-[10px] font-black text-primary uppercase tracking-widest">Coming Soon</span>
-            </div>
-            <h1 className="text-3xl md:text-5xl font-black text-white uppercase tracking-tighter leading-none">Notifications</h1>
-            <p className="text-white/40 font-bold uppercase tracking-widest text-[11px] md:text-xs leading-relaxed">
-              Your personal activity feed is currently under construction. We&apos;ll notify you here about new followers, course reviews, and edge updates soon.
-            </p>
-          </div>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#050505] flex items-center justify-center">
+          <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
         </div>
-      </Layout>
+      }
+    >
+      <NotificationsClientWrapper />
     </Suspense>
   );
 }

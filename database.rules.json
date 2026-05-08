@@ -38,37 +38,38 @@
 
     "courses": {
       ".read": "true",
+      ".indexOn": ["slug"],
       "$courseId": {
-        ".write": "auth != null && ((!data.exists() && newData.child('userId').val() === auth.uid) || data.child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
-        ".validate": "!newData.exists() || (newData.hasChildren(['id', 'userId', 'title', 'slug', 'price', 'category', 'isPublished', 'createdAt']) && newData.child('id').val() === $courseId && (!data.exists() || newData.child('userId').val() === data.child('userId').val() || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin'))"
+        ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid)",
+        ".validate": "newData.hasChildren(['id', 'userId', 'title', 'slug'])"
       }
     },
 
     "course_slugs": {
       ".read": "true",
       "$slug": {
-        ".write": "auth != null && ((newData.exists() && newData.isString() && root.child('courses').child(newData.val()).child('userId').val() === auth.uid) || (!newData.exists() && data.exists() && root.child('courses').child(data.val()).child('userId').val() === auth.uid) || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+        ".write": "auth != null"
       }
     },
 
     "chapters": {
       "$courseId": {
         ".read": "true",
-        ".write": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+        ".write": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || data.parent().parent().child('courses').child($courseId).child('userId').val() === auth.uid)"
       }
     },
 
     "videos": {
       ".read": "true",
       "$courseId": {
-        ".write": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+        ".write": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || data.parent().parent().child('courses').child($courseId).child('userId').val() === auth.uid)"
       }
     },
 
     "unique_views": {
       "$courseId": {
         "$uid": {
-          ".read": "auth != null && (auth.uid === $uid || root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+          ".read": "auth != null && (auth.uid === $uid || root.child('courses').child($courseId).child('userId').val() === auth.uid)",
           ".write": "auth != null && auth.uid === $uid"
         }
       }
@@ -78,7 +79,7 @@
       "$courseId": {
         ".read": "true",
         "$reviewId": {
-          ".write": "auth != null && ((newData.exists() && newData.child('userId').val() === auth.uid) || (!newData.exists() && (data.child('userId').val() === auth.uid || root.child('courses').child($courseId).child('userId').val() === auth.uid)) || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+          ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid)"
         }
       }
     },
@@ -86,6 +87,7 @@
     "followers": {
       ".read": "true",
       "$uid": {
+        ".read": "true",
         "$followerUid": {
           ".write": "auth != null && auth.uid === $followerUid"
         }
@@ -93,8 +95,8 @@
     },
 
     "following": {
-      ".read": "true",
       "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
         "$targetUid": {
           ".write": "auth != null && auth.uid === $uid"
         }
@@ -104,24 +106,22 @@
     "notifications": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
-        "$notificationId": {
-          ".write": "auth != null && (auth.uid === $uid || (!data.exists() && newData.child('fromUid').val() === auth.uid) || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
-        }
+        ".write": "auth != null"
       }
     },
 
     "chats": {
       "$chatId": {
-        ".read": "auth != null && data.child('users').child(auth.uid).val() === true",
-        ".write": "auth != null && ((data.exists() && data.child('users').child(auth.uid).val() === true) || (!data.exists() && newData.child('users').child(auth.uid).val() === true) || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+        ".read": "auth != null && (!data.exists() || data.child('users').child(auth.uid).exists())",
+        ".write": "auth != null && (!data.exists() || data.child('users').child(auth.uid).exists())"
       }
     },
 
     "messages": {
       "$chatId": {
-        ".read": "auth != null && root.child('chats').child($chatId).child('users').child(auth.uid).val() === true",
+        ".read": "auth != null && root.child('chats').child($chatId).child('users').child(auth.uid).exists()",
         "$messageId": {
-          ".write": "auth != null && root.child('chats').child($chatId).child('users').child(auth.uid).val() === true && (!newData.exists() || newData.child('senderId').val() === auth.uid)"
+          ".write": "auth != null && root.child('chats').child($chatId).child('users').child(auth.uid).exists()"
         }
       }
     },
@@ -130,13 +130,13 @@
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
         "$chatId": {
-          ".write": "auth != null && root.child('chats').child($chatId).child('users').child(auth.uid).val() === true && root.child('chats').child($chatId).child('users').child($uid).val() === true"
+          ".write": "auth != null && (auth.uid === $uid || $chatId.contains(auth.uid))"
         }
       }
     },
 
     "presence": {
-      ".read": "auth != null",
+      ".read": "true",
       "$uid": {
         ".write": "auth != null && auth.uid === $uid"
       }
@@ -144,16 +144,17 @@
 
     "tests": {
       ".read": "true",
+      ".indexOn": ["slug"],
       "$testId": {
-        ".write": "auth != null && ((!data.exists() && newData.child('creatorId').val() === auth.uid) || data.child('creatorId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
-        ".validate": "!newData.exists() || (newData.hasChildren(['id', 'creatorId', 'title', 'slug', 'timeLimit', 'totalQuestions', 'createdAt']) && newData.child('id').val() === $testId && (!data.exists() || newData.child('creatorId').val() === data.child('creatorId').val() || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin'))"
+        ".write": "auth != null && (!data.exists() || data.child('creatorId').val() === auth.uid)",
+        ".validate": "newData.hasChildren(['id', 'creatorId', 'title', 'slug'])"
       }
     },
 
     "test_slugs": {
       ".read": "true",
       "$slug": {
-        ".write": "auth != null && ((newData.exists() && newData.isString() && root.child('tests').child(newData.val()).child('creatorId').val() === auth.uid) || (!newData.exists() && data.exists() && root.child('tests').child(data.val()).child('creatorId').val() === auth.uid) || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+        ".write": "auth != null"
       }
     },
 
@@ -184,6 +185,7 @@
 
     "enrollments": {
       "$courseId": {
+        ".read": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
         "$uid": {
           ".read": "auth != null && (auth.uid === $uid || root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
           ".write": "auth != null && auth.uid === $uid"
@@ -192,8 +194,10 @@
     },
 
     "payments": {
+      ".indexOn": ["teacher_id", "user_id"],
+      ".read": "auth != null && ((query.orderByChild === 'teacher_id' && query.equalTo === auth.uid) || (query.orderByChild === 'user_id' && query.equalTo === auth.uid) || root.child('profiles').child(auth.uid).child('role').val() === 'admin')",
       "$paymentId": {
-        ".read": "auth != null && (data.child('user_id').val() === auth.uid || data.child('teacher_id').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        ".read": "auth != null && (data.child('user_id').val() === auth.uid || data.child('teacher_id').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')",
         ".write": "false"
       }
     },

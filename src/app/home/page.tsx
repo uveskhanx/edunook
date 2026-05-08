@@ -4,7 +4,10 @@ import HomeClient from './home-client';
 
 export const metadata: Metadata = {
   title: 'Home | EduNook',
-  description: 'Your personalized learning dashboard on EduNook.',
+  description: 'Your personalized learning dashboard on EduNook. Browse courses, create content, take assessments, and connect with educators.',
+  alternates: {
+    canonical: '/home',
+  },
 };
 
 export default function HomePage() {

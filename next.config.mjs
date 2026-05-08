@@ -57,7 +57,16 @@ const nextConfig = {
     ],
   },
   experimental: {
-    optimizePackageImports: ['lucide-react', '@phosphor-icons/react'],
+    optimizePackageImports: [
+      'lucide-react', 
+      '@phosphor-icons/react',
+      'framer-motion',
+      'radix-ui',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-slot',
+      'clsx',
+      'tailwind-merge'
+    ],
   },
 };
 
