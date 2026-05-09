@@ -2,11 +2,16 @@ import admin from 'firebase-admin';
 import { env } from './env.js';
 
 function parseServiceAccount() {
-  const parsed = JSON.parse(env.firebaseServiceAccount);
-  if (parsed.private_key) {
-    parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+  try {
+    const parsed = JSON.parse(env.firebaseServiceAccount);
+    if (parsed.private_key) {
+      parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+    }
+    return parsed;
+  } catch (err) {
+    console.error('[CONFIG ERROR] Invalid FIREBASE_SERVICE_ACCOUNT JSON. Please check your Render environment variables.');
+    throw err;
   }
-  return parsed;
 }
 
 if (!admin.apps.length) {
