@@ -184,9 +184,8 @@ export default function SignupPageClient() {
   }, [resendTimer]);
 
   async function handleFinalSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (loading || !verificationCode || !realEmail) return;
-    
+    if (e) e.preventDefault();
+    if (loading || !realEmail) return;
     setError('');
     setLoading(true);
 
@@ -195,7 +194,8 @@ export default function SignupPageClient() {
     let tempUser = null;
 
     try {
-      // 1. Verify Email OTP
+      // 1. Verify Email OTP (DISABLED TEMPORARILY)
+      /*
       try {
         await verifySignupOTPAction({
           data: {
@@ -207,6 +207,7 @@ export default function SignupPageClient() {
       } catch (confirmErr: any) {
         throw new Error(confirmErr.message || "Invalid verification code.");
       }
+      */
 
       // 2. Create Auth account
       const userCred = await createUserWithEmailAndPassword(auth, virtualEmail, password);
@@ -343,7 +344,7 @@ export default function SignupPageClient() {
           {/* Subtle Inner Glow */}
           <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 via-transparent to-accent/5 pointer-events-none" />
           
-          <form onSubmit={step === 3 ? handleFinalSubmit : handleSendCode} className="relative z-10">
+          <form onSubmit={step === 3 ? handleFinalSubmit : (step === 2 ? handleFinalSubmit : handleSendCode)} className="relative z-10">
             <AnimatePresence mode="wait">
               {step === 1 ? (
                 <motion.div 
@@ -603,7 +604,7 @@ export default function SignupPageClient() {
                       {loading ? (
                         <Loader2 className="w-5 h-5 animate-spin" />
                       ) : (
-                        <>Verify Email <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>
+                        <>Create Account <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>
                       )}
                     </button>
                   </div>

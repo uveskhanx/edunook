@@ -1,13 +1,25 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 import { adminAuth } from './admin';
 import { z } from 'zod';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-const defaultFrontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || process.env.VITE_FRONTEND_URL || 'http://localhost:3000';
-const verificationFrom = process.env.EMAIL_FROM_VERIFICATION || 'EduNook <onboarding@resend.dev>';
-const securityFrom = process.env.EMAIL_FROM_SECURITY || 'EduNook <onboarding@resend.dev>';
-const onboardingFrom = process.env.EMAIL_FROM_ONBOARDING || 'EduNook <onboarding@resend.dev>';
+const transporter = nodemailer.createTransport({
+  host: 'smtp-relay.brevo.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.BREVO_SMTP_USER,
+    pass: process.env.BREVO_SMTP_PASS,
+  },
+});
+
+const isDev = process.env.NODE_ENV === 'development';
+const defaultFrontendUrl = isDev 
+  ? 'http://localhost:3000' 
+  : (process.env.NEXT_PUBLIC_FRONTEND_URL || process.env.VITE_FRONTEND_URL || 'https://edunook-io.vercel.app');
+
+const verificationFrom = process.env.EMAIL_FROM_VERIFICATION || 'EduNook <onboarding@edunook-io.vercel.app>';
+const securityFrom = process.env.EMAIL_FROM_SECURITY || 'EduNook <security@edunook-io.vercel.app>';
+const onboardingFrom = process.env.EMAIL_FROM_ONBOARDING || 'EduNook <welcome@edunook-io.vercel.app>';
 
 function escapeHtml(value: string) {
   return value
@@ -42,10 +54,10 @@ export async function sendVerificationEmailAction({ data }: { data: unknown }) {
       const link = await adminAuth.generateEmailVerificationLink(email, actionCodeSettings);
       const safeLink = escapeHtml(link);
 
-      // 2. Send the premium email via Resend
-      const { data: resendData, error } = await resend.emails.send({
+      // 2. Send the premium email via SMTP
+      const info = await transporter.sendMail({
         from: onboardingFrom,
-        to: [email],
+        to: email,
         subject: `Verify your account, ${fullName.split(' ')[0] || 'learner'}!`,
         html: `
           <div style="font-family: 'Inter', -apple-system, sans-serif; background-color: #050505; color: #ffffff; padding: 40px; border-radius: 32px; max-width: 600px; margin: auto; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
@@ -79,11 +91,7 @@ export async function sendVerificationEmailAction({ data }: { data: unknown }) {
         `,
       });
 
-      if (error) {
-        throw error;
-      }
-
-      return { success: true, data: resendData };
+      return { success: true, data: info };
     } catch (err: any) {
       console.error('Server Email Error:', err);
       throw new Error(err.message || 'Internal server error');
@@ -127,10 +135,11 @@ export async function sendPasswordResetAction({ data }: { data: unknown }) {
       const link = await adminAuth.generatePasswordResetLink(internalEmail, actionCodeSettings);
       const safeLink = escapeHtml(link);
 
-      // 3. Send Email via Resend to the REAL Email
-      const { data: resendData, error } = await resend.emails.send({
+      // 3. Send Email via SMTP to the REAL Email
+      console.log(`[EmailService] Attempting to send reset email to ${realEmail} via Brevo SMTP...`);
+      const info = await transporter.sendMail({
         from: securityFrom,
-        to: [realEmail],
+        to: realEmail,
         subject: `Reset your EduNook password, @${normalizedUsername}`,
         html: `
           <div style="font-family: 'Inter', -apple-system, sans-serif; background-color: #050505; color: #ffffff; padding: 40px; border-radius: 32px; max-width: 600px; margin: auto; border: 1px solid rgba(255,255,255,0.05);">
@@ -163,15 +172,13 @@ export async function sendPasswordResetAction({ data }: { data: unknown }) {
         `,
       });
 
-      if (error) throw error;
+      console.log(`[EmailService] Reset email handoff successful. MessageID: ${info.messageId}`);
       return { success: true };
-
     } catch (err: any) {
       console.error('[EmailAction] Password Reset Error:', err);
       throw new Error(err.message || 'Recovery failed');
     }
 }
-
 const feedbackSchema = z.object({
   data: z.object({
     email: z.string().email(),
@@ -268,11 +275,11 @@ export async function sendSignupOTPEmailAction({ data }: { data: unknown }) {
         expiresAt: Date.now() + 600000 
       });
 
-      // 2. Send Email
+      // 2. Send Email via SMTP
       console.log(`[EmailService] Handoff started for ${email}...`);
-      const { data: resendData, error: resendError } = await resend.emails.send({
+      const info = await transporter.sendMail({
         from: verificationFrom,
-        to: [email],
+        to: email,
         subject: `${otp} is your EduNook verification code`,
         html: `
           <div style="font-family: 'Inter', sans-serif; background-color: #050505; color: #ffffff; padding: 40px; border-radius: 32px; max-width: 500px; margin: auto; border: 1px solid rgba(255,255,255,0.05);">
@@ -298,12 +305,7 @@ export async function sendSignupOTPEmailAction({ data }: { data: unknown }) {
         `,
       });
 
-      if (resendError) {
-        console.error('[EmailService] Resend API Error:', resendError);
-        throw resendError;
-      }
-
-      console.log(`[EmailService] OTP successfully sent to ${email}. ID: ${resendData?.id}`);
+      console.log(`[EmailService] OTP successfully sent to ${email}. ID: ${info.messageId}`);
       return { success: true };
     } catch (err: any) {
       console.error('[EmailService] Critical Failure:', err);
