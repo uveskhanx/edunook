@@ -1,9 +1,11 @@
 'use client';
 
 import React from 'react';
-// @ts-ignore
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error - IDE resolution glitch
 import Link from 'next/link';
-// @ts-ignore
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error - IDE resolution glitch
 import Image from 'next/image';
 import { LogOut, Sparkles, User } from 'lucide-react';
 import { VerificationTick } from './VerificationTick';
