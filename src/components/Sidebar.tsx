@@ -1,6 +1,6 @@
 'use client';
-import Link from 'next/link';
-import Image from 'next/image';
+
+import React from 'react';
 import { LogOut, Sparkles, User } from 'lucide-react';
 import { VerificationTick } from './VerificationTick';
 import { isPremium } from '@/lib/subscription-utils';
@@ -29,19 +29,18 @@ export function Sidebar({
   return (
     <aside className="hidden md:flex flex-col w-[280px] h-screen sticky top-0 left-0 bg-background border-r border-border z-50">
       <div className="p-8">
-        <Link href="/" className="flex items-center gap-4 group" aria-label="EduNook Home">
+        <a href="/" className="flex items-center gap-4 group" aria-label="EduNook Home">
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform overflow-hidden shadow-2xl shadow-primary/10 border border-white/5 shrink-0 relative">
-            <Image 
+            <img 
               src="/logo.png" 
               width={56}
               height={56}
               className="w-full h-full object-cover" 
               alt="EduNook Logo" 
-              priority
             />
           </div>
           <span className="text-2xl font-black text-foreground tracking-tighter group-hover:text-primary transition-colors">EduNook</span>
-        </Link>
+        </a>
       </div>
 
       <nav className="flex-1 px-4 space-y-1 overflow-y-auto no-scrollbar py-2">
@@ -50,7 +49,7 @@ export function Sidebar({
           const isActive = isHome || (pathname === item.to && item.to !== '/home');
           
           return (
-            <Link
+            <a
               key={item.label}
               href={item.to}
               className={`relative flex items-center gap-4 px-5 py-3.5 rounded-2xl text-[14px] font-bold transition-all group overflow-hidden ${
@@ -65,7 +64,7 @@ export function Sidebar({
                 <CountBadge count={getNavBadgeCount(item.label)} />
               </span>
               <span>{item.label}</span>
-            </Link>
+            </a>
           );
         })}
       </nav>
@@ -81,7 +80,7 @@ export function Sidebar({
            </div>
         ) : user ? (
           <div className="space-y-3">
-             <Link 
+             <a 
                 href={`/${dbUser?.username || 'user'}`}
                 className={`block p-3 rounded-3xl border transition-all group/profile-box ${
                   pathname === `/${dbUser?.username}`
@@ -91,15 +90,20 @@ export function Sidebar({
              >
                <div className="flex items-center gap-3">
                  <div className="relative shrink-0">
-                    <div className="w-10 h-10 rounded-xl overflow-hidden border border-border group-hover/profile-box:border-primary/50 transition-colors relative">
-                      <Image 
-                        src={dbUser?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${dbUser?.uid}`} 
-                        width={40}
-                        height={40}
-                        unoptimized={!dbUser?.avatarUrl}
-                        className="w-full h-full object-cover group-hover/profile-box:scale-105 transition-transform" 
-                        alt={`${dbUser?.fullName || 'User'}'s avatar`} 
-                      />
+                    <div className="w-10 h-10 rounded-xl overflow-hidden border border-border group-hover/profile-box:border-primary/50 transition-colors relative bg-white/5">
+                      {dbUser?.avatarUrl ? (
+                        <img 
+                          src={dbUser.avatarUrl} 
+                          width={40}
+                          height={40}
+                          className="w-full h-full object-cover group-hover/profile-box:scale-105 transition-transform" 
+                          alt={`${dbUser?.fullName || 'User'}'s avatar`} 
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <User className="w-5 h-5 text-muted-foreground/40" />
+                        </div>
+                      )}
                     </div>
                     {dbUser?.subscription?.planId === 'edge' && (
                       <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center border-2 border-card shadow-lg">
@@ -122,7 +126,7 @@ export function Sidebar({
                     </div>
                  </div>
                </div>
-             </Link>
+             </a>
 
               <button 
                 onClick={signOut} 
@@ -133,9 +137,9 @@ export function Sidebar({
              </button>
           </div>
         ) : (
-          <Link href="/login" className="flex items-center justify-center w-full py-4 bg-primary text-white rounded-2xl font-black shadow-lg shadow-primary/20">
+          <a href="/login" className="flex items-center justify-center w-full py-4 bg-primary text-white rounded-2xl font-black shadow-lg shadow-primary/20">
               SIGN IN
-          </Link>
+          </a>
         )}
       </div>
     </aside>

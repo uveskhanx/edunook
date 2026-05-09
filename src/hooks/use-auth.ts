@@ -15,6 +15,12 @@ export type AuthUser = {
 async function resolveProfile(fbUser: any): Promise<Profile | null> {
   let profile = await DbService.getProfile(fbUser.uid);
 
+  // If profile is not found, retry once after a short delay to account for signup race conditions
+  if (!profile) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    profile = await DbService.getProfile(fbUser.uid);
+  }
+
   if (profile) {
     // Run Subscription Guard to check for expirations and send warnings
     const { SubscriptionGuard } = await import('@/lib/subscription-guard');
