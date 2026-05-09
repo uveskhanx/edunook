@@ -232,6 +232,10 @@ export default function SignupPageClient() {
         bio: '',
         role: 'student' as const,
         createdAt: new Date().toISOString(),
+        subscription: {
+          planId: 'spark',
+          status: 'active'
+        }
       };
 
       const userData = {
@@ -244,6 +248,10 @@ export default function SignupPageClient() {
         phone: phone ? `${countryCode}${phone}` : '',
         role: 'student' as const,
         createdAt: publicProfile.createdAt,
+        subscription: {
+          planId: 'spark',
+          status: 'active'
+        }
       };
 
       await set(ref(db, `users/${tempUser.uid}`), userData);

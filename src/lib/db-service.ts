@@ -35,10 +35,10 @@ export interface UserPreferences {
 
 export interface Subscription {
   planId: 'none' | 'spark' | 'edge';
-  billingCycle: 'monthly' | 'yearly';
+  billingCycle?: 'monthly' | 'yearly';
   status: 'active' | 'expired';
-  subscribedAt: string;
-  expiresAt: string;
+  subscribedAt?: string;
+  expiresAt?: string;
   lastNotifiedDaysRemaining?: number;
 }
 
@@ -54,7 +54,7 @@ export interface Profile {
   uid: string;
   username: string;
   fullName: string;
-  email: string;
+  email?: string;
   avatarUrl?: string | null;
   bio?: string | null;
   dob?: string | null;
@@ -695,7 +695,7 @@ export const DbService = {
     // The value in /usernames is the UID
     const uid = snapshot.val();
     const profile = await this.getProfile(uid);
-    return profile ? profile.email : null;
+    return profile?.email || null;
   },
 
 
