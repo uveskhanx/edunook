@@ -141,13 +141,24 @@ export function LeaderboardModal({ test, onClose }: LeaderboardModalProps) {
                       {index < 3 && <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-white/5 to-transparent -translate-y-1/2 translate-x-1/2 rounded-full blur-2xl" />}
                       
                       <div className="flex items-center gap-5 relative z-10">
-                        <div className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center text-lg font-black transition-all ${
-                          index === 0 ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20' : 
-                          index === 1 ? 'bg-slate-400 text-black shadow-lg shadow-slate-400/20' : 
-                          index === 2 ? 'bg-orange-800 text-white shadow-lg shadow-orange-800/20' : 
+                        <div className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center text-lg font-black transition-all relative ${
+                          index === 0 ? 'bg-gradient-to-br from-amber-300 via-amber-500 to-amber-600 text-black shadow-[0_0_20px_rgba(245,158,11,0.4)]' : 
+                          index === 1 ? 'bg-gradient-to-br from-slate-300 via-slate-400 to-slate-500 text-black shadow-[0_0_20px_rgba(148,163,184,0.3)]' : 
+                          index === 2 ? 'bg-gradient-to-br from-orange-700 via-orange-800 to-orange-900 text-white shadow-[0_0_20px_rgba(154,52,18,0.3)]' : 
                           'bg-white/5 text-white/30 group-hover:text-white'
                         }`}>
-                          {index < 3 ? <Medal className="w-5 h-5 md:w-6 h-6" /> : index + 1}
+                          {index === 0 ? <Trophy className="w-6 h-6 md:w-7 h-7 animate-pulse relative z-10" /> : 
+                           index === 1 ? <Medal className="w-5 h-5 md:w-6 h-6 relative z-10" /> : 
+                           index === 2 ? <Award className="w-5 h-5 md:w-6 h-6 relative z-10" /> : 
+                           <span className="relative z-10">{index + 1}</span>}
+                           
+                          {index < 3 && (
+                            <motion.div 
+                              animate={{ opacity: [0, 0.2, 0] }} 
+                              transition={{ duration: 2, repeat: Infinity }}
+                              className="absolute inset-0 rounded-2xl bg-white blur-md" 
+                            />
+                          )}
                         </div>
                         
                         <div className="flex flex-col min-w-0">

@@ -203,7 +203,7 @@ export default function ChatClient() {
 
   return (
     <Layout hideMobileNav={!!activeChat} hideHeader={true}>
-      <div className="flex-1 flex bg-background w-full h-[100dvh] max-h-[100dvh] overflow-hidden relative text-foreground">
+      <div className="flex-1 flex bg-background w-full overflow-hidden relative text-foreground">
         
         {/* Sidebar Layer */}
         <ChatSidebar 
@@ -225,13 +225,13 @@ export default function ChatClient() {
             <>
               {/* Premium Header */}
               <header className="p-4 md:p-7 flex items-center justify-between chat-glass border-b border-border z-20 transition-all">
-                <div className="flex items-center gap-5">
-                  <button onClick={() => router.push('/chat')} className="md:hidden p-3 bg-foreground/5 rounded-2xl border border-border hover:bg-foreground/10 transition-all">
+                <div className="flex items-center gap-2 md:gap-5 min-w-0">
+                  <button onClick={() => router.push('/chat')} className="md:hidden p-2.5 bg-foreground/5 rounded-2xl border border-border hover:bg-foreground/10 transition-all shrink-0">
                     <ArrowLeft className="w-5 h-5 text-foreground" />
                   </button>
-                  <div className="flex items-center gap-4 group cursor-pointer" onClick={() => router.push(`/${activeChat.profile.username}`)}>
-                    <div className="relative">
-                      <div className="w-11 h-11 md:w-14 md:h-14 rounded-[1.25rem] border-2 border-border overflow-hidden shadow-2xl group-hover:border-primary transition-all duration-500">
+                  <div className="flex items-center gap-3 group cursor-pointer min-w-0" onClick={() => router.push(`/${activeChat.profile.username}`)}>
+                    <div className="relative shrink-0">
+                      <div className="w-10 h-10 md:w-14 md:h-14 rounded-[1.25rem] border-2 border-border overflow-hidden shadow-2xl group-hover:border-primary transition-all duration-500">
                          {activeChat.profile.avatarUrl ? (
                            <img src={activeChat.profile.avatarUrl} className="w-full h-full object-cover" alt="" />
                          ) : (
@@ -241,13 +241,13 @@ export default function ChatClient() {
                          )}
                       </div>
                       {recipientPresence?.status === 'online' && (
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-success rounded-full border-[3px] border-background shadow-[0_0_10px_var(--success)]" />
+                        <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-success rounded-full border-[3px] border-background shadow-[0_0_10px_var(--success)]" />
                       )}
                     </div>
-                    <div className="flex flex-col">
+                    <div className="flex flex-col min-w-0">
                        <div className="flex items-center gap-1.5">
-                          <h2 className="text-base md:text-lg font-black tracking-tight leading-none text-foreground">{activeChat.profile.fullName}</h2>
-                          <VerificationTick planId={activeChat.profile.subscription?.planId} size={18} />
+                          <h2 className="text-sm md:text-lg font-black tracking-tight leading-none text-foreground truncate max-w-[100px] sm:max-w-xs">{activeChat.profile.fullName}</h2>
+                          <VerificationTick planId={activeChat.profile.subscription?.planId} size={16} />
                        </div>
                        <span className="text-[9px] font-black uppercase tracking-[0.2em] mt-1.5 opacity-40 text-foreground">
                           {recipientPresence?.status === 'online' 

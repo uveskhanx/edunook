@@ -250,6 +250,32 @@ export default function TestViewClient() {
         toast.error('Leaderboard sync delay. Standings will refresh shortly.');
       });
 
+      // 3. Trophy Check
+      try {
+        const standings = await DbService.getLeaderboard(test.slug || test.id, test.slug, questions.length);
+        const myRank = standings.findIndex((r: any) => r.uid === user.id) + 1;
+        
+        if (myRank >= 1 && myRank <= 3) {
+           const medalIcons = ['trophy', 'medal', 'award'];
+           const rankTitles = ['1st Place', '2nd Place', '3rd Place'];
+           
+           const existing = await DbService.getAchievements(user.id);
+           const achievementTitle = `${rankTitles[myRank-1]} - ${test.title}`;
+           const alreadyEarned = existing.some((a: any) => a.title === achievementTitle);
+           
+           if (!alreadyEarned) {
+             await DbService.addAchievement(user.id, {
+               title: achievementTitle,
+               icon: medalIcons[myRank-1],
+               earnedAt: new Date().toISOString()
+             });
+             toast.success(`New Achievement Unlocked: ${achievementTitle}!`);
+           }
+        }
+      } catch (err) {
+        console.error('Achievement check failed:', err);
+      }
+
       toast.success('Performance archived in Hall of Fame!');
 
       confetti({

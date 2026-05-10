@@ -147,7 +147,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-background text-foreground font-sans overflow-x-clip">
+    <div className="flex min-h-[100dvh] w-full bg-background text-foreground font-sans overflow-x-clip">
       {/* Desktop Sidebar (Left) */}
       {!hideNavigation && (
         <Sidebar 

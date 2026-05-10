@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { Layout } from '@/components/Layout';
 import { CourseCard } from '@/components/CourseCard';
 import { ProfileSkeleton } from '@/components/SkeletonLoader';
-import { Camera, Package, Loader2, Edit2, X, Sparkles, Trophy, MessageCircle, UserPlus, UserCheck, Settings, Plus, Music, Wand2, Type, Sticker, ChevronRight, Video, Heart, Share2, User, BarChart3 } from 'lucide-react';
+import { Camera, Package, Loader2, Edit2, X, Sparkles, Trophy, Medal, Award, MessageCircle, UserPlus, UserCheck, Settings, Plus, Music, Wand2, Type, Sticker, ChevronRight, Video, Heart, Share2, User, BarChart3 } from 'lucide-react';
 import { SealCheck, Crown } from '@phosphor-icons/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -565,14 +565,19 @@ export default function ProfileClient({ username }: { username: string }) {
               </div>
             
               <div className="flex flex-wrap items-center gap-4 w-full">
-                {achievements.length > 0 ? achievements.map(achievement => (
+                {achievements.length > 0 ? achievements.map(achievement => {
+                  const Icon = achievement.icon === 'trophy' ? Trophy :
+                               achievement.icon === 'medal' ? Medal :
+                               achievement.icon === 'award' ? Award : Trophy;
+                               
+                  return (
                   <motion.div 
                     key={achievement.id} 
                     whileHover={{ scale: 1.02, y: -2 }}
                     className="flex items-center gap-5 p-6 bg-card border border-border rounded-3xl flex-1 min-w-[280px] group transition-all hover:border-primary/50"
                   >
                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-600/20 to-blue-600/20 text-violet-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                        <Trophy className="w-7 h-7" />
+                        <Icon className="w-7 h-7" />
                      </div>
                      <div className="flex flex-col">
                         <span className="text-[15px] font-black text-foreground">{achievement.title}</span>
@@ -581,7 +586,7 @@ export default function ProfileClient({ username }: { username: string }) {
                         </span>
                      </div>
                   </motion.div>
-                )) : (
+                )}) : (
                   <div className="w-full flex items-center justify-center py-6">
                      <p className="text-sm font-medium text-muted-foreground opacity-70">No achievements unlocked yet.</p>
                   </div>

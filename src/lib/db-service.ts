@@ -637,6 +637,14 @@ export const DbService = {
     return highlights.reverse();
   },
 
+  async addAchievement(uid: string, achievement: Omit<Achievement, 'id'>): Promise<string> {
+    const path = await this.getProfilePath(uid);
+    const achievementsRef = ref(db, `${path}/${uid}/achievements`);
+    const newRef = push(achievementsRef);
+    await set(newRef, achievement);
+    return newRef.key!;
+  },
+
   async addHighlight(uid: string, highlight: Omit<Highlight, 'id'>): Promise<string> {
     const highlightsRef = ref(db, `profiles/${uid}/highlights`);
     const newRef = push(highlightsRef);
@@ -1732,6 +1740,35 @@ subscribeToUnseenCount(uid: string, callback: (count: number) => void) {
     }));
 
     return () => unsubscribers.forEach(unsubscribe => unsubscribe());
+  },
+
+  async getLeaderboard(testId: string, slug?: string, totalQuestions?: number): Promise<any[]> {
+    const leaderboardKeys = Array.from(new Set([testId, slug].filter(Boolean) as string[]));
+    const byUid: Record<string, any> = {};
+
+    await Promise.all(leaderboardKeys.map(async (key) => {
+      const snapshot = await get(ref(db, `leaderboards/${key}`));
+      if (snapshot.exists()) {
+        const standingsNode = snapshot.val();
+        Object.keys(standingsNode).forEach((uid) => {
+          const contender = normalizeLeaderboardEntry(uid, standingsNode[uid], totalQuestions);
+          const existing = byUid[uid];
+          if (
+            !existing ||
+            contender.correctAnswers > existing.correctAnswers ||
+            (contender.correctAnswers === existing.correctAnswers && contender.timeTakenCentiseconds < existing.timeTakenCentiseconds)
+          ) {
+            byUid[uid] = contender;
+          }
+        });
+      }
+    }));
+
+    return Object.values(byUid).sort((a, b) => {
+      if (b.correctAnswers !== a.correctAnswers) return b.correctAnswers - a.correctAnswers;
+      if (a.timeTakenCentiseconds !== b.timeTakenCentiseconds) return a.timeTakenCentiseconds - b.timeTakenCentiseconds;
+      return (a.completedAt || "").localeCompare(b.completedAt || "");
+    });
   },
 
   // Attempts
