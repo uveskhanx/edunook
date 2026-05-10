@@ -77,7 +77,7 @@
     "following": {
       ".read": "true",
       "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
+        ".read": "true",
         "$targetUid": {
           ".write": "auth != null && auth.uid === $uid"
         }
