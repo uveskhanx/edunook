@@ -147,6 +147,17 @@ export default function TestViewClient() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [started, finished, test]);
 
+  // Auto-Submit on Timeout
+  useEffect(() => {
+    if (started && !finished && test?.timeLimit) {
+      const maxSeconds = test.timeLimit * 60;
+      if (timeTaken >= maxSeconds && !submitting) {
+        toast.error("Time limit reached! Auto-submitting...", { id: 'timeout-toast' });
+        handleFinish();
+      }
+    }
+  }, [timeTaken]);
+
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -196,7 +207,7 @@ export default function TestViewClient() {
   };
 
   const handleFinish = async () => {
-    if (!user || !test) return;
+    if (!user || !test || submitting) return;
     setSubmitting(true);
     if (timerRef.current) clearInterval(timerRef.current);
 
