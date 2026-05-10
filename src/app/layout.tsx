@@ -43,6 +43,9 @@ export const metadata: Metadata = {
     icon: '/favicon.png',
     apple: '/favicon.png',
   },
+  verification: {
+    google: 'rixX_Ha3Ka6W3qmOdvAoZkGYhfvJ8rNsJCURYkZ2CLU',
+  },
 };
 
 export const viewport: Viewport = {
