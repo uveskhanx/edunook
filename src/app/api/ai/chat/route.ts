@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     const messagesRef = adminDb.ref(`messages/${chatId}`);
     const snapshot = await messagesRef.orderByChild('createdAt').limitToLast(12).once('value');
     const messages: any[] = [];
-    if (snapshot.exists()) snapshot.forEach((child) => messages.push(child.val()));
+    if (snapshot.exists()) snapshot.forEach((child) => { messages.push(child.val()); });
 
     async function fetchImageAsBase64(url: string) {
       try {
