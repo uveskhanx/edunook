@@ -41,7 +41,24 @@ export function ChatSidebar({
   setOpenMenuId
 }: ChatSidebarProps) {
   
-  const filteredConversations = conversations.filter(c => 
+  const aiChatId = user ? [user.id, 'edunook-ai'].sort().join('_') : '';
+  const aiConversationPresent = conversations.some(c => c.uid === 'edunook-ai');
+
+  const enhancedConversations = aiConversationPresent ? conversations : [
+    {
+      uid: 'edunook-ai',
+      username: 'edunook-ai',
+      fullName: 'EduNook AI',
+      role: 'admin',
+      chatId: aiChatId,
+      lastMessage: 'Ready to assist...',
+      updatedAt: new Date().toISOString(),
+      isPinned: true
+    } as any,
+    ...conversations
+  ];
+
+  const filteredConversations = enhancedConversations.filter(c => 
     c.fullName.toLowerCase().includes(searchQuery.toLowerCase()) || 
     c.username.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -87,11 +104,15 @@ export function ChatSidebar({
             >
               <div className="relative">
                 <div className="w-12 h-12 rounded-2xl bg-white/5 overflow-hidden border border-white/10 group-hover:scale-105 transition-transform">
-                          {conv.avatarUrl ? (
+                          {conv.uid === 'edunook-ai' ? (
+                            <div className="w-full h-full flex items-center justify-center bg-primary text-white">
+                               <Sparkles className="w-6 h-6" />
+                            </div>
+                          ) : conv.avatarUrl ? (
                             <img src={conv.avatarUrl} className="w-full h-full object-cover" alt="" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary text-xl font-black italic uppercase">
-                               {conv.fullName.split(' ').map(n => n[0]).join('').substring(0, 2)}
+                               {conv.fullName.split(' ').map((n: string) => n[0]).join('').substring(0, 2)}
                             </div>
                           )}
                 </div>

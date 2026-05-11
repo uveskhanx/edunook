@@ -387,6 +387,18 @@ export const DbService = {
   // Profiles (Consolidated for /users and backward compat)
   async getProfile(uid: string, bypassCache = false): Promise<Profile | null> {
     if (!uid) return null;
+    
+    if (uid === 'edunook-ai') {
+      return {
+        uid: 'edunook-ai',
+        username: 'edunook-ai',
+        fullName: 'EduNook AI',
+        role: 'admin',
+        avatarUrl: null,
+        createdAt: new Date(0).toISOString()
+      } as Profile;
+    }
+
     const currentUid = getAuth().currentUser?.uid;
     const shouldReadPrivateNodes = currentUid === uid;
     if (!bypassCache && profileCache[uid] && (!shouldReadPrivateNodes || profileCache[uid].preferences)) {

@@ -170,6 +170,14 @@ export default function ChatClient() {
     setSending(true);
     try {
       await DbService.sendMessage(activeChat.chatId, user.id, text, media);
+      
+      if (activeChat.profile.uid === 'edunook-ai') {
+        fetch('/api/ai/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chatId: activeChat.chatId, userId: user.id, text })
+        }).catch(err => console.error('AI Error:', err));
+      }
     } catch (err) {
       console.error('Error sending message:', err);
       toast.error("Transmission failed. Check network stability.");
@@ -203,7 +211,7 @@ export default function ChatClient() {
 
   return (
     <Layout hideMobileNav={!!activeChat} hideHeader={true}>
-      <div className="flex-1 flex bg-background w-full overflow-hidden relative text-foreground">
+      <div className="flex-1 flex bg-background w-full overflow-hidden relative text-foreground h-[100dvh] max-h-[100dvh]">
         
         {/* Sidebar Layer */}
         <ChatSidebar 
@@ -214,7 +222,7 @@ export default function ChatClient() {
           setSearchQuery={setSearchQuery}
           globalResults={globalResults}
           isSearchingGlobal={isSearchingGlobal}
-          onSelectChat={(uid) => router.push(`/chat?c=${uid}`)}
+          onSelectChat={(uid: string) => router.push(`/chat?c=${uid}`)}
           openMenuId={openMenuId}
           setOpenMenuId={setOpenMenuId}
         />
