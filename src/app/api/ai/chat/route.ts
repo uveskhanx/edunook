@@ -65,7 +65,9 @@ export async function POST(request: NextRequest) {
     const messagesRef = adminDb.ref(`messages/${chatId}`);
     const snapshot = await messagesRef.orderByChild('createdAt').limitToLast(12).once('value');
     const messages: any[] = [];
-    if (snapshot.exists()) snapshot.forEach((child) => { messages.push(child.val()); });
+    if (snapshot.exists()) {
+      snapshot.forEach((child) => { messages.push(child.val()); });
+    }
 
     async function fetchImageAsBase64(url: string) {
       try {
@@ -114,14 +116,19 @@ export async function POST(request: NextRequest) {
       aiResponse = result.response.text() || '';
     }
 
+    // ROBUST TAG PARSING (Handles multi-line tags)
     let genMedia = null;
-    const drawMatch = aiResponse.match(/\[DRAW:\s*(.*?)\]/i);
+    const drawRegex = /\[DRAW:\s*([\s\S]*?)\]/i;
+    const drawMatch = aiResponse.match(drawRegex);
+    
     if (drawMatch) {
-      genMedia = await generateImage(drawMatch[1]);
-      aiResponse = aiResponse.replace(/\[DRAW:.*?\]/gi, '').trim();
+      console.log("MATCHED DRAW TAG:", drawMatch[1].substring(0, 50) + "...");
+      genMedia = await generateImage(drawMatch[1].trim());
+      // Clean ALL occurrences of draw tags
+      aiResponse = aiResponse.replace(/\[DRAW:[\s\S]*?\]/gi, '').trim();
     }
 
-    if (!aiResponse) aiResponse = "I'm ready! 🚀";
+    if (!aiResponse && !genMedia) aiResponse = "I'm ready! 🚀";
 
     const newMsgRef = messagesRef.push();
     const now = new Date().toISOString();
