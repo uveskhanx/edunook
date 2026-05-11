@@ -10,29 +10,24 @@ IMAGE GENERATION PROTOCOL (MANDATORY)
 ━━━━━━━━━━━━━━━━━━━━
 - Whenever the user asks to "draw", "generate", "create an image", or "show a visual", you MUST respond with the [DRAW: prompt] tag.
 - DO NOT just describe the image in text. You MUST include the [DRAW:] syntax.
-- Use EXACT syntax: [DRAW: detailed, high-resolution, cinematic description]
-- Example: "Here is your medical diagram: [DRAW: detailed human eye anatomy, retina and iris, 3d medical render, 8k]"
+- Use EXACT syntax: [DRAW: detailed description]
+- Example: "Here is your medical diagram: [DRAW: detailed human eye anatomy, 3d render, 8k]"
 
 ━━━━━━━━━━━━━━━━━━━━
 IDENTITY & FORMATTING
 ━━━━━━━━━━━━━━━━━━━━
-- Identity: EduNook AI (The Ultimate Multimodal Assistant).
-- Formatting: Use # 🚀 for headings, ## 🔹 for sections, and 💎 for bullets.`;
+- Identity: EduNook AI.
+- Formatting: # 🚀 Headings, ## 🔹 Section Headers, 💎 Bullets.`;
 
 async function generateImage(prompt: string): Promise<string | null> {
-  // SHIELD 1: Pollinations (PRIMARY - Ultra Reliable)
   try {
     const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&private=true&enhance=true&width=1024&height=1024&model=flux`;
     const check = await fetch(pollinationsUrl, { method: 'HEAD' });
     if (check.ok) return pollinationsUrl;
-  } catch (e) {
-    console.warn('Pollinations failed, trying Cloudflare...', e);
-  }
+  } catch (e) {}
 
-  // SHIELD 2: Cloudflare Workers AI (SECONDARY - Backup)
   const cfId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const cfToken = process.env.CLOUDFLARE_API_TOKEN;
-  
   if (cfId && cfToken) {
     try {
       const response = await fetch(
@@ -43,16 +38,12 @@ async function generateImage(prompt: string): Promise<string | null> {
           body: JSON.stringify({ prompt }),
         }
       );
-
       if (response.ok) {
         const arrayBuffer = await response.arrayBuffer();
         return `data:image/png;base64,${Buffer.from(arrayBuffer).toString('base64')}`;
       }
-    } catch (e) {
-      console.error('Cloudflare Backup Failed:', e);
-    }
+    } catch (e) {}
   }
-
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true`;
 }
 
@@ -65,9 +56,7 @@ export async function POST(request: NextRequest) {
     const messagesRef = adminDb.ref(`messages/${chatId}`);
     const snapshot = await messagesRef.orderByChild('createdAt').limitToLast(12).once('value');
     const messages: any[] = [];
-    if (snapshot.exists()) {
-      snapshot.forEach((child) => { messages.push(child.val()); });
-    }
+    if (snapshot.exists()) snapshot.forEach((child) => { messages.push(child.val()); });
 
     async function fetchImageAsBase64(url: string) {
       try {
@@ -89,12 +78,12 @@ export async function POST(request: NextRequest) {
       return { role: isAI ? 'assistant' : 'user', text: msg.text || '', imageObj: img };
     }));
 
-    let currentImageObj = null;
     if (mediaUrl && mediaType === 'image') {
       hasImages = true;
-      currentImageObj = await fetchImageAsBase64(mediaUrl);
+      rawHistory.push({ role: 'user', text: text || '', imageObj: await fetchImageAsBase64(mediaUrl) });
+    } else {
+      rawHistory.push({ role: 'user', text: text || '', imageObj: null });
     }
-    rawHistory.push({ role: 'user', text: text || '', imageObj: currentImageObj });
 
     let aiResponse = '';
     try {
@@ -116,19 +105,33 @@ export async function POST(request: NextRequest) {
       aiResponse = result.response.text() || '';
     }
 
-    // ROBUST TAG PARSING (Handles multi-line tags)
+    // --- INDESTRUCTIBLE TAG PARSING ---
     let genMedia = null;
-    const drawRegex = /\[DRAW:\s*([\s\S]*?)\]/i;
-    const drawMatch = aiResponse.match(drawRegex);
-    
-    if (drawMatch) {
-      console.log("MATCHED DRAW TAG:", drawMatch[1].substring(0, 50) + "...");
-      genMedia = await generateImage(drawMatch[1].trim());
-      // Clean ALL occurrences of draw tags
-      aiResponse = aiResponse.replace(/\[DRAW:[\s\S]*?\]/gi, '').trim();
+    let finalPrompt = '';
+
+    // First Pass: Multi-line Regex (Very Flexible)
+    const complexRegex = /\[\s*DRAW\s*[:\-]*\s*([\s\S]*?)\]/i;
+    const match = aiResponse.match(complexRegex);
+
+    if (match) {
+      finalPrompt = match[1].trim();
+    } else if (aiResponse.toUpperCase().includes('DRAW:')) {
+      // Second Pass: Manual Slice if Regex fails
+      const startIdx = aiResponse.toUpperCase().indexOf('DRAW:') + 5;
+      const endIdx = aiResponse.indexOf(']', startIdx);
+      if (endIdx > startIdx) {
+        finalPrompt = aiResponse.substring(startIdx, endIdx).trim();
+      }
     }
 
-    if (!aiResponse && !genMedia) aiResponse = "I'm ready! 🚀";
+    if (finalPrompt) {
+      genMedia = await generateImage(finalPrompt);
+      // Clean up text: Remove ALL variations of the DRAW tag
+      aiResponse = aiResponse.replace(/\[\s*DRAW[\s\S]*?\]/gi, '').trim();
+      aiResponse = aiResponse.replace(/\*\*\[DRAW[\s\S]*?\]\*\*/gi, '').trim();
+    }
+
+    if (!aiResponse && !genMedia) aiResponse = "Visualizing now... 🚀";
 
     const newMsgRef = messagesRef.push();
     const now = new Date().toISOString();
