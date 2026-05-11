@@ -20,14 +20,23 @@ IDENTITY & FORMATTING
 - Formatting: # 🚀 Headings, ## 🔹 Section Headers, 💎 Bullets.`;
 
 async function generateImage(prompt: string): Promise<string | null> {
+  // SHIELD 1: Pollinations (PRIMARY - Ultra Reliable)
+  try {
+    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&private=true&enhance=true&width=1024&height=1024&model=flux`;
+    const check = await fetch(pollinationsUrl, { method: 'HEAD' });
+    if (check.ok) return pollinationsUrl;
+  } catch (e) {
+    console.warn('Pollinations failed, trying Cloudflare...', e);
+  }
+
+  // SHIELD 2: Cloudflare Workers AI (SECONDARY - Backup)
   const cfId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const cfToken = process.env.CLOUDFLARE_API_TOKEN;
   
-  // SHIELD 1: Cloudflare Workers AI (Premium Backup)
   if (cfId && cfToken) {
     try {
       const response = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${cfId}/ai/run/@cf/bytedance/sdxl-lightning`,
+        `https://api.cloudflare.com/client/v4/accounts/${cfId}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`,
         {
           headers: { Authorization: `Bearer ${cfToken}`, "Content-Type": "application/json" },
           method: "POST",
@@ -40,16 +49,9 @@ async function generateImage(prompt: string): Promise<string | null> {
         return `data:image/png;base64,${Buffer.from(arrayBuffer).toString('base64')}`;
       }
     } catch (e) {
-      console.warn('Cloudflare failed, falling back to Pollinations...', e);
+      console.error('Cloudflare Backup Failed:', e);
     }
   }
-
-  // SHIELD 2: Pollinations (The Tank - Always Works)
-  try {
-    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&private=true&enhance=true&width=1024&height=1024&model=flux`;
-    const check = await fetch(pollinationsUrl, { method: 'HEAD' });
-    if (check.ok) return pollinationsUrl;
-  } catch (e) {}
 
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true`;
 }
