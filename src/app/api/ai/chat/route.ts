@@ -9,9 +9,8 @@ const SYSTEM_PROMPT = `You are EduNook AI, the supreme intelligent assistant of 
 IMAGE GENERATION PROTOCOL (MANDATORY)
 ━━━━━━━━━━━━━━━━━━━━
 - Whenever the user asks to "draw", "generate", "create an image", or "show a visual", you MUST respond with the [DRAW: prompt] tag.
-- DO NOT just describe the image in text. You MUST include the [DRAW:] syntax.
 - Use EXACT syntax: [DRAW: detailed description]
-- Example: "Here is your medical diagram: [DRAW: detailed human eye anatomy, 3d render, 8k]"
+- Example: "Here is your drawing: [DRAW: a futuristic library, 8k]"
 
 ━━━━━━━━━━━━━━━━━━━━
 IDENTITY & FORMATTING
@@ -20,8 +19,11 @@ IDENTITY & FORMATTING
 - Formatting: # 🚀 Headings, ## 🔹 Section Headers, 💎 Bullets.`;
 
 async function generateImage(prompt: string): Promise<string | null> {
+  // Clean and Truncate Prompt for URL Safety
+  const cleanPrompt = prompt.replace(/[^\w\s,.-]/gi, '').substring(0, 500).trim();
+  
   try {
-    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&private=true&enhance=true&width=1024&height=1024&model=flux`;
+    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?nologo=true&private=true&enhance=true&width=1024&height=1024&model=flux`;
     const check = await fetch(pollinationsUrl, { method: 'HEAD' });
     if (check.ok) return pollinationsUrl;
   } catch (e) {}
@@ -35,7 +37,7 @@ async function generateImage(prompt: string): Promise<string | null> {
         {
           headers: { Authorization: `Bearer ${cfToken}`, "Content-Type": "application/json" },
           method: "POST",
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt: cleanPrompt }),
         }
       );
       if (response.ok) {
@@ -44,7 +46,7 @@ async function generateImage(prompt: string): Promise<string | null> {
       }
     } catch (e) {}
   }
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true`;
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?nologo=true`;
 }
 
 export async function POST(request: NextRequest) {
@@ -105,31 +107,23 @@ export async function POST(request: NextRequest) {
       aiResponse = result.response.text() || '';
     }
 
-    // --- INDESTRUCTIBLE TAG PARSING ---
+    // --- TOTAL WIPEOUT TAG PARSING ---
     let genMedia = null;
     let finalPrompt = '';
 
-    // First Pass: Multi-line Regex (Very Flexible)
-    const complexRegex = /\[\s*DRAW\s*[:\-]*\s*([\s\S]*?)\]/i;
-    const match = aiResponse.match(complexRegex);
-
+    // Pass 1: Extraction
+    const extractRegex = /\[\s*DRAW\s*[:\-]*\s*([\s\S]*?)\]/i;
+    const match = aiResponse.match(extractRegex);
     if (match) {
       finalPrompt = match[1].trim();
-    } else if (aiResponse.toUpperCase().includes('DRAW:')) {
-      // Second Pass: Manual Slice if Regex fails
-      const startIdx = aiResponse.toUpperCase().indexOf('DRAW:') + 5;
-      const endIdx = aiResponse.indexOf(']', startIdx);
-      if (endIdx > startIdx) {
-        finalPrompt = aiResponse.substring(startIdx, endIdx).trim();
-      }
+      genMedia = await generateImage(finalPrompt);
     }
 
-    if (finalPrompt) {
-      genMedia = await generateImage(finalPrompt);
-      // Clean up text: Remove ALL variations of the DRAW tag
-      aiResponse = aiResponse.replace(/\[\s*DRAW[\s\S]*?\]/gi, '').trim();
-      aiResponse = aiResponse.replace(/\*\*\[DRAW[\s\S]*?\]\*\*/gi, '').trim();
-    }
+    // Pass 2: The "Total Wipeout" (Universal Stripping)
+    // This removes ANYTHING inside brackets that contains the word DRAW
+    aiResponse = aiResponse.replace(/\[[^\]]*?DRAW[\s\S]*?\]/gi, '');
+    aiResponse = aiResponse.replace(/\*\*\[[^\]]*?DRAW[\s\S]*?\]\*\*/gi, '');
+    aiResponse = aiResponse.trim();
 
     if (!aiResponse && !genMedia) aiResponse = "Visualizing now... 🚀";
 
