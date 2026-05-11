@@ -18,22 +18,28 @@ IDENTITY & FORMATTING
 - Formatting: # 🚀 Headings, ## 🔹 Section Headers, 💎 Bullets.`;
 
 async function generateImage(prompt: string): Promise<string | null> {
-  const cleanPrompt = prompt.replace(/[^\w\s,.-]/gi, '').substring(0, 400).trim();
+  // Relaxed cleaning: keep most symbols for better art generation
+  const cleanPrompt = prompt.replace(/[^\w\s,.:()\-]/gi, ' ').substring(0, 1000).trim();
   if (!cleanPrompt || cleanPrompt.length < 3) return null;
 
-  // Attempt Server-Side Fetch for Pollinations (Flux)
   try {
     const pollinationsUrl = `https://pollinations.ai/p/${encodeURIComponent(cleanPrompt)}?width=1024&height=1024&model=flux&seed=${Math.floor(Math.random() * 100000)}`;
-    const res = await fetch(pollinationsUrl, { signal: AbortSignal.timeout(15000) });
+    const res = await fetch(pollinationsUrl, { signal: AbortSignal.timeout(20000) });
+    
     if (res.ok) {
+      const contentType = res.headers.get('content-type') || 'image/jpeg';
       const buffer = await res.arrayBuffer();
-      return `data:image/webp;base64,${Buffer.from(buffer).toString('base64')}`;
+      
+      // Validation: Ensure the buffer is not empty
+      if (buffer.byteLength > 1000) {
+        return `data:${contentType};base64,${Buffer.from(buffer).toString('base64')}`;
+      }
     }
   } catch (e) {
     console.warn('Pollinations SSR failed, trying Cloudflare...', e);
   }
 
-  // Fallback to Cloudflare Workers AI
+  // Backup: Cloudflare Workers AI
   const cfId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const cfToken = process.env.CLOUDFLARE_API_TOKEN;
   if (cfId && cfToken) {
@@ -44,18 +50,19 @@ async function generateImage(prompt: string): Promise<string | null> {
           headers: { Authorization: `Bearer ${cfToken}`, "Content-Type": "application/json" },
           method: "POST",
           body: JSON.stringify({ prompt: cleanPrompt }),
-          signal: AbortSignal.timeout(10000)
+          signal: AbortSignal.timeout(15000)
         }
       );
       if (response.ok) {
         const arrayBuffer = await response.arrayBuffer();
-        return `data:image/png;base64,${Buffer.from(arrayBuffer).toString('base64')}`;
+        if (arrayBuffer.byteLength > 1000) {
+          return `data:image/png;base64,${Buffer.from(arrayBuffer).toString('base64')}`;
+        }
       }
     } catch (e) {}
   }
   
-  // Last resort: Return raw Pollinations URL (client will try to load it)
-  return `https://pollinations.ai/p/${encodeURIComponent(cleanPrompt)}?width=1024&height=1024&model=flux`;
+  return null;
 }
 
 export async function POST(request: NextRequest) {
@@ -128,7 +135,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Final Scrub: Remove ALL bracketed text
+    // Scrub all bracketed text
     aiResponse = aiResponse.replace(/\[[\s\S]*?\]/gi, '').trim();
 
     if (!aiResponse && !genMedia) aiResponse = "I'm ready! 🚀";
