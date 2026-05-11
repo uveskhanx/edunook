@@ -43,6 +43,7 @@ export default function ChatClient() {
   
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+  const [aiLoadingState, setAiLoadingState] = useState<string | null>(null);
 
   // Security Verification
   useEffect(() => {
@@ -172,11 +173,25 @@ export default function ChatClient() {
       await DbService.sendMessage(activeChat.chatId, user.id, text, media);
       
       if (activeChat.profile.uid === 'edunook-ai') {
+        let state = 'Thinking...';
+        const txt = text.toLowerCase();
+        if (media?.type === 'image') state = 'Analyzing image...';
+        else if (txt.includes('search') || txt.includes('find') || txt.includes('look for')) state = 'Searching database...';
+        else if (txt.includes('calculate') || txt.includes('math') || txt.includes('solve')) state = 'Calculating...';
+        
+        setAiLoadingState(state);
+        
         fetch('/api/ai/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chatId: activeChat.chatId, userId: user.id, text })
-        }).catch(err => console.error('AI Error:', err));
+          body: JSON.stringify({ 
+            chatId: activeChat.chatId, 
+            userId: user.id, 
+            text,
+            mediaUrl: media?.url,
+            mediaType: media?.type
+          })
+        }).catch(err => console.error('AI Error:', err)).finally(() => setAiLoadingState(null));
       }
     } catch (err) {
       console.error('Error sending message:', err);
@@ -248,9 +263,9 @@ export default function ChatClient() {
                            </div>
                          )}
                       </div>
-                      {recipientPresence?.status === 'online' && (
-                        <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-success rounded-full border-[3px] border-background shadow-[0_0_10px_var(--success)]" />
-                      )}
+                       {(recipientPresence?.status === 'online' || activeChat.profile.uid === 'edunook-ai') && (
+                         <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-success rounded-full border-[3px] border-background shadow-[0_0_10px_var(--success)]" />
+                       )}
                     </div>
                     <div className="flex flex-col min-w-0">
                        <div className="flex items-center gap-1.5">
@@ -258,11 +273,13 @@ export default function ChatClient() {
                           <VerificationTick planId={activeChat.profile.subscription?.planId} size={16} />
                        </div>
                        <span className="text-[9px] font-black uppercase tracking-[0.2em] mt-1.5 opacity-40 text-foreground">
-                          {recipientPresence?.status === 'online' 
-                             ? 'Active Now' 
-                             : (recipientPresence?.lastSeen 
-                                 ? `Active ${formatDistanceToNow(new Date(recipientPresence.lastSeen))} ago` 
-                                 : 'Offline')}
+                          {activeChat.profile.uid === 'edunook-ai'
+                              ? 'Always Online'
+                              : recipientPresence?.status === 'online' 
+                                ? 'Active Now' 
+                                : (recipientPresence?.lastSeen 
+                                    ? `Active ${formatDistanceToNow(new Date(recipientPresence.lastSeen))} ago` 
+                                    : 'Offline')}
                        </span>
                     </div>
                   </div>
@@ -342,6 +359,7 @@ export default function ChatClient() {
                 typingUsers={typingUsers}
                 recipientProfile={activeChat.profile}
                 chatId={activeChat.chatId}
+                aiLoadingState={aiLoadingState}
               />
 
               {/* Input Terminal */}
@@ -418,9 +436,9 @@ export default function ChatClient() {
                          </div>
                       )}
                     </div>
-                    {recipientPresence?.status === 'online' && (
-                      <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-success rounded-full border-4 border-card shadow-lg" />
-                    )}
+                    {(recipientPresence?.status === 'online' || activeChat.profile.uid === 'edunook-ai') && (
+                       <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-success rounded-full border-4 border-card shadow-lg" />
+                     )}
                   </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-center gap-2">

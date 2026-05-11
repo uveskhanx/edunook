@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { adminDb } from '@/lib/server/admin';
 import Groq from 'groq-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const SYSTEM_PROMPT = `You are EduNook AI, the official intelligent learning assistant of EduNook — a modern education platform designed to help students learn faster, understand deeply, and grow confidently.
 
@@ -112,14 +113,15 @@ When users ask platform-related questions:
 FORMATTING RULES
 ━━━━━━━━━━━━━━━━━━━━
 
-- Use clean markdown formatting.
-- Use headings for larger explanations.
-- Use bullet points for readability.
-- Use tables only when they improve clarity.
-- Use numbered steps for tutorials and solutions.
-- Use code blocks for coding responses.
-- Keep paragraphs short and readable.
-- Never over-format simple answers.
+- **STRUCTURAL SUPREMACY**: You are a UI Designer for the EduNook Platform. Every message must be a masterpiece of design.
+- ALWAYS start with a # 🚀 Main Heading using a relevant emoji.
+- USE ## 🔹 Section Headers for every point.
+- USE **Bold Highlights** for EVERY key concept or term.
+- USE 💎 Emojis at the start of bullet points.
+- ADD double empty lines between every section to ensure clean vertical breathing room.
+- THINK IN COMPONENTS: Use blockquotes for "Pro-Tips" and tables for "Comparison Specs."
+- Make your response look like a premium documentation page from the future.
+
 
 ━━━━━━━━━━━━━━━━━━━━
 SPECIAL RESPONSE MODES
@@ -226,22 +228,24 @@ Always prioritize:
 3. Simplicity
 4. Helpfulness
 5. Student understanding
-6. Real learning outcomes`;
+6. Real learning outcomes
+
+- **VISION CAPABILITIES**: You can see and analyze images perfectly. Always help students with their uploaded images. Never say you cannot see them.`;
 
 export async function POST(request: NextRequest) {
   try {
-    const { chatId, userId, text } = await request.json();
+    const { chatId, userId, text, mediaUrl, mediaType } = await request.json();
 
-    if (!chatId || !userId || !text) {
+    if (!chatId || !userId) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400 });
     }
 
-    if (!process.env.GROQ_API_KEY) {
-      console.error('Missing GROQ_API_KEY');
+    if (!process.env.GROQ_API_KEY && !process.env.GEMINI_API_KEY) {
+      console.error('Missing AI API Keys');
       return new Response(JSON.stringify({ error: 'AI not configured' }), { status: 500 });
     }
 
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 
     // Fetch message history for context
     const messagesRef = adminDb.ref(`messages/${chatId}`);
@@ -254,27 +258,137 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const history = messages.map(msg => ({
-      role: msg.senderId === 'edunook-ai' ? 'assistant' : 'user',
-      content: msg.text || ''
-    })).filter(m => m.content) as any[];
-
-    // Prevent duplicating the last message if Firebase already persisted it
-    if (history.length > 0 && history[history.length - 1].content === text && history[history.length - 1].role === 'user') {
-      history.pop();
+    // Helper to fetch images securely on the server
+    async function fetchImageAsBase64(url: string) {
+      try {
+        console.log('--- FETCHING IMAGE FOR AI ---', url);
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+        if (!response.ok) {
+          console.error('--- IMAGE FETCH FAILED ---', response.status, response.statusText);
+          return null;
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const base64 = buffer.toString('base64');
+        const mimeType = response.headers.get('content-type') || 'image/jpeg';
+        console.log('--- IMAGE FETCH SUCCESS ---', mimeType, base64.substring(0, 50) + '...');
+        return { base64, mimeType };
+      } catch (error) {
+        console.error('--- IMAGE FETCH ERROR ---', error);
+        return null;
+      }
     }
 
-    history.push({ role: 'user', content: text });
+    let hasImages = false;
 
-    const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        ...history
-      ],
-      model: 'llama-3.1-8b-instant',
-    });
+    // Build rich history including base64 images
+    const rawHistoryUnfiltered = await Promise.all(messages.map(async (msg) => {
+      const isAssistant = msg.senderId === 'edunook-ai';
+      let imageObj = null;
+      if (msg.mediaUrl && msg.mediaType === 'image' && !isAssistant) {
+        imageObj = await fetchImageAsBase64(msg.mediaUrl);
+        if (imageObj) hasImages = true;
+      }
+      return {
+        role: isAssistant ? 'assistant' : 'user',
+        text: msg.text || '',
+        imageObj
+      };
+    }));
 
-    const aiResponse = chatCompletion.choices[0]?.message?.content || 'I am currently recalibrating my cognitive core. Please try again.';
+    // Filter out entries with no text and no image
+    const rawHistory = rawHistoryUnfiltered.filter(msg => msg.text || msg.imageObj);
+
+    // Prevent duplicating the last message if Firebase already persisted it
+    // We filter out the last message if it matches the current request to replace it with the rich version
+    const lastDbMsg = rawHistory.length > 0 ? rawHistory[rawHistory.length - 1] : null;
+    const isDuplicate = lastDbMsg && lastDbMsg.role === 'user' && (lastDbMsg.text === text || (!text && lastDbMsg.imageObj));
+    
+    if (isDuplicate) {
+      rawHistory.pop();
+    }
+
+    // Add the current message with its image (if provided in the request or already fetched)
+    let currentImageObj = null;
+    if (mediaUrl && mediaType === 'image') {
+      hasImages = true; // Always use Gemini for image attempts
+      currentImageObj = await fetchImageAsBase64(mediaUrl);
+    }
+
+    rawHistory.push({ role: 'user', text: text || '', imageObj: currentImageObj });
+
+    let aiResponse = '';
+
+    try {
+      // If there are images, we use Gemini 2.5 Flash as the primary provider because of its superior native vision capabilities
+      if (hasImages) {
+        throw new Error("Using Gemini for Vision"); // Trigger catch block to use Gemini
+      }
+
+      if (!groq) throw new Error("Groq API Key not available");
+      
+      // Map to Groq format: Standard models require content as string
+      const groqMessages = rawHistory.map(msg => {
+        return { role: msg.role, content: msg.text || '' };
+      });
+
+      const chatCompletion = await groq.chat.completions.create({
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          ...groqMessages as any[]
+        ],
+        model: 'llama-3.1-8b-instant',
+      });
+      aiResponse = chatCompletion.choices[0]?.message?.content || '';
+      if (!aiResponse) throw new Error("Empty response from Groq");
+    } catch (primaryError) {
+      // Fallback to Gemini or use it as primary for vision
+      if (!hasImages) {
+        console.warn('Groq failed. Falling back to Gemini...', primaryError);
+      }
+      
+      try {
+        if (!process.env.GEMINI_API_KEY) {
+          throw new Error('GEMINI_API_KEY not configured');
+        }
+        
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({ 
+          model: 'gemini-2.5-flash',
+          systemInstruction: SYSTEM_PROMPT
+        });
+
+        const geminiMessages = rawHistory.map(msg => {
+          const parts: any[] = [];
+          if (msg.text) parts.push({ text: msg.text });
+          if (msg.imageObj) parts.push({ inlineData: { data: msg.imageObj.base64, mimeType: msg.imageObj.mimeType } });
+          return {
+            role: msg.role === 'assistant' ? 'model' : 'user',
+            parts
+          };
+        });
+
+        // Use generateContent for a more reliable multimodal experience
+        const result = await model.generateContent({
+          contents: geminiMessages,
+        });
+        aiResponse = result.response.text() || '';
+        
+        if (!aiResponse && hasImages) {
+           aiResponse = "I saw that you shared an image, but I'm having trouble downloading it to analyze it. Could you try sending it again or check if the link is accessible? 🖼️";
+        }
+      } catch (geminiError) {
+        console.error('Gemini failed:', geminiError);
+      }
+    }
+
+    if (!aiResponse) {
+       aiResponse = "I'm experiencing a brief moment of recalibration. Please send your message again in a few seconds — I'll be right back! 🔄";
+    }
 
     // Push the AI response
     const newMsgRef = messagesRef.push();
