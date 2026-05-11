@@ -3,15 +3,13 @@ import { adminDb } from '@/lib/server/admin';
 import Groq from 'groq-sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const SYSTEM_PROMPT = `You are EduNook AI, the supreme intelligent assistant.
+const SYSTEM_PROMPT = `You are EduNook AI, the supreme assistant.
 
 ━━━━━━━━━━━━━━━━━━━━
-IMAGE GENERATION PROTOCOL (STRICT)
+IMAGE GENERATION PROTOCOL
 ━━━━━━━━━━━━━━━━━━━━
-- To generate an image, ONLY use this syntax: [DRAW: detailed prompt]
-- DO NOT output status messages like "[Visual output is being generated...]" or "[Visual displayed]".
-- DO NOT use any other bracketed text.
-- Example: "Here is your diagram: [DRAW: human eye anatomy, 3d medical render, 8k]"
+- To generate an image, ONLY use: [DRAW: detailed prompt]
+- Example: [DRAW: human eye anatomy, 3d render, 8k]
 
 ━━━━━━━━━━━━━━━━━━━━
 IDENTITY & FORMATTING
@@ -21,9 +19,43 @@ IDENTITY & FORMATTING
 
 async function generateImage(prompt: string): Promise<string | null> {
   const cleanPrompt = prompt.replace(/[^\w\s,.-]/gi, '').substring(0, 400).trim();
-  // Ensure we have a valid prompt
   if (!cleanPrompt || cleanPrompt.length < 3) return null;
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?nologo=true&private=true&enhance=true&width=1024&height=1024&model=flux`;
+
+  // Attempt Server-Side Fetch for Pollinations (Flux)
+  try {
+    const pollinationsUrl = `https://pollinations.ai/p/${encodeURIComponent(cleanPrompt)}?width=1024&height=1024&model=flux&seed=${Math.floor(Math.random() * 100000)}`;
+    const res = await fetch(pollinationsUrl, { signal: AbortSignal.timeout(15000) });
+    if (res.ok) {
+      const buffer = await res.arrayBuffer();
+      return `data:image/webp;base64,${Buffer.from(buffer).toString('base64')}`;
+    }
+  } catch (e) {
+    console.warn('Pollinations SSR failed, trying Cloudflare...', e);
+  }
+
+  // Fallback to Cloudflare Workers AI
+  const cfId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const cfToken = process.env.CLOUDFLARE_API_TOKEN;
+  if (cfId && cfToken) {
+    try {
+      const response = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${cfId}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`,
+        {
+          headers: { Authorization: `Bearer ${cfToken}`, "Content-Type": "application/json" },
+          method: "POST",
+          body: JSON.stringify({ prompt: cleanPrompt }),
+          signal: AbortSignal.timeout(10000)
+        }
+      );
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer();
+        return `data:image/png;base64,${Buffer.from(arrayBuffer).toString('base64')}`;
+      }
+    } catch (e) {}
+  }
+  
+  // Last resort: Return raw Pollinations URL (client will try to load it)
+  return `https://pollinations.ai/p/${encodeURIComponent(cleanPrompt)}?width=1024&height=1024&model=flux`;
 }
 
 export async function POST(request: NextRequest) {
@@ -84,13 +116,11 @@ export async function POST(request: NextRequest) {
       aiResponse = result.response.text() || '';
     }
 
-    // --- UNIVERSAL IMAGE & STATUS CATCHER ---
+    // --- UNIVERSAL PARSER ---
     let genMedia = null;
-    
-    // 1. Extract the BEST prompt from any bracketed text
-    // Looks for DRAW, Diagram, Visual, or Generated content
     const universalRegex = /\[[^\]]*?(?:DRAW|DIAGRAM|VISUAL|GENERATED)[\s\S]*?[:\-]*\s*([\s\S]*?)\]/i;
     const match = aiResponse.match(universalRegex);
+    
     if (match) {
       const prompt = match[1].trim();
       if (prompt && prompt.length > 3) {
@@ -98,11 +128,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. TOTAL WIPEOUT: Remove ALL bracketed text from the response
-    // This cleans up status messages, tags, and AI improvisation
+    // Final Scrub: Remove ALL bracketed text
     aiResponse = aiResponse.replace(/\[[\s\S]*?\]/gi, '').trim();
 
-    if (!aiResponse && !genMedia) aiResponse = "I am ready to assist you! 🚀";
+    if (!aiResponse && !genMedia) aiResponse = "I'm ready! 🚀";
 
     const newMsgRef = messagesRef.push();
     const now = new Date().toISOString();
