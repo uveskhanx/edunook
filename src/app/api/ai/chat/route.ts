@@ -3,14 +3,15 @@ import { adminDb } from '@/lib/server/admin';
 import Groq from 'groq-sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const SYSTEM_PROMPT = `You are EduNook AI, the supreme intelligent assistant of EduNook.
+const SYSTEM_PROMPT = `You are EduNook AI, the supreme intelligent assistant.
 
 ━━━━━━━━━━━━━━━━━━━━
-IMAGE GENERATION PROTOCOL (MANDATORY)
+IMAGE GENERATION PROTOCOL (STRICT)
 ━━━━━━━━━━━━━━━━━━━━
-- Whenever the user asks for a visual, respond with [DRAW: prompt]
-- Use EXACT syntax: [DRAW: detailed description]
-- Example: [DRAW: a futuristic city, 8k, cinematic]
+- To generate an image, ONLY use this syntax: [DRAW: detailed prompt]
+- DO NOT output status messages like "[Visual output is being generated...]" or "[Visual displayed]".
+- DO NOT use any other bracketed text.
+- Example: "Here is your diagram: [DRAW: human eye anatomy, 3d medical render, 8k]"
 
 ━━━━━━━━━━━━━━━━━━━━
 IDENTITY & FORMATTING
@@ -19,13 +20,9 @@ IDENTITY & FORMATTING
 - Formatting: # 🚀 Headings, ## 🔹 Section Headers, 💎 Bullets.`;
 
 async function generateImage(prompt: string): Promise<string | null> {
-  // Ultra-Clean Prompt for URL
-  const cleanPrompt = prompt
-    .replace(/[^\w\s,.-]/gi, '')
-    .substring(0, 400)
-    .trim();
-  
-  // DIRECT DELIVERY (No HEAD check for maximum speed and reliability)
+  const cleanPrompt = prompt.replace(/[^\w\s,.-]/gi, '').substring(0, 400).trim();
+  // Ensure we have a valid prompt
+  if (!cleanPrompt || cleanPrompt.length < 3) return null;
   return `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?nologo=true&private=true&enhance=true&width=1024&height=1024&model=flux`;
 }
 
@@ -87,22 +84,25 @@ export async function POST(request: NextRequest) {
       aiResponse = result.response.text() || '';
     }
 
-    // --- UNIFIED SUPREME PARSER ---
+    // --- UNIVERSAL IMAGE & STATUS CATCHER ---
     let genMedia = null;
-    // Catch anything bracketed that looks like a DRAW tag
-    const unifiedRegex = /\[[^\]]*?DRAW[\s\S]*?[:\-]*\s*([\s\S]*?)\]/i;
-    const match = aiResponse.match(unifiedRegex);
-
+    
+    // 1. Extract the BEST prompt from any bracketed text
+    // Looks for DRAW, Diagram, Visual, or Generated content
+    const universalRegex = /\[[^\]]*?(?:DRAW|DIAGRAM|VISUAL|GENERATED)[\s\S]*?[:\-]*\s*([\s\S]*?)\]/i;
+    const match = aiResponse.match(universalRegex);
     if (match) {
       const prompt = match[1].trim();
-      if (prompt) {
+      if (prompt && prompt.length > 3) {
         genMedia = await generateImage(prompt);
-        // Wipe all DRAW tags from response
-        aiResponse = aiResponse.replace(/\[[^\]]*?DRAW[\s\S]*?\]/gi, '').trim();
       }
     }
 
-    if (!aiResponse && !genMedia) aiResponse = "Visualizing now... 🚀";
+    // 2. TOTAL WIPEOUT: Remove ALL bracketed text from the response
+    // This cleans up status messages, tags, and AI improvisation
+    aiResponse = aiResponse.replace(/\[[\s\S]*?\]/gi, '').trim();
+
+    if (!aiResponse && !genMedia) aiResponse = "I am ready to assist you! 🚀";
 
     const newMsgRef = messagesRef.push();
     const now = new Date().toISOString();
