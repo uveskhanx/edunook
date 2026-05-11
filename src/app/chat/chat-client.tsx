@@ -181,6 +181,9 @@ export default function ChatClient() {
         
         setAiLoadingState(state);
         
+        // Show "AI is typing..." in the sidebar
+        DbService.setTypingStatus(activeChat.chatId, 'edunook-ai', true);
+        
         fetch('/api/ai/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -191,7 +194,11 @@ export default function ChatClient() {
             mediaUrl: media?.url,
             mediaType: media?.type
           })
-        }).catch(err => console.error('AI Error:', err)).finally(() => setAiLoadingState(null));
+        }).catch(err => console.error('AI Error:', err))
+          .finally(() => {
+            setAiLoadingState(null);
+            DbService.setTypingStatus(activeChat.chatId, 'edunook-ai', false);
+          });
       }
     } catch (err) {
       console.error('Error sending message:', err);
