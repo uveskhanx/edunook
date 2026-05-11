@@ -8,9 +8,9 @@ const SYSTEM_PROMPT = `You are EduNook AI, the supreme intelligent assistant of 
 ━━━━━━━━━━━━━━━━━━━━
 IMAGE GENERATION PROTOCOL (MANDATORY)
 ━━━━━━━━━━━━━━━━━━━━
-- Whenever the user asks to "draw", "generate", "create an image", or "show a visual", you MUST respond with the [DRAW: prompt] tag.
+- Whenever the user asks for a visual, respond with [DRAW: prompt]
 - Use EXACT syntax: [DRAW: detailed description]
-- Example: "Here is your drawing: [DRAW: a futuristic library, 8k]"
+- Example: [DRAW: a futuristic city, 8k, cinematic]
 
 ━━━━━━━━━━━━━━━━━━━━
 IDENTITY & FORMATTING
@@ -19,34 +19,14 @@ IDENTITY & FORMATTING
 - Formatting: # 🚀 Headings, ## 🔹 Section Headers, 💎 Bullets.`;
 
 async function generateImage(prompt: string): Promise<string | null> {
-  // Clean and Truncate Prompt for URL Safety
-  const cleanPrompt = prompt.replace(/[^\w\s,.-]/gi, '').substring(0, 500).trim();
+  // Ultra-Clean Prompt for URL
+  const cleanPrompt = prompt
+    .replace(/[^\w\s,.-]/gi, '')
+    .substring(0, 400)
+    .trim();
   
-  try {
-    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?nologo=true&private=true&enhance=true&width=1024&height=1024&model=flux`;
-    const check = await fetch(pollinationsUrl, { method: 'HEAD' });
-    if (check.ok) return pollinationsUrl;
-  } catch (e) {}
-
-  const cfId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const cfToken = process.env.CLOUDFLARE_API_TOKEN;
-  if (cfId && cfToken) {
-    try {
-      const response = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${cfId}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0`,
-        {
-          headers: { Authorization: `Bearer ${cfToken}`, "Content-Type": "application/json" },
-          method: "POST",
-          body: JSON.stringify({ prompt: cleanPrompt }),
-        }
-      );
-      if (response.ok) {
-        const arrayBuffer = await response.arrayBuffer();
-        return `data:image/png;base64,${Buffer.from(arrayBuffer).toString('base64')}`;
-      }
-    } catch (e) {}
-  }
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?nologo=true`;
+  // DIRECT DELIVERY (No HEAD check for maximum speed and reliability)
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(cleanPrompt)}?nologo=true&private=true&enhance=true&width=1024&height=1024&model=flux`;
 }
 
 export async function POST(request: NextRequest) {
@@ -107,23 +87,20 @@ export async function POST(request: NextRequest) {
       aiResponse = result.response.text() || '';
     }
 
-    // --- TOTAL WIPEOUT TAG PARSING ---
+    // --- UNIFIED SUPREME PARSER ---
     let genMedia = null;
-    let finalPrompt = '';
+    // Catch anything bracketed that looks like a DRAW tag
+    const unifiedRegex = /\[[^\]]*?DRAW[\s\S]*?[:\-]*\s*([\s\S]*?)\]/i;
+    const match = aiResponse.match(unifiedRegex);
 
-    // Pass 1: Extraction
-    const extractRegex = /\[\s*DRAW\s*[:\-]*\s*([\s\S]*?)\]/i;
-    const match = aiResponse.match(extractRegex);
     if (match) {
-      finalPrompt = match[1].trim();
-      genMedia = await generateImage(finalPrompt);
+      const prompt = match[1].trim();
+      if (prompt) {
+        genMedia = await generateImage(prompt);
+        // Wipe all DRAW tags from response
+        aiResponse = aiResponse.replace(/\[[^\]]*?DRAW[\s\S]*?\]/gi, '').trim();
+      }
     }
-
-    // Pass 2: The "Total Wipeout" (Universal Stripping)
-    // This removes ANYTHING inside brackets that contains the word DRAW
-    aiResponse = aiResponse.replace(/\[[^\]]*?DRAW[\s\S]*?\]/gi, '');
-    aiResponse = aiResponse.replace(/\*\*\[[^\]]*?DRAW[\s\S]*?\]\*\*/gi, '');
-    aiResponse = aiResponse.trim();
 
     if (!aiResponse && !genMedia) aiResponse = "Visualizing now... 🚀";
 
