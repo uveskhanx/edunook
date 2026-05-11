@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { adminDb } from '@/lib/server/admin';
 import Groq from 'groq-sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import crypto from 'crypto';
 
 const SYSTEM_PROMPT = `You are EduNook AI, the supreme assistant.
 
@@ -17,8 +18,49 @@ IDENTITY & FORMATTING
 - Identity: EduNook AI.
 - Formatting: # 🚀 Headings, ## 🔹 Section Headers, 💎 Bullets.`;
 
+async function uploadToCloudinary(buffer: ArrayBuffer, prompt: string): Promise<string | null> {
+  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+
+  if (!cloudName || !apiKey || !apiSecret) {
+    console.error('Cloudinary credentials missing');
+    return null;
+  }
+
+  try {
+    const timestamp = Math.round(new Date().getTime() / 1000);
+    const folder = 'edunook/ai-gen';
+    
+    // Create signature
+    const strToSign = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
+    const signature = crypto.createHash('sha1').update(strToSign).digest('hex');
+
+    const formData = new FormData();
+    const blob = new Blob([buffer]);
+    formData.append('file', blob);
+    formData.append('api_key', apiKey);
+    formData.append('timestamp', timestamp.toString());
+    formData.append('signature', signature);
+    formData.append('folder', folder);
+
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.secure_url;
+    }
+    return null;
+  } catch (e) {
+    console.error('Cloudinary Upload Failed:', e);
+    return null;
+  }
+}
+
 async function generateImage(prompt: string): Promise<string | null> {
-  // Relaxed cleaning: keep most symbols for better art generation
   const cleanPrompt = prompt.replace(/[^\w\s,.:()\-]/gi, ' ').substring(0, 1000).trim();
   if (!cleanPrompt || cleanPrompt.length < 3) return null;
 
@@ -27,17 +69,12 @@ async function generateImage(prompt: string): Promise<string | null> {
     const res = await fetch(pollinationsUrl, { signal: AbortSignal.timeout(20000) });
     
     if (res.ok) {
-      const contentType = res.headers.get('content-type') || 'image/jpeg';
       const buffer = await res.arrayBuffer();
-      
-      // Validation: Ensure the buffer is not empty
       if (buffer.byteLength > 1000) {
-        return `data:${contentType};base64,${Buffer.from(buffer).toString('base64')}`;
+        return await uploadToCloudinary(buffer, cleanPrompt);
       }
     }
-  } catch (e) {
-    console.warn('Pollinations SSR failed, trying Cloudflare...', e);
-  }
+  } catch (e) {}
 
   // Backup: Cloudflare Workers AI
   const cfId = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -54,9 +91,9 @@ async function generateImage(prompt: string): Promise<string | null> {
         }
       );
       if (response.ok) {
-        const arrayBuffer = await response.arrayBuffer();
-        if (arrayBuffer.byteLength > 1000) {
-          return `data:image/png;base64,${Buffer.from(arrayBuffer).toString('base64')}`;
+        const buffer = await response.arrayBuffer();
+        if (buffer.byteLength > 1000) {
+          return await uploadToCloudinary(buffer, cleanPrompt);
         }
       }
     } catch (e) {}
@@ -135,7 +172,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Scrub all bracketed text
     aiResponse = aiResponse.replace(/\[[\s\S]*?\]/gi, '').trim();
 
     if (!aiResponse && !genMedia) aiResponse = "I'm ready! 🚀";
