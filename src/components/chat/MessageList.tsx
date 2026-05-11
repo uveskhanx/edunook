@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, ShieldCheck, MoreHorizontal, Trash2, X, Star, Zap, Diamond, Sparkles, Download, RotateCcw, Maximize2, Loader2 } from 'lucide-react';
+import { MessageSquare, ShieldCheck, MoreHorizontal, Trash2, X, Star, Zap, Diamond, Sparkles, Download, RotateCcw, Maximize2, Loader2, Image as ImageIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { Message, Profile, DbService } from '@/lib/db-service';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -61,7 +61,7 @@ export function MessageList({
         `}} />
       )}
 
-      <div className={`max-w-4xl mx-auto pb-24 ${isAIChat ? 'space-y-6' : 'space-y-4'}`} style={isAIChat ? { fontFamily: "'Plus Jakarta Sans', sans-serif" } : {}}>
+      <div className={`max-w-4xl mx-auto pb-24 ${isAIChat ? 'space-y-10' : 'space-y-4'}`} style={isAIChat ? { fontFamily: "'Plus Jakarta Sans', sans-serif" } : {}}>
         <AnimatePresence initial={false}>
           {messages.length > 0 ? (
             messages.map((msg, i) => {
@@ -96,71 +96,78 @@ export function MessageList({
                 );
               }
 
+              // --- PREMIUM AI CHAT STYLE ---
               return (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
-	                <div className={`group relative flex flex-col gap-1.5 ${isOwn ? 'items-end max-w-[85%]' : 'items-start w-full'}`}>
-                    <div className={`relative ${isOwn ? 'bg-primary p-3 px-5 rounded-[1.25rem] rounded-tr-none shadow-lg border border-white/10' : 'w-full'}`}>
+                <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+	                <div className={`group relative flex flex-col gap-3 ${isOwn ? 'items-end max-w-[85%]' : 'items-start w-full'}`}>
+                    
+                    {/* BUBBLE CONTAINER */}
+                    <div className={`relative w-full p-6 rounded-[2rem] border transition-all ${isOwn ? 'bg-primary border-white/10 rounded-tr-none shadow-xl' : 'bg-white/[0.03] border-white/5 backdrop-blur-md shadow-2xl'}`}>
                       
-                      <div className={`absolute top-2 ${isOwn ? '-left-10' : '-right-10'} opacity-0 group-hover:opacity-100 transition-opacity`}>
+                      {/* ACTION MENU */}
+                      <div className={`absolute top-4 ${isOwn ? '-left-12' : '-right-12'} opacity-0 group-hover:opacity-100 transition-all`}>
                         <DropdownMenu>
                            <DropdownMenuTrigger asChild>
-                             <button className="p-1.5 hover:bg-white/5 rounded-full text-white/40 hover:text-white"><MoreHorizontal className="w-4 h-4" /></button>
+                             <button className="p-2 hover:bg-white/10 rounded-full text-white/40 hover:text-white"><MoreHorizontal className="w-5 h-5" /></button>
                            </DropdownMenuTrigger>
-                           <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="bg-[#12121a] border border-white/10 shadow-2xl rounded-2xl p-1 min-w-[160px]">
-                              <DropdownMenuItem className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-white/5 text-white/70 font-medium" onClick={() => DbService.deleteMessageForMe(currentUserId, chatId, msg.id)}>
-                                 <Trash2 className="w-3.5 h-3.5 text-rose-500" /><span>Delete for Me</span>
+                           <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="bg-[#0a0a0f] border border-white/10 shadow-3xl rounded-2xl p-1 min-w-[180px] z-50">
+                              <DropdownMenuItem className="flex items-center gap-2 p-2.5 rounded-xl cursor-pointer hover:bg-white/5 text-white/70 font-semibold" onClick={() => DbService.deleteMessageForMe(currentUserId, chatId, msg.id)}>
+                                 <Trash2 className="w-4 h-4 text-rose-500" /><span>Delete Message</span>
                               </DropdownMenuItem>
                               {isOwn && (
-                                 <DropdownMenuItem className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-rose-500/10 text-rose-500 font-bold" onClick={() => window.confirm("Unsend?") && DbService.unsendMessage(chatId, msg.id)}>
-                                    <RotateCcw className="w-3.5 h-3.5" /><span>Unsend Message</span>
+                                 <DropdownMenuItem className="flex items-center gap-2 p-2.5 rounded-xl cursor-pointer hover:bg-rose-500/10 text-rose-500 font-bold" onClick={() => window.confirm("Unsend?") && DbService.unsendMessage(chatId, msg.id)}>
+                                    <RotateCcw className="w-4 h-4" /><span>Unsend for All</span>
                                  </DropdownMenuItem>
                               )}
                            </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
 
+                      {/* MEDIA CONTENT */}
                       {msg.mediaUrl && (
-                         <div className="relative mb-4 group/image overflow-hidden rounded-[1.5rem] border border-white/5 shadow-xl cursor-pointer" onClick={() => setViewerImage(msg.mediaUrl || null)}>
-                            <img src={msg.mediaUrl} className="w-full max-h-[400px] object-cover hover:scale-[1.02] transition-all duration-500" alt="" />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/image:opacity-100 transition-opacity flex items-center justify-center gap-4">
-                               <div className="p-3 bg-white/10 backdrop-blur-md rounded-full border border-white/20 text-white hover:bg-primary transition-all"><Maximize2 className="w-6 h-6" /></div>
-                               <div className="p-3 bg-white/10 backdrop-blur-md rounded-full border border-white/20 text-white hover:bg-success transition-all" onClick={(e) => { e.stopPropagation(); handleDownload(msg.mediaUrl || ''); }}><Download className="w-6 h-6" /></div>
+                         <div className="relative mb-6 group/image overflow-hidden rounded-[1.5rem] border border-white/10 shadow-2xl cursor-pointer bg-white/[0.02]" onClick={() => setViewerImage(msg.mediaUrl || null)}>
+                            <img src={msg.mediaUrl} className="w-full max-h-[500px] object-cover hover:scale-[1.01] transition-all duration-700" alt="Generated Visual" />
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/image:opacity-100 transition-opacity flex items-center justify-center gap-6">
+                               <div className="p-4 bg-white/10 backdrop-blur-xl rounded-full border border-white/20 text-white hover:bg-primary hover:scale-110 transition-all shadow-2xl"><Maximize2 className="w-8 h-8" /></div>
+                               <div className="p-4 bg-white/10 backdrop-blur-xl rounded-full border border-white/20 text-white hover:bg-emerald-500 hover:scale-110 transition-all shadow-2xl" onClick={(e) => { e.stopPropagation(); handleDownload(msg.mediaUrl || ''); }}><Download className="w-8 h-8" /></div>
                             </div>
                          </div>
                       )}
-                      <div className={!isOwn ? 'text-white' : 'text-white font-bold text-[14px]'}>
+
+                      {/* TEXT CONTENT */}
+                      <div className="text-white">
                         <ReactMarkdown 
                           remarkPlugins={[remarkGfm]}
                           components={{
-                            h1: ({node, ...props}) => <h1 style={{ fontSize: '2rem', fontWeight: '900', lineHeight: '1.1', letterSpacing: '-0.04em', marginBottom: '1rem', marginTop: '0.5rem', background: 'linear-gradient(to right, #fff, #818cf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }} {...props} />,
-                            h2: ({node, ...props}) => <div className="flex items-center gap-2.5 mb-4 mt-6"><div style={{ width: '3px', height: '18px', backgroundColor: '#6366f1', borderRadius: '2px' }} /><h2 style={{ fontSize: '1.3rem', fontWeight: '800', letterSpacing: '-0.02em', color: '#fff', margin: '0' }} {...props} /></div>,
-                            h3: ({node, ...props}) => <h3 style={{ fontSize: '0.8rem', fontWeight: '900', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#6366f1', marginBottom: '0.5rem', marginTop: '1.5rem' }} {...props} />,
-                            p: ({node, ...props}) => <div style={{ fontSize: '1rem', lineHeight: '1.6', fontWeight: '500', color: 'rgba(255,255,255,0.8)', marginBottom: '1rem' }} {...props} />,
-                            ul: ({node, ...props}) => <ul className="space-y-2 mb-6" {...props} />,
-                            ol: ({node, ...props}) => <ol className="space-y-2 mb-6" {...props} />,
+                            h1: ({node, ...props}) => <h1 style={{ fontSize: '2.2rem', fontWeight: '900', lineHeight: '1.1', letterSpacing: '-0.04em', marginBottom: '1.5rem', marginTop: '0.5rem', background: 'linear-gradient(to right, #fff, #818cf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }} {...props} />,
+                            h2: ({node, ...props}) => <div className="flex items-center gap-3 mb-5 mt-8"><div style={{ width: '4px', height: '24px', backgroundColor: '#6366f1', borderRadius: '4px', boxShadow: '0 0 15px rgba(99,102,241,0.5)' }} /><h2 style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.02em', color: '#fff', margin: '0' }} {...props} /></div>,
+                            h3: ({node, ...props}) => <h3 style={{ fontSize: '0.9rem', fontWeight: '900', letterSpacing: '0.25em', textTransform: 'uppercase', color: '#818cf8', marginBottom: '0.75rem', marginTop: '2rem' }} {...props} />,
+                            p: ({node, ...props}) => <div style={{ fontSize: '1.05rem', lineHeight: '1.7', fontWeight: '500', color: 'rgba(255,255,255,0.85)', marginBottom: '1.25rem' }} {...props} />,
+                            ul: ({node, ...props}) => <ul className="space-y-3 mb-8" {...props} />,
+                            ol: ({node, ...props}) => <ol className="space-y-3 mb-8" {...props} />,
                             li: ({node, ...props}) => {
                               const color = bulletColors[Math.floor(Math.random() * bulletColors.length)];
                               return (
-                                <motion.li whileHover={{ x: 3 }} style={{ display: 'flex', gap: '0.75rem', alignItems: 'start', backgroundColor: 'rgba(255,255,255,0.02)', padding: '0.75rem 1.25rem', borderRadius: '1.25rem', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '0.25rem' }}>
-                                  <div style={{ marginTop: '4px', flexShrink: '0' }}><Sparkles style={{ color, width: '12px', height: '12px', fill: color }} /></div>
-                                  <div style={{ fontSize: '1rem', fontWeight: '700', color: '#fff', lineHeight: '1.4' }}>{props.children}</div>
+                                <motion.li whileHover={{ x: 5 }} style={{ display: 'flex', gap: '1rem', alignItems: 'start', backgroundColor: 'rgba(255,255,255,0.03)', padding: '1rem 1.5rem', borderRadius: '1.5rem', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '0.5rem', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+                                  <div style={{ marginTop: '6px', flexShrink: '0' }}><Sparkles style={{ color, width: '14px', height: '14px', fill: color, filter: `drop-shadow(0 0 5px ${color})` }} /></div>
+                                  <div style={{ fontSize: '1.05rem', fontWeight: '700', color: '#fff', lineHeight: '1.5' }}>{props.children}</div>
                                 </motion.li>
                               );
                             },
                             code: ({node, inline, className, ...props}: any) => 
                               inline 
-                                ? <code style={{ backgroundColor: 'rgba(99,102,241,0.15)', color: '#818cf8', padding: '1px 5px', borderRadius: '5px', fontWeight: '700', fontSize: '0.85em' }} {...props} />
+                                ? <code style={{ backgroundColor: 'rgba(99,102,241,0.2)', color: '#a5b4fc', padding: '2px 6px', borderRadius: '6px', fontWeight: '700', fontSize: '0.9em', border: '1px solid rgba(99,102,241,0.3)' }} {...props} />
                                 : (
-                                  <div style={{ margin: '1.5rem 0', borderRadius: '1.25rem', border: '1px solid rgba(255,255,255,0.08)', backgroundColor: '#050505', overflow: 'hidden' }}>
-                                    <div style={{ padding: '0.5rem 1.25rem', backgroundColor: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div style={{ display: 'flex', gap: '6px' }}><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ff5f56' }} /><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ffbd2e' }} /><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#27c93f' }} /></div>
-                                      <span style={{ fontSize: '8px', fontWeight: '800', color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: '0.2em' }}>{className?.replace('language-', '') || 'code'}</span>
+                                  <div style={{ margin: '2rem 0', borderRadius: '1.5rem', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: '#050508', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.4)' }}>
+                                    <div style={{ padding: '0.75rem 1.5rem', backgroundColor: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                      <div style={{ display: 'flex', gap: '8px' }}><div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ff5f56' }} /><div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ffbd2e' }} /><div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#27c93f' }} /></div>
+                                      <span style={{ fontSize: '10px', fontWeight: '900', color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.3em' }}>{className?.replace('language-', '') || 'SOURCE CODE'}</span>
                                     </div>
-                                    <div style={{ padding: '1.25rem', overflowX: 'auto' }}><pre style={{ fontSize: '0.9rem', lineHeight: '1.6', color: '#e0e7ff', fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'pre' }}><code {...props} /></pre></div>
+                                    <div style={{ padding: '1.5rem', overflowX: 'auto' }}><pre style={{ fontSize: '0.95rem', lineHeight: '1.7', color: '#e0e7ff', fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'pre' }}><code {...props} /></pre></div>
                                   </div>
                                 ),
-                            blockquote: ({node, ...props}) => <blockquote style={{ borderLeft: '4px solid #6366f1', padding: '1rem 1.5rem', margin: '1.5rem 0', fontStyle: 'italic', fontSize: '1.1rem', fontWeight: '700', color: 'rgba(255,255,255,0.4)', backgroundColor: 'rgba(255,255,255,0.01)', borderRadius: '0 1rem 1rem 0' }} {...props} />,
-                            strong: ({node, ...props}) => <strong style={{ color: '#818cf8', fontWeight: '800' }} {...props} />
+                            blockquote: ({node, ...props}) => <blockquote style={{ borderLeft: '5px solid #6366f1', padding: '1.25rem 2rem', margin: '2rem 0', fontStyle: 'italic', fontSize: '1.2rem', fontWeight: '700', color: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(99,102,241,0.03)', borderRadius: '0 1.5rem 1.5rem 0', boxShadow: 'inset 10px 0 20px -10px rgba(99,102,241,0.1)' }} {...props} />,
+                            strong: ({node, ...props}) => <strong style={{ color: '#a5b4fc', fontWeight: '900', textShadow: '0 0 10px rgba(165,180,252,0.3)' }} {...props} />
                           }}
                         >
                           {msg.text || ''}
@@ -172,23 +179,23 @@ export function MessageList({
               );
             })
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center py-24 opacity-10"><Diamond className="w-10 h-10 text-white animate-spin-slow" /></div>
+            <div className="flex-1 flex flex-col items-center justify-center py-24 opacity-10"><Diamond className="w-16 h-16 text-white animate-spin-slow" /></div>
           )}
 
           {/* PREMIUM AI LOADING STATE */}
           {aiLoadingState && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start">
-               <div className="flex items-center gap-4 px-6 py-4 bg-white/[0.03] border border-white/10 rounded-[2rem] shadow-2xl backdrop-blur-md">
+            <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start">
+               <div className="flex items-center gap-5 px-8 py-5 bg-white/[0.04] border border-white/10 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.3)] backdrop-blur-xl">
                   <div className="relative">
-                     <div className="absolute inset-0 bg-primary/20 blur-[15px] rounded-full animate-pulse" />
-                     <Diamond className="w-5 h-5 text-primary animate-spin-slow" />
+                     <div className="absolute inset-0 bg-primary/30 blur-[20px] rounded-full animate-pulse" />
+                     <Diamond className="w-7 h-7 text-primary animate-spin-slow" />
                   </div>
                   <div className="flex flex-col">
-                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Neural Link Active</span>
-                     <div className="flex gap-1 mt-1">
-                        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0 }} className="w-1.5 h-1.5 bg-primary rounded-full" />
-                        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0.2 }} className="w-1.5 h-1.5 bg-primary rounded-full" />
-                        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0.4 }} className="w-1.5 h-1.5 bg-primary rounded-full" />
+                     <span className="text-[11px] font-black uppercase tracking-[0.3em] text-primary mb-1">Neural Connection Active</span>
+                     <div className="flex gap-1.5">
+                        <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0 }} className="w-2 h-2 bg-primary rounded-full shadow-[0_0_8px_#6366f1]" />
+                        <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0.2 }} className="w-2 h-2 bg-primary rounded-full shadow-[0_0_8px_#6366f1]" />
+                        <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0.4 }} className="w-2 h-2 bg-primary rounded-full shadow-[0_0_8px_#6366f1]" />
                      </div>
                   </div>
                </div>
@@ -199,12 +206,12 @@ export function MessageList({
 
       <AnimatePresence>
          {viewerImage && (
-           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-4 md:p-10" onClick={() => setViewerImage(null)}>
-              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative max-w-full max-h-full flex flex-col items-center gap-6" onClick={(e) => e.stopPropagation()}>
-                 <img src={viewerImage} className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-[0_0_80px_rgba(0,0,0,0.5)] border border-white/10" alt="EduNook AI" />
-                 <div className="flex items-center gap-4">
-                    <button onClick={() => handleDownload(viewerImage)} className="flex items-center gap-2 px-8 py-4 bg-white/10 hover:bg-primary text-white rounded-2xl border border-white/20 backdrop-blur-md transition-all font-bold text-lg"><Download className="w-6 h-6" />Download Image</button>
-                    <button onClick={() => setViewerImage(null)} className="p-4 bg-white/10 hover:bg-rose-500/20 text-white rounded-2xl border border-white/20 backdrop-blur-md transition-all"><X className="w-6 h-6" /></button>
+           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-4 md:p-10" onClick={() => setViewerImage(null)}>
+              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative max-w-full max-h-full flex flex-col items-center gap-8" onClick={(e) => e.stopPropagation()}>
+                 <img src={viewerImage} className="max-w-full max-h-[80vh] object-contain rounded-3xl shadow-[0_0_100px_rgba(0,0,0,0.8)] border border-white/10" alt="EduNook AI High Resolution" />
+                 <div className="flex items-center gap-6">
+                    <button onClick={() => handleDownload(viewerImage)} className="flex items-center gap-3 px-10 py-5 bg-white/10 hover:bg-primary text-white rounded-[2rem] border border-white/20 backdrop-blur-xl transition-all font-black text-xl shadow-2xl hover:scale-105 active:scale-95"><Download className="w-8 h-8" />Download Masterpiece</button>
+                    <button onClick={() => setViewerImage(null)} className="p-5 bg-white/10 hover:bg-rose-500/20 text-white rounded-[2rem] border border-white/20 backdrop-blur-xl transition-all hover:scale-105 active:scale-95"><X className="w-8 h-8" /></button>
                  </div>
               </motion.div>
            </motion.div>
