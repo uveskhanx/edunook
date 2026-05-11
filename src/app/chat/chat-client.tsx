@@ -368,6 +368,7 @@ export default function ChatClient() {
                 onTyping={handleTyping}
                 sending={sending}
                 onUploadMedia={handleUploadMedia}
+                isAIChat={activeChat.profile.uid === 'edunook-ai'}
               />
             </>
           ) : (

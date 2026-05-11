@@ -8,6 +8,7 @@ interface ChatInputProps {
   onTyping: () => void;
   sending: boolean;
   onUploadMedia: (file: File) => Promise<{ url: string, type: 'image' | 'video' | 'file' }>;
+  isAIChat?: boolean;
 }
 
 const EMOJIS = ['😊', '😂', '🔥', '👍', '❤️', '🙌', '🎉', '💡', '💯', '🚀', '✨', '👏', '🤔', '😎', '🎓', '📚'];
@@ -16,7 +17,8 @@ export function ChatInput({
   onSendMessage,
   onTyping,
   sending,
-  onUploadMedia
+  onUploadMedia,
+  isAIChat
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
@@ -120,7 +122,7 @@ export function ChatInput({
 
       <form
         onSubmit={handleSubmit}
-        className="p-1.5 bg-card/90 backdrop-blur-3xl border border-border rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center gap-1 group transition-all focus-within:border-primary/30"
+        className={`p-1.5 bg-card/90 backdrop-blur-3xl border rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center gap-1 group transition-all ${isAIChat ? 'border-primary/20 focus-within:border-primary/50 shadow-primary/5' : 'border-border focus-within:border-primary/30'}`}
       >
         <div className="flex items-center">
           <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
@@ -151,8 +153,8 @@ export function ChatInput({
             onTyping();
           }}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
-          placeholder="Type your message..."
-          className="flex-1 bg-transparent border-none text-foreground font-medium py-4 px-3 focus:outline-none placeholder:text-foreground/10 text-sm md:text-base selection:bg-primary/30"
+          placeholder={isAIChat ? "Ask EduNook AI anything or describe an image..." : "Type your message..."}
+          className="flex-1 bg-transparent border-none text-foreground font-medium py-4 px-3 focus:outline-none placeholder:text-foreground/20 text-sm md:text-base selection:bg-primary/30"
         />
 
         <div className="flex items-center pr-1 gap-1">
