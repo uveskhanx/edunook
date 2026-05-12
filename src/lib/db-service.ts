@@ -33,6 +33,20 @@ export interface UserPreferences {
   };
 }
 
+export interface AiProfileSettings {
+  preferredName?: string | null;
+  preferredLanguage?: string | null;
+  chatStyle?: 'short' | 'balanced' | 'detailed' | null;
+  tone?: 'calm' | 'casual' | 'playful' | 'formal' | null;
+  vibe?: 'cool' | 'aesthetic' | 'dark' | 'bright' | 'minimal' | null;
+  emojiStyle?: 'low' | 'medium' | 'high' | null;
+  responseEnergy?: 'low' | 'medium' | 'high' | null;
+  favoriteTopics?: string[];
+  summary?: string | null;
+  manualNotes?: string | null;
+  lastUpdatedAt?: string;
+}
+
 export interface Subscription {
   planId: 'none' | 'spark' | 'edge';
   billingCycle?: 'monthly' | 'yearly';
@@ -475,6 +489,20 @@ export const DbService = {
   async updatePreferences(uid: string, preferences: Partial<UserPreferences>) {
     const prefRef = ref(db, `user_settings/${uid}/preferences`);
     await update(prefRef, preferences);
+    this.clearProfileCache(uid);
+  },
+
+  async getAiProfileSettings(uid: string): Promise<AiProfileSettings | null> {
+    const snapshot = await get(ref(db, `user_settings/${uid}/ai_profile`));
+    return snapshot.exists() ? snapshot.val() : null;
+  },
+
+  async updateAiProfileSettings(uid: string, aiProfile: Partial<AiProfileSettings>) {
+    const aiProfileRef = ref(db, `user_settings/${uid}/ai_profile`);
+    await update(aiProfileRef, {
+      ...aiProfile,
+      lastUpdatedAt: new Date().toISOString(),
+    });
     this.clearProfileCache(uid);
   },
 

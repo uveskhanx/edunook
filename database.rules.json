@@ -1,69 +1,73 @@
 {
   "rules": {
-    ".read": "false",
-    ".write": "false",
-
-    "users": {
-      "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-
     "profiles": {
       ".read": "true",
       "$uid": {
-        ".write": "auth != null && (auth.uid === $uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')",
-        ".validate": "!newData.hasChild('realEmail') && !newData.hasChild('phone') && !newData.hasChild('dob') && !newData.hasChild('email') && !newData.hasChild('preferences') && !newData.hasChild('history')"
+        ".write": "auth != null && auth.uid === $uid",
+        "subscription": {
+          ".write": "false"
+        }
       }
     },
-
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "user_settings": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
     "usernames": {
       ".read": "true",
       "$username": {
-        ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && !newData.exists()) || root.child('profiles').child(auth.uid).child('role').val() === 'admin')"
+        ".write": "auth != null && (!data.exists() || data.val() === auth.uid)"
       }
     },
-
     "courses": {
       ".read": "true",
       ".indexOn": ["slug"],
       "$courseId": {
         ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid)",
-        ".validate": "newData.hasChildren(['id', 'userId', 'title', 'slug'])"
+        "views": {
+          ".write": "auth != null"
+        },
+        "enrollmentsCount": {
+          ".write": "auth != null"
+        }
       }
     },
-
-    "course_slugs": {
-      ".read": "true",
-      "$slug": {
-        ".write": "auth != null"
+    "unique_views": {
+      "$courseId": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
+        }
       }
     },
-
     "chapters": {
       "$courseId": {
         ".read": "true",
-        ".write": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')"
+        ".write": "auth != null && root.child('courses').child($courseId).child('userId').val() === auth.uid"
       }
     },
-
-    "videos": {
-      ".read": "true",
-      "$courseId": {
-        ".write": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')"
-      }
-    },
-
     "course_reviews": {
       "$courseId": {
         ".read": "true",
         "$reviewId": {
-          ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid || root.child('courses').child($courseId).child('userId').val() === auth.uid)"
+          ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid)"
         }
       }
     },
-
+    "community_themes": {
+      ".read": "true",
+      "$themeId": {
+        ".write": "auth != null && (!data.exists() || data.child('creatorId').val() === auth.uid)"
+      }
+    },
     "followers": {
       ".read": "true",
       "$uid": {
@@ -73,7 +77,6 @@
         }
       }
     },
-
     "following": {
       ".read": "true",
       "$uid": {
@@ -83,30 +86,52 @@
         }
       }
     },
-
     "notifications": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
         ".write": "auth != null"
       }
     },
-
-    "chats": {
-      "$chatId": {
-        ".read": "auth != null && (!data.exists() || data.child('users').child(auth.uid).exists())",
-        ".write": "auth != null && (!data.exists() || data.child('users').child(auth.uid).exists())"
-      }
-    },
-
-    "messages": {
-      "$chatId": {
-        ".read": "auth != null && root.child('chats').child($chatId).child('users').child(auth.uid).exists()",
-        "$messageId": {
-          ".write": "auth != null && root.child('chats').child($chatId).child('users').child(auth.uid).exists()"
+    "enrollments": {
+      "$courseId": {
+        ".read": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || data.child(auth.uid).exists())",
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
         }
       }
     },
-
+    "payments": {
+      ".indexOn": ["teacher_id", "userId"],
+      "$paymentId": {
+        ".read": "auth != null && (data.child('userId').val() === auth.uid || data.child('teacher_id').val() === auth.uid)",
+        ".write": "auth != null && auth.uid === data.child('userId').val()"
+      }
+    },
+    "payouts": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "false"
+      }
+    },
+    "test_attempts": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "teachers": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "presence": {
+      ".read": "true",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
     "user_chats": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
@@ -115,46 +140,55 @@
         }
       }
     },
-
-    "tests": {
-      ".read": "true",
-      ".indexOn": ["slug"],
-      "$testId": {
-        ".write": "auth != null && (!data.exists() || data.child('creatorId').val() === auth.uid)",
-        ".validate": "newData.hasChildren(['id', 'creatorId', 'title', 'slug'])"
+    "chats": {
+      "$chatId": {
+        ".read": "auth != null && ($chatId.contains(auth.uid) || data.child('users').child(auth.uid).exists() || !data.exists())",
+        ".write": "auth != null && ($chatId.contains(auth.uid) || data.child('users').child(auth.uid).exists() || !data.exists())",
+        "typing": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
       }
     },
-
+    "course_slugs": {
+      ".read": "true",
+      "$slug": {
+        ".write": "auth != null"
+      }
+    },
     "test_slugs": {
       ".read": "true",
       "$slug": {
         ".write": "auth != null"
       }
     },
-
-    "enrollments": {
-      "$courseId": {
-        ".read": "auth != null && (root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')",
-        "$uid": {
-          ".read": "auth != null && (auth.uid === $uid || root.child('courses').child($courseId).child('userId').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')",
-          ".write": "auth != null && auth.uid === $uid"
+    "messages": {
+      "$chatId": {
+        ".read": "auth != null && ($chatId.contains(auth.uid) || root.child('chats').child($chatId).child('users').child(auth.uid).exists())",
+        "$msgId": {
+          ".write": "auth != null && ($chatId.contains(auth.uid) || root.child('chats').child($chatId).child('users').child(auth.uid).exists())"
         }
       }
     },
-
-    "payments": {
-      ".indexOn": ["teacher_id", "user_id"],
-      ".read": "auth != null && ((query.orderByChild === 'teacher_id' && query.equalTo === auth.uid) || (query.orderByChild === 'user_id' && query.equalTo === auth.uid) || root.child('profiles').child(auth.uid).child('role').val() === 'admin')",
-      "$paymentId": {
-        ".read": "auth != null && (data.child('user_id').val() === auth.uid || data.child('teacher_id').val() === auth.uid || root.child('profiles').child(auth.uid).child('role').val() === 'admin')",
-        ".write": "false"
+    "tests": {
+      ".read": "true",
+      "$testId": {
+        ".write": "auth != null && (!data.exists() || data.child('creatorId').val() === auth.uid)"
       }
     },
-
-    "presence": {
+    "quizzes": {
       ".read": "true",
-      "$uid": {
-        ".write": "auth != null && auth.uid === $uid"
+      "$quizId": {
+        ".write": "auth != null && (!data.exists() || data.child('creatorId').val() === auth.uid)"
+      }
+    },
+    "leaderboards": {
+      ".read": "true",
+      "$id": {
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid"
+        }
       }
     }
   }

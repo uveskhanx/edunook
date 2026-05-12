@@ -40,10 +40,13 @@ export default function ChatClient() {
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [isReporting, setIsReporting] = useState(false);
   const [isInfoOpen, setIsInfoOpen] = useState(false);
+  const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
+  const [voiceAssistantSpeaking, setVoiceAssistantSpeaking] = useState(false);
   
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const [aiLoadingState, setAiLoadingState] = useState<string | null>(null);
+  const lastSpokenAiMessageRef = useRef<string | null>(null);
 
   // Security Verification
   useEffect(() => {
@@ -181,9 +184,6 @@ export default function ChatClient() {
         
         setAiLoadingState(state);
         
-        // Show "AI is typing..." in the sidebar
-        DbService.setTypingStatus(activeChat.chatId, 'edunook-ai', true);
-        
         fetch('/api/ai/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -194,11 +194,13 @@ export default function ChatClient() {
             mediaUrl: media?.url,
             mediaType: media?.type
           })
-        }).catch(err => console.error('AI Error:', err))
-          .finally(() => {
-            setAiLoadingState(null);
-            DbService.setTypingStatus(activeChat.chatId, 'edunook-ai', false);
-          });
+        }).then(async res => {
+          if (!res.ok) {
+            const body = await res.json();
+            console.error('AI API Error Detail:', body);
+            toast.error(`AI failed: ${body.error || 'Unknown error'}`);
+          }
+        }).catch(err => console.error('AI Network Error:', err)).finally(() => setAiLoadingState(null));
       }
     } catch (err) {
       console.error('Error sending message:', err);
@@ -217,6 +219,52 @@ export default function ChatClient() {
     if (!chatSearchQuery.trim()) return messages;
     return messages.filter(m => m.text?.toLowerCase().includes(chatSearchQuery.toLowerCase()));
   }, [messages, chatSearchQuery]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    if (!voiceModeEnabled || !activeChat || activeChat.profile.uid !== 'edunook-ai') return;
+    if (messages.length === 0) return;
+
+    const latestAiMessage = [...messages]
+      .reverse()
+      .find((message) => message.senderId === 'edunook-ai' && typeof message.text === 'string' && message.text.trim());
+
+    if (!latestAiMessage || latestAiMessage.id === lastSpokenAiMessageRef.current) {
+      return;
+    }
+
+    const spokenText = (latestAiMessage.text || '')
+      .replace(/\[DRAW:[\s\S]*?\]/gi, '')
+      .replace(/[#*_`>-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!spokenText) return;
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(spokenText);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.onstart = () => setVoiceAssistantSpeaking(true);
+    utterance.onend = () => setVoiceAssistantSpeaking(false);
+    utterance.onerror = () => setVoiceAssistantSpeaking(false);
+    lastSpokenAiMessageRef.current = latestAiMessage.id;
+    window.speechSynthesis.speak(utterance);
+
+    return () => {
+      utterance.onstart = null;
+      utterance.onend = null;
+      utterance.onerror = null;
+    };
+  }, [activeChat, messages, voiceModeEnabled]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   if (authLoading) {
     return (
@@ -375,7 +423,9 @@ export default function ChatClient() {
                 onTyping={handleTyping}
                 sending={sending}
                 onUploadMedia={handleUploadMedia}
-                isAIChat={activeChat.profile.uid === 'edunook-ai'}
+                enableVoiceForAi={activeChat.profile.uid === 'edunook-ai'}
+                voiceAssistantSpeaking={voiceAssistantSpeaking}
+                onVoiceModeChange={setVoiceModeEnabled}
               />
             </>
           ) : (

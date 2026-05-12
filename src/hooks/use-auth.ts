@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { DbService, Profile } from '@/lib/db-service';
+import { SubscriptionGuard } from '@/lib/subscription-guard';
 
 export type AuthUser = {
   id: string;
@@ -23,7 +24,6 @@ async function resolveProfile(fbUser: any): Promise<Profile | null> {
 
   if (profile) {
     // Run Subscription Guard to check for expirations and send warnings
-    const { SubscriptionGuard } = await import('@/lib/subscription-guard');
     profile = await SubscriptionGuard.checkAndSync(profile);
 
     // Auto-heal missing username mappings caused by legacy fallback bugs

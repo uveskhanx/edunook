@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { Layout } from '@/components/Layout';
 import { useAuth } from '@/hooks/use-auth';
-import { DbService, UserPreferences } from '@/lib/db-service';
+import { AiProfileSettings, DbService, UserPreferences } from '@/lib/db-service';
 import { auth, db } from '@/lib/firebase';
 import { useTheme } from '@/contexts/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -71,6 +71,7 @@ const navSections = [
   { id: 'notifications', label: 'Alerts', icon: Bell },
   { id: 'appearance', label: 'Display', icon: Palette },
   { id: 'learning', label: 'Learning', icon: BookOpen },
+  { id: 'ai-memory', label: 'AI Memory', icon: Lightbulb },
   { id: 'subscription', label: 'Plan', icon: CreditCard },
   { id: 'help', label: 'Help', icon: ChatCircleDots },
   { id: 'help-legal', label: 'Help & Legal', icon: ShieldCheck },
@@ -94,6 +95,27 @@ function mergePreferences(preferences?: UserPreferences | null): UserPreferences
   };
 }
 
+const DEFAULT_AI_PROFILE: AiProfileSettings = {
+  preferredName: '',
+  preferredLanguage: '',
+  chatStyle: 'balanced',
+  tone: 'calm',
+  vibe: 'cool',
+  emojiStyle: 'low',
+  responseEnergy: 'medium',
+  favoriteTopics: [],
+  summary: '',
+  manualNotes: '',
+};
+
+function mergeAiProfile(aiProfile?: AiProfileSettings | null): AiProfileSettings {
+  return {
+    ...DEFAULT_AI_PROFILE,
+    ...(aiProfile || {}),
+    favoriteTopics: aiProfile?.favoriteTopics || [],
+  };
+}
+
 export default function SettingsClient() {
   const { user, dbUser, signOut, loading: authLoading, refreshProfile } = useAuth();
   const router = useRouter();
@@ -111,8 +133,11 @@ export default function SettingsClient() {
   const [razorpayAccountId, setRazorpayAccountId] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingPayouts, setIsSavingPayouts] = useState(false);
+  const [isSavingAiProfile, setIsSavingAiProfile] = useState(false);
+  const [isRefreshingAiProfile, setIsRefreshingAiProfile] = useState(false);
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
   const [isSendingDeleteRequest, setIsSendingDeleteRequest] = useState(false);
+  const [aiProfile, setAiProfile] = useState<AiProfileSettings>(DEFAULT_AI_PROFILE);
 
   const initials = useMemo(() => {
     const source = dbUser?.fullName || dbUser?.username || user?.email || 'EN';
@@ -137,6 +162,13 @@ export default function SettingsClient() {
     DbService.getTeacherPaymentSettings(user.id)
       .then((settings) => setRazorpayAccountId(settings.razorpay_account_id))
       .catch(() => setRazorpayAccountId(''));
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    DbService.getAiProfileSettings(user.id)
+      .then((profile) => setAiProfile(mergeAiProfile(profile)))
+      .catch(() => setAiProfile(DEFAULT_AI_PROFILE));
   }, [user?.id]);
 
   if (authLoading) return null;
@@ -208,6 +240,63 @@ export default function SettingsClient() {
       toast.error(err instanceof Error ? err.message : 'Could not save payout settings.');
     } finally {
       setIsSavingPayouts(false);
+    }
+  };
+
+  const handleSaveAiProfile = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (isSavingAiProfile) return;
+
+    setIsSavingAiProfile(true);
+    try {
+      const normalizedTopics = (aiProfile.favoriteTopics || [])
+        .map((topic) => topic.trim())
+        .filter(Boolean)
+        .slice(0, 8);
+
+      await DbService.updateAiProfileSettings(user.id, {
+        preferredName: aiProfile.preferredName?.trim() || null,
+        preferredLanguage: aiProfile.preferredLanguage?.trim() || null,
+        chatStyle: aiProfile.chatStyle || 'balanced',
+        tone: aiProfile.tone || 'calm',
+        vibe: aiProfile.vibe || 'cool',
+        emojiStyle: aiProfile.emojiStyle || 'low',
+        responseEnergy: aiProfile.responseEnergy || 'medium',
+        favoriteTopics: normalizedTopics,
+        summary: aiProfile.summary?.trim() || null,
+        manualNotes: aiProfile.manualNotes?.trim() || null,
+      });
+      toast.success('AI memory updated');
+    } catch (error) {
+      toast.error('Could not save AI memory.');
+    } finally {
+      setIsSavingAiProfile(false);
+    }
+  };
+
+  const handleRefreshAiMemory = async () => {
+    if (isRefreshingAiProfile) return;
+
+    setIsRefreshingAiProfile(true);
+    toast.loading('Refreshing AI memory...', { id: 'ai-memory-refresh' });
+    try {
+      const response = await fetch('/api/ai/profile/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Could not refresh AI memory');
+      }
+
+      setAiProfile(mergeAiProfile(payload.aiProfile));
+      toast.success('AI memory refreshed', { id: 'ai-memory-refresh' });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not refresh AI memory.', { id: 'ai-memory-refresh' });
+    } finally {
+      setIsRefreshingAiProfile(false);
     }
   };
 
@@ -623,6 +712,161 @@ export default function SettingsClient() {
                     onChange={(checked) => updatePreference('learning', 'suggestions', checked)}
                   />
                 </div>
+              </SettingsSection>
+
+              <SettingsSection
+                id="ai-memory"
+                icon={<Lightbulb size={24} weight="duotone" />}
+                title="AI Memory"
+                description="Fine-tune how EduNook AI remembers and talks to you."
+              >
+                <form onSubmit={handleSaveAiProfile} className="space-y-5">
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <Field label="Preferred name" htmlFor="settings-ai-preferred-name" hint="How the AI should address you.">
+                      <input
+                        id="settings-ai-preferred-name"
+                        type="text"
+                        value={aiProfile.preferredName || ''}
+                        onChange={(event) => setAiProfile((current) => ({ ...current, preferredName: event.target.value }))}
+                        className="settings-input"
+                        placeholder="Optional nickname"
+                      />
+                    </Field>
+                    <Field label="Preferred language" htmlFor="settings-ai-language" hint="Used as a default when your chat language is unclear.">
+                      <input
+                        id="settings-ai-language"
+                        type="text"
+                        value={aiProfile.preferredLanguage || ''}
+                        onChange={(event) => setAiProfile((current) => ({ ...current, preferredLanguage: event.target.value }))}
+                        className="settings-input"
+                        placeholder="English, Hindi, Urdu..."
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                    <Field label="Reply length" htmlFor="settings-ai-style">
+                      <select
+                        id="settings-ai-style"
+                        value={aiProfile.chatStyle || 'balanced'}
+                        onChange={(event) => setAiProfile((current) => ({ ...current, chatStyle: event.target.value as AiProfileSettings['chatStyle'] }))}
+                        className="settings-input"
+                      >
+                        <option value="short">Short</option>
+                        <option value="balanced">Balanced</option>
+                        <option value="detailed">Detailed</option>
+                      </select>
+                    </Field>
+                    <Field label="Tone" htmlFor="settings-ai-tone">
+                      <select
+                        id="settings-ai-tone"
+                        value={aiProfile.tone || 'calm'}
+                        onChange={(event) => setAiProfile((current) => ({ ...current, tone: event.target.value as AiProfileSettings['tone'] }))}
+                        className="settings-input"
+                      >
+                        <option value="calm">Calm</option>
+                        <option value="casual">Casual</option>
+                        <option value="playful">Playful</option>
+                        <option value="formal">Formal</option>
+                      </select>
+                    </Field>
+                    <Field label="Vibe" htmlFor="settings-ai-vibe">
+                      <select
+                        id="settings-ai-vibe"
+                        value={aiProfile.vibe || 'cool'}
+                        onChange={(event) => setAiProfile((current) => ({ ...current, vibe: event.target.value as AiProfileSettings['vibe'] }))}
+                        className="settings-input"
+                      >
+                        <option value="cool">Cool</option>
+                        <option value="aesthetic">Aesthetic</option>
+                        <option value="dark">Dark</option>
+                        <option value="bright">Bright</option>
+                        <option value="minimal">Minimal</option>
+                      </select>
+                    </Field>
+                    <Field label="Emoji style" htmlFor="settings-ai-emoji">
+                      <select
+                        id="settings-ai-emoji"
+                        value={aiProfile.emojiStyle || 'low'}
+                        onChange={(event) => setAiProfile((current) => ({ ...current, emojiStyle: event.target.value as AiProfileSettings['emojiStyle'] }))}
+                        className="settings-input"
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </Field>
+                    <Field label="Response energy" htmlFor="settings-ai-energy">
+                      <select
+                        id="settings-ai-energy"
+                        value={aiProfile.responseEnergy || 'medium'}
+                        onChange={(event) => setAiProfile((current) => ({ ...current, responseEnergy: event.target.value as AiProfileSettings['responseEnergy'] }))}
+                        className="settings-input"
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </Field>
+                    <Field label="Favorite topics" htmlFor="settings-ai-topics" hint="Comma separated.">
+                      <input
+                        id="settings-ai-topics"
+                        type="text"
+                        value={(aiProfile.favoriteTopics || []).join(', ')}
+                        onChange={(event) =>
+                          setAiProfile((current) => ({
+                            ...current,
+                            favoriteTopics: event.target.value.split(',').map((topic) => topic.trim()).filter(Boolean),
+                          }))
+                        }
+                        className="settings-input"
+                        placeholder="coding, design, study"
+                      />
+                    </Field>
+                  </div>
+
+                  <Field label="AI memory summary" htmlFor="settings-ai-summary" hint="Editable long-term summary the AI can use in chat.">
+                    <textarea
+                      id="settings-ai-summary"
+                      value={aiProfile.summary || ''}
+                      onChange={(event) => setAiProfile((current) => ({ ...current, summary: event.target.value }))}
+                      className="settings-input min-h-32 resize-y"
+                      placeholder="Example: Usually prefers short replies in English, likes coding and aesthetic UI..."
+                    />
+                  </Field>
+
+                  <Field label="Manual notes for the AI" htmlFor="settings-ai-manual-notes" hint="Private notes that shape how the AI responds.">
+                    <textarea
+                      id="settings-ai-manual-notes"
+                      value={aiProfile.manualNotes || ''}
+                      onChange={(event) => setAiProfile((current) => ({ ...current, manualNotes: event.target.value }))}
+                      className="settings-input min-h-32 resize-y"
+                      placeholder="Example: Talk casually, avoid overexplaining, mirror mixed Hindi-English."
+                    />
+                  </Field>
+
+                  <div className="rounded-2xl border border-border bg-background/60 p-4 text-sm leading-6 text-muted-foreground">
+                    EduNook AI updates this memory automatically from chat patterns, and you can override it here any time.
+                  </div>
+
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <button
+                      type="submit"
+                      disabled={isSavingAiProfile}
+                      className="min-h-12 rounded-2xl bg-primary px-6 py-3 text-sm font-black text-primary-foreground shadow-xl shadow-primary/20 transition hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isSavingAiProfile ? 'Saving...' : 'Save AI memory'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRefreshAiMemory}
+                      disabled={isRefreshingAiProfile}
+                      className="min-h-12 rounded-2xl border border-border bg-background/60 px-6 py-3 text-sm font-black text-foreground transition hover:border-primary/30 hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isRefreshingAiProfile ? 'Refreshing...' : 'Refresh from past chats'}
+                    </button>
+                  </div>
+                </form>
               </SettingsSection>
 
               <SettingsSection
