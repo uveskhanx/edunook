@@ -190,10 +190,12 @@
     "stories": {
       ".read": "auth != null",
       "$userId": {
-        ".write": "auth != null && auth.uid === $userId",
-        "viewers": {
-          "$viewerId": {
-            ".write": "auth != null && auth.uid === $viewerId"
+        "$storyId": {
+          ".write": "auth != null && auth.uid === $userId",
+          "viewers": {
+            "$viewerId": {
+              ".write": "auth != null && auth.uid === $viewerId"
+            }
           }
         }
       }

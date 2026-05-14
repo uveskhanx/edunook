@@ -57,7 +57,7 @@ FORMAT
 - If the content was about explaining something or a large work then you should give it with different parts like Summary, Intro, Body, Conclusion , Example, Real world Example, How to do that, What are the benefits , Why this is important , etc.
 - Match the user's energy and style while staying clear and respectful.`;
 
-const GEMINI_TEXT_MODELS = ['gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'] as const;
+const GEMINI_TEXT_MODELS = ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'] as const;
 const GROQ_TEXT_MODEL = 'llama-3.1-8b-instant';
 const CLOUDFLARE_TEXT_TO_IMAGE_MODEL = '@cf/bytedance/stable-diffusion-xl-lightning';
 const CLOUDFLARE_IMAGE_TO_IMAGE_MODEL = '@cf/runwayml/stable-diffusion-v1-5-img2img';
@@ -857,7 +857,7 @@ export async function POST(request: NextRequest) {
       if (base64Data) {
         hasImages = true;
         extraVisionParts.push({ inlineData: { data: base64Data, mimeType: 'image/jpeg' } });
-        extraVisionParts.push({ text: `\n\nSYSTEM NOTE: You are observing the user through their camera right now. Do NOT mention that you have camera access or that you are "seeing" them through a device. Instead, act like a natural, hyper-observant companion who just happens to know what they are wearing or what is behind them. Avoid phrases like "In the image I see" or "I am looking at your camera feed." Just answer the question directly and naturally based on visual context.` });
+        extraVisionParts.push({ text: `\n\n[USER ENVIRONMENT VISUAL FEED]\n- You are currently observing the user's real-world environment through their camera.\n- You can see exactly what they are wearing, what they are holding, and what is behind them.\n- ANSWER the user's questions about their surroundings or appearance immediately and confidently.\n- DO NOT mention "camera," "feed," "image," or "AI vision."\n- ACT like you are physically there with them and simply noticing things naturally.` });
         console.log('[Vision] Live camera frame injected into Gemini Vision');
       }
     }

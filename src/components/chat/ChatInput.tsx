@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { File as FileIcon, Image as ImageIcon, Loader2, Mic, MicOff, Paperclip, Send, Smile, X } from 'lucide-react';
+import { File as FileIcon, Ghost, Image as ImageIcon, Loader2, Mic, MicOff, Paperclip, Send, Smile, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
 
@@ -71,6 +71,7 @@ interface ChatInputProps {
   enableVoiceForAi?: boolean;
   voiceAssistantSpeaking?: boolean;
   onVoiceModeChange?: (enabled: boolean) => void;
+  vanishMode?: boolean;
 }
 
 const EMOJIS = ['😊', '😂', '🔥', '👍', '❤️', '🙌', '🎉', '💡', '💯', '🚀', '✨', '👏', '🤔', '😎', '🎓', '📚'];
@@ -82,7 +83,8 @@ export function ChatInput({
   onUploadMedia,
   enableVoiceForAi = false,
   voiceAssistantSpeaking = false,
-  onVoiceModeChange
+  onVoiceModeChange,
+  vanishMode
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
@@ -525,7 +527,7 @@ export function ChatInput({
 
       <form
         onSubmit={handleSubmit}
-        className="p-1.5 bg-card/90 backdrop-blur-3xl border border-border rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center gap-1 group transition-all focus-within:border-primary/30"
+        className={`p-1.5 backdrop-blur-3xl border rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center gap-1 group transition-all ${vanishMode ? 'bg-primary/5 border-primary/20 focus-within:border-primary/50' : 'bg-card/90 border-border focus-within:border-primary/30'}`}
       >
         <div className="flex items-center">
           <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
@@ -580,10 +582,10 @@ export function ChatInput({
             animate={{ scale: 1, opacity: 1 }}
             type="submit"
             disabled={sending || isUploading || !canSend}
-            className="p-3 md:p-3.5 bg-primary text-white rounded-full hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(59,130,246,0.4)] disabled:opacity-30 disabled:grayscale flex items-center justify-center flex-shrink-0"
+            className={`p-3 md:p-3.5 rounded-full hover:scale-105 active:scale-95 transition-all shadow-xl disabled:opacity-30 disabled:grayscale flex items-center justify-center flex-shrink-0 ${vanishMode ? 'bg-primary text-white shadow-primary/20' : 'bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.4)]'}`}
             aria-label="Send message"
           >
-            {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 fill-white/10" />}
+            {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : vanishMode ? <Ghost className="w-5 h-5 fill-white/10" /> : <Send className="w-5 h-5 fill-white/10" />}
           </motion.button>
         </div>
       </form>

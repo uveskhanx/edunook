@@ -111,6 +111,7 @@ export interface Message {
   mediaType?: 'image' | 'video' | 'file';
   createdAt: string;
   seen?: boolean;
+  isTemporary?: boolean;
 }
 
 export interface Video {
@@ -387,18 +388,16 @@ export const DbService = {
     });
   },
 
-  subscribeToPresence(userId: string, callback: (presence: Presence | null) => void) {
-    return onValue(ref(db, `presence/${userId}`), (snapshot) => callback(snapshot.exists() ? snapshot.val() : null));
-  },
 
   subscribeToTyping(chatId: string, callback: (typing: Record<string, boolean>) => void) {
     return onValue(ref(db, `chats/${chatId}/typing`), (snapshot) => callback(snapshot.exists() ? snapshot.val() : {}));
   },
 
-  async getChatMetadata(chatId: string): Promise<{ users: Record<string, boolean>; lastMessage?: string; updatedAt?: string } | null> {
+  async getChatMetadata(chatId: string): Promise<{ users: Record<string, boolean>; lastMessage?: string; updatedAt?: string; vanishMode?: boolean } | null> {
     const snapshot = await get(ref(db, `chats/${chatId}`));
     return snapshot.exists() ? snapshot.val() : null;
   },
+
 
   // Helpers
   async ensureUsernameMapLoaded(): Promise<Record<string, string>> {
@@ -1170,7 +1169,7 @@ export const DbService = {
             return profile ? { 
               ...profile, 
               chatId: id, 
-              lastMessage: chat.lastMessage, 
+              lastMessage: chat.vanishMode ? 'Vanish Mode Active' : chat.lastMessage, 
               updatedAt: chat.updatedAt,
               lastSenderId: chat.lastSenderId,
               unreadCount: chat.unreadCounts?.[userId] || 0,
@@ -1314,6 +1313,10 @@ export const DbService = {
     const newMessageRef = push(messagesRef);
     const now = new Date().toISOString();
 
+    const chatRef = ref(db, `chats/${chatId}`);
+    const chatSnap = await get(chatRef);
+    const isVanishMode = chatSnap.exists() && chatSnap.val().vanishMode === true;
+
     await set(newMessageRef, {
       id: newMessageRef.key,
       senderId,
@@ -1321,7 +1324,8 @@ export const DbService = {
       mediaUrl: media?.url || null,
       mediaType: media?.type || null,
       createdAt: now,
-      seen: false
+      seen: false,
+      isTemporary: isVanishMode
     });
 
     const participants = chatId.split('_');
@@ -1329,7 +1333,7 @@ export const DbService = {
 
     // 2. Update chat metadata and increment unread for receiver
     const updates: Record<string, any> = {};
-    updates[`chats/${chatId}/lastMessage`] = text || (media?.type === 'image' ? 'Sent an image' : 'Sent a file');
+    updates[`chats/${chatId}/lastMessage`] = isVanishMode ? 'Vanish Message' : (text || (media?.type === 'image' ? 'Sent an image' : 'Sent a file'));
     updates[`chats/${chatId}/updatedAt`] = now;
     updates[`chats/${chatId}/lastSenderId`] = senderId;
     
@@ -1436,10 +1440,8 @@ export const DbService = {
    */
   async runGarbageCollector(userId: string): Promise<void> {
     try {
-      // Get the user's own chat references first
       const userChatsRef = ref(db, `user_chats/${userId}`);
       const snapshot = await get(userChatsRef);
-      
       if (!snapshot.exists()) return;
       
       const userChatIds = Object.keys(snapshot.val());
@@ -1449,32 +1451,147 @@ export const DbService = {
         try {
           const chatRef = ref(db, `chats/${chatId}`);
           const chatSnap = await get(chatRef);
-          
           if (!chatSnap.exists()) continue;
+          
           const chat = chatSnap.val();
           
+          // 1. Purging logic (10-day window)
           if (chat.status === 'purging' && chat.pendingPurgeAt && new Date(chat.pendingPurgeAt) <= now) {
-
-            
-            // 1. Remove messages (if permission allowed)
             await remove(ref(db, `messages/${chatId}`)).catch(() => null);
-            
-            // 2. Remove references for this specific user
             await remove(ref(db, `user_chats/${userId}/${chatId}`)).catch(() => null);
             await remove(ref(db, `user_settings/${userId}/deletedChats/${chatId}`)).catch(() => null);
             await remove(ref(db, `user_settings/${userId}/deletedMessages/${chatId}`)).catch(() => null);
-
-            // 3. Attempt to remove the main chat node (will only succeed if rules allow or if other user also purged)
             await remove(ref(db, `chats/${chatId}`)).catch(() => null);
+            continue;
+          }
+
+          // 2. Vanish Mode Cleanup: If everyone is offline and vanish mode was active
+          if (chat.vanishMode === true) {
+            const presenceSnap = await get(ref(db, `chats/${chatId}/presence`));
+            const presenceData = presenceSnap.val() || {};
+            const isUserPresent = presenceData[userId] === true;
+
+            if (!isUserPresent) {
+              // User is NOT in this chat. Mark all current temporary messages as deleted for THIS user.
+              const messagesSnap = await get(ref(db, `messages/${chatId}`));
+              if (messagesSnap.exists()) {
+                const messages = messagesSnap.val();
+                const sessionUpdates: Record<string, any> = {};
+                let hasSessionUpdates = false;
+                Object.keys(messages).forEach(msgId => {
+                  if (messages[msgId].isTemporary === true) {
+                    sessionUpdates[`user_settings/${userId}/deletedMessages/${chatId}/${msgId}`] = true;
+                    hasSessionUpdates = true;
+                  }
+                });
+                if (hasSessionUpdates) {
+                  await update(ref(db), sessionUpdates);
+                }
+              }
+            }
+
+            const anyoneInChat = Object.values(presenceData).some(v => v === true);
+            if (!anyoneInChat) {
+              const participants = chatId.split('_');
+              let anyoneOnlineGlobally = false;
+              for (const pId of participants) {
+                const pSnap = await get(ref(db, `presence/${pId}`));
+                if (pSnap.exists() && pSnap.val().status === 'online') {
+                  anyoneOnlineGlobally = true;
+                  break;
+                }
+              }
+
+              if (!anyoneOnlineGlobally) {
+                await this.cleanupVanishMessages(chatId);
+              }
+            }
           }
         } catch (err) {
-          // Individual chat failure shouldn't stop the loop
           continue;
         }
       }
     } catch (err) {
       console.warn("[GC] User-level cleanup cycle interrupted:", err);
     }
+  },
+
+  async cleanupVanishMessages(chatId: string): Promise<void> {
+    const messagesRef = ref(db, `messages/${chatId}`);
+    const snapshot = await get(messagesRef);
+    if (!snapshot.exists()) return;
+
+    const data = snapshot.val();
+    const updates: Record<string, any> = {};
+    let count = 0;
+
+    Object.keys(data).forEach(msgId => {
+      if (data[msgId].isTemporary === true) {
+        updates[`messages/${chatId}/${msgId}`] = null;
+        count++;
+      }
+    });
+
+    if (count > 0) {
+      await update(ref(db), updates);
+    }
+  },
+
+  async toggleVanishMode(chatId: string, enabled: boolean): Promise<void> {
+    const chatRef = ref(db, `chats/${chatId}`);
+    await update(chatRef, { vanishMode: enabled });
+  },
+
+  subscribeToVanishMode(chatId: string, callback: (enabled: boolean) => void) {
+    const vanishRef = ref(db, `chats/${chatId}/vanishMode`);
+    return onValue(vanishRef, (snap) => {
+      callback(snap.val() === true);
+    });
+  },
+
+  async updateChatPresence(chatId: string, userId: string, isPresent: boolean) {
+    const presenceRef = ref(db, `chats/${chatId}/presence/${userId}`);
+    await set(presenceRef, isPresent);
+    
+    if (isPresent) {
+      // Mark as present and setup disconnect cleanup
+      onDisconnect(presenceRef).set(false).then(() => {
+        this.runGarbageCollector(userId);
+      });
+    } else {
+      // User is leaving the chat. Clean up seen vanish messages for THIS user.
+      const messagesRef = ref(db, `messages/${chatId}`);
+      const snapshot = await get(messagesRef);
+      if (snapshot.exists()) {
+        const messages = snapshot.val();
+        const updates: Record<string, any> = {};
+        let hasVanishUpdates = false;
+
+        Object.keys(messages).forEach(msgId => {
+          const msg = messages[msgId];
+          // If it's a temporary message and I am NOT the sender (or even if I am, per user's "we have already seen" request)
+          // Actually, "seen" messages should be removed for the user who saw them.
+          if (msg.isTemporary === true) {
+             // If I'm the sender, I've 'seen' it by sending it. If I'm recipient, I've seen it if 'seen' is true.
+             // But simpler: if I'm leaving the chat, I've seen everything currently in the list.
+             updates[`user_settings/${userId}/deletedMessages/${chatId}/${msgId}`] = true;
+             hasVanishUpdates = true;
+          }
+        });
+
+        if (hasVanishUpdates) {
+          await update(ref(db), updates);
+        }
+      }
+      this.runGarbageCollector(userId);
+    }
+  },
+
+  subscribeToPresence(userId: string, callback: (presence: any) => void) {
+    const presenceRef = ref(db, `presence/${userId}`);
+    return onValue(presenceRef, (snap) => {
+      callback(snap.val());
+    });
   },
 
   async markAsRead(chatId: string, userId: string): Promise<void> {

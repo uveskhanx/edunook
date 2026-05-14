@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, ShieldCheck, MoreHorizontal, Trash2, X, Star, Zap, Diamond, Sparkles, Download, RotateCcw, Maximize2, Loader2 } from 'lucide-react';
+import { MessageSquare, ShieldCheck, MoreHorizontal, Trash2, X, Star, Zap, Diamond, Sparkles, Download, RotateCcw, Maximize2, Loader2, Ghost } from 'lucide-react';
 import { format } from 'date-fns';
 import { Message, Profile, DbService } from '@/lib/db-service';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -14,6 +14,7 @@ interface MessageListProps {
   typingUsers: Record<string, boolean>;
   chatId: string;
   aiLoadingState?: string | null;
+  vanishMode?: boolean;
 }
 
 export function MessageList({
@@ -22,7 +23,8 @@ export function MessageList({
   recipientProfile,
   typingUsers,
   chatId,
-  aiLoadingState
+  aiLoadingState,
+  vanishMode
 }: MessageListProps) {
   const [viewerImage, setViewerImage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -53,7 +55,23 @@ export function MessageList({
   };
 
   return (
-    <div className={`flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 scrollbar-hide min-h-0 ${isAIChat ? 'bg-[#020205] space-y-6' : 'bg-background space-y-4'}`}>
+    <div className={`flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 scrollbar-hide min-h-0 transition-all duration-700 ${vanishMode ? 'bg-black/20' : isAIChat ? 'bg-[#020205] space-y-6' : 'bg-background space-y-4'}`}>
+      
+      {vanishMode && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-4xl mx-auto mb-8 p-6 rounded-[2rem] border border-primary/20 bg-primary/5 backdrop-blur-xl flex flex-col items-center text-center gap-3"
+        >
+           <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <Ghost className="w-6 h-6 text-primary animate-pulse" />
+           </div>
+           <div>
+              <h3 className="text-sm font-black text-white uppercase tracking-widest italic">Vanish Mode Active</h3>
+              <p className="text-[10px] text-white/40 font-bold uppercase tracking-tight mt-1">Seen messages will disappear when you close the chat</p>
+           </div>
+        </motion.div>
+      )}
       
       {isAIChat && (
         <style dangerouslySetInnerHTML={{ __html: `

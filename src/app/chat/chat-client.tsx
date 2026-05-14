@@ -9,7 +9,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { Layout } from '@/components/Layout';
 import { 
   User as UserIcon, Loader2, MessageSquare, ArrowLeft, 
-  MoreVertical, Info, ShieldCheck, Search, X, Trash2, Settings, MoreHorizontal, ShieldAlert, Eye, EyeOff, SwitchCamera
+  MoreVertical, Info, ShieldCheck, Search, X, Trash2, Settings, MoreHorizontal, ShieldAlert, Eye, EyeOff, SwitchCamera, Ghost
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -43,6 +43,7 @@ export default function ChatClient() {
   const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
   const [voiceAssistantSpeaking, setVoiceAssistantSpeaking] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number, address?: string} | null>(null);
+  const [vanishMode, setVanishMode] = useState(false);
   
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user');
@@ -87,6 +88,14 @@ export default function ChatClient() {
     fetchIpLocation();
 
     if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      if (navigator.permissions) {
+        navigator.permissions.query({ name: 'geolocation' }).then(result => {
+          if (result.state === 'denied') {
+            toast.warning("Hardware GPS is blocked! Click the lock icon in your URL bar to allow location access for exact coordinates.", { duration: 8000 });
+          }
+        }).catch(() => {});
+      }
+
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           hasHighAccuracy = true;
@@ -209,10 +218,17 @@ export default function ChatClient() {
         unsubs.push(DbService.subscribeToMessages(activeChat.chatId, user.id, setMessages));
         unsubs.push(DbService.subscribeToTyping(activeChat.chatId, setTypingUsers));
         unsubs.push(DbService.subscribeToPresence(activeChat.profile.uid, setRecipientPresence));
+        unsubs.push(DbService.subscribeToVanishMode(activeChat.chatId, setVanishMode));
+        DbService.updateChatPresence(activeChat.chatId, user.id, true);
       };
 
       setupSubs();
-      return () => unsubs.forEach(u => u());
+      return () => {
+        unsubs.forEach(u => u());
+        if (activeChat && user) {
+          DbService.updateChatPresence(activeChat.chatId, user.id, false);
+        }
+      };
     }
   }, [activeChat, user, router]);
 
@@ -228,7 +244,10 @@ export default function ChatClient() {
 
   const captureFrame = useCallback((): string | null => {
     const video = cameraVideoRef.current;
-    if (!video || !cameraActive || video.readyState < 2) return null;
+    if (!video || !cameraActive || video.readyState < 2) {
+      console.warn('[Camera] Capture skipped:', { video: !!video, cameraActive, readyState: video?.readyState });
+      return null;
+    }
     try {
       const canvas = document.createElement('canvas');
       canvas.width = video.videoWidth || 640;
@@ -236,13 +255,20 @@ export default function ChatClient() {
       const ctx = canvas.getContext('2d');
       if (!ctx) return null;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL('image/jpeg', 0.6);
-    } catch {
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+      console.log('[Camera] Frame captured, length:', dataUrl.length);
+      return dataUrl;
+    } catch (err) {
+      console.error('[Camera] Capture failed:', err);
       return null;
     }
   }, [cameraActive]);
 
   const startCamera = useCallback(async (facing: 'user' | 'environment' = 'user') => {
+    if (!window.isSecureContext) {
+      toast.error('Camera requires a secure (HTTPS) connection. Please check your URL.');
+      return;
+    }
     try {
       if (cameraStreamRef.current) {
         cameraStreamRef.current.getTracks().forEach(t => t.stop());
@@ -258,9 +284,17 @@ export default function ChatClient() {
       }
       setCameraActive(true);
       setCameraFacing(facing);
-    } catch (err) {
+      console.log('[Camera] Started successfully');
+    } catch (err: any) {
       console.error('Camera access failed:', err);
-      toast.error('Camera access was denied. Please allow camera access in your browser settings.');
+      const errName = err.name || 'UnknownError';
+      if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+        toast.error(`Camera is blocked! 1. Click the lock icon in your URL bar and set Camera to "Allow". 2. If on mobile, check your PHONE SETTINGS > APPS > CHROME > PERMISSIONS and allow Camera there.`, { duration: 10000 });
+      } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+        toast.error('No camera found on this device.');
+      } else {
+        toast.error(`Could not start camera: ${errName} - ${err.message}`);
+      }
     }
   }, []);
 
@@ -433,7 +467,13 @@ export default function ChatClient() {
         />
 
         {/* Main Viewbox Layer */}
-        <main className={`flex-1 flex flex-col relative min-h-0 min-w-0 ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
+        <main className={`flex-1 flex flex-col relative min-h-0 min-w-0 transition-all duration-700 ${vanishMode ? 'bg-black' : 'bg-background'} ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
+          {vanishMode && (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+               <div className="absolute top-0 left-1/4 w-full h-full bg-primary/5 blur-[120px] rounded-full animate-pulse" />
+               <div className="absolute bottom-0 right-1/4 w-full h-full bg-purple-500/5 blur-[120px] rounded-full animate-pulse delay-700" />
+            </div>
+          )}
           {/* Hidden video element for camera capture */}
           <video ref={cameraVideoRef} playsInline muted autoPlay style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', zIndex: -1 }} />
           {/* Mini camera preview */}
@@ -453,7 +493,7 @@ export default function ChatClient() {
           {activeChat ? (
             <>
               {/* Premium Header */}
-              <header className="p-4 md:p-7 flex items-center justify-between chat-glass border-b border-border z-20 transition-all">
+              <header className={`p-4 md:p-7 flex items-center justify-between border-b z-20 transition-all duration-500 ${vanishMode ? 'bg-black/40 border-white/5 backdrop-blur-2xl' : 'chat-glass border-border'}`}>
                 <div className="flex items-center gap-2 md:gap-5 min-w-0">
                   <button onClick={() => router.push('/chat')} className="md:hidden p-2.5 bg-foreground/5 rounded-2xl border border-border hover:bg-foreground/10 transition-all shrink-0">
                     <ArrowLeft className="w-5 h-5 text-foreground" />
@@ -492,6 +532,26 @@ export default function ChatClient() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                   {activeChat.profile.uid === 'edunook-ai' && (
+                    <>
+                      <button 
+                        onClick={toggleCamera}
+                        title={cameraActive ? 'Disable AI Vision' : 'Enable AI Vision'}
+                        className={`p-3 rounded-2xl border transition-all ${cameraActive ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-500/30 animate-pulse' : 'bg-foreground/5 text-foreground/40 border-border hover:text-foreground'}`}
+                      >
+                        {cameraActive ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                      {cameraActive && (
+                        <button 
+                          onClick={flipCamera}
+                          title="Switch Camera"
+                          className="p-3 rounded-2xl border bg-foreground/5 text-foreground/40 border-border hover:text-foreground transition-all"
+                        >
+                          <SwitchCamera className="w-5 h-5" />
+                        </button>
+                      )}
+                    </>
+                   )}
                    <button 
                      onClick={() => setChatSearchOpen(!chatSearchOpen)}
                      className={`p-3 rounded-2xl border transition-all ${chatSearchOpen ? 'bg-primary text-white border-primary shadow-lg' : 'bg-foreground/5 text-foreground/40 border-border hover:text-foreground'}`}
@@ -506,6 +566,18 @@ export default function ChatClient() {
                        </button>
                      </DropdownMenuTrigger>
                      <DropdownMenuContent align="end" side="bottom" sideOffset={12} className="w-56 bg-popover/90 border-border backdrop-blur-3xl rounded-2xl p-2 shadow-2xl z-[100]">
+                       <DropdownMenuItem 
+                         onClick={() => {
+                             DbService.toggleVanishMode(activeChat.chatId, !vanishMode);
+                             if (!vanishMode) {
+                               toast.info("Vanish Mode Activated. Messages will disappear when you leave.", { icon: <Ghost className="w-4 h-4" /> });
+                             }
+                         }}
+                         className={`cursor-pointer font-bold rounded-xl py-3 px-4 flex items-center justify-between ${vanishMode ? 'text-primary focus:bg-primary/10' : 'text-foreground/60 focus:bg-foreground/10'}`}
+                       >
+                         Vanish Mode
+                         <Ghost className={`w-4 h-4 ${vanishMode ? 'animate-pulse text-primary' : 'opacity-40'}`} />
+                       </DropdownMenuItem>
                        <DropdownMenuItem 
                          onClick={() => {
                             if (window.confirm("Clear all messages in this conversation? This action is irreversible.")) {
@@ -566,6 +638,7 @@ export default function ChatClient() {
                 recipientProfile={activeChat.profile}
                 chatId={activeChat.chatId}
                 aiLoadingState={aiLoadingState}
+                vanishMode={vanishMode}
               />
 
               {/* Input Terminal */}
@@ -577,6 +650,7 @@ export default function ChatClient() {
                 enableVoiceForAi={activeChat.profile.uid === 'edunook-ai'}
                 voiceAssistantSpeaking={voiceAssistantSpeaking}
                 onVoiceModeChange={setVoiceModeEnabled}
+                vanishMode={vanishMode}
               />
             </>
           ) : (
@@ -692,4 +766,3 @@ export default function ChatClient() {
     </Layout>
   );
 }
-
