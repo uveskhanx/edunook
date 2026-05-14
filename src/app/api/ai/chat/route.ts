@@ -849,7 +849,7 @@ export async function POST(request: NextRequest) {
     const urls = text?.match(urlRegex);
     const isAskingAboutProfilePhoto = /\b(my|profile|avatar)\b.*\b(photo|picture|image|look like|who am i)\b/i.test(text || '');
     const needsSearch = /\b(search|find|latest|news|who is|what is the price of|today|current)\b/i.test(text || '') && !hasImages && !(urls && urls.length > 0);
-    let extraVisionParts: any[] = [];
+    const extraVisionParts: any[] = [];
 
     // --- LIVE CAMERA FRAME: Inject camera feed into Gemini Vision ---
     if (liveFrame && typeof liveFrame === 'string' && liveFrame.startsWith('data:image/')) {
@@ -921,7 +921,7 @@ export async function POST(request: NextRequest) {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
     // Initialize contents for Gemini
-    let contents = rawHistory
+    const contents = rawHistory
       .map((message) => ({
         role: message.role === 'assistant' ? 'model' : 'user',
         parts: [

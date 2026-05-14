@@ -238,7 +238,7 @@ export function StoryViewer({ stories, user, isOwnStory, onClose, onComplete, on
                   <img src={currentStory.mediaUrl} className="absolute inset-0 w-full h-full object-cover" style={{ filter: cssFilter }} alt="Story" />
                 ) : (
                   <video src={currentStory.mediaUrl} className="absolute inset-0 w-full h-full object-cover" style={{ filter: cssFilter }} autoPlay playsInline loop onEnded={handleNext}
-                    ref={(el) => { if (el) { isPaused ? el.pause() : el.play().catch(() => {}); } }}
+                    ref={(el) => { if (el) { if (isPaused) { el.pause(); } else { el.play().catch(() => {}); } } }}
                   />
                 )}
               </div>
