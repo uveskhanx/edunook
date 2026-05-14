@@ -42,6 +42,58 @@ interface QuizDraft {
   resultAnnounceAt: string;
 }
 
+// Helper function to parse bulk questions
+function parseBulkQuestions(text: string): QuestionDraft[] {
+  const questions: QuestionDraft[] = [];
+  // Split by question numbers that are at the start of a line
+  const questionBlocks = text.split(/(?:\n|^)\s*\d+[.)]\s+/).filter(block => block.trim().length > 0);
+
+  questionBlocks.forEach(block => {
+    const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length < 2) return;
+
+    let questionText = "";
+    const options: string[] = [];
+    let correctAnswer = 0;
+    let foundOptions = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Check if it's an option (A, B, C, D)
+      const optionMatch = line.match(/^[A-D][.)]\s+(.*)/i);
+      const answerMatch = line.match(/^Answer:\s*([A-D])/i);
+
+      if (optionMatch) {
+        foundOptions = true;
+        if (options.length < 4) {
+          options.push(optionMatch[1].trim());
+        }
+      } else if (answerMatch) {
+        const letter = answerMatch[1].toUpperCase();
+        correctAnswer = letter.charCodeAt(0) - 65;
+      } else if (!foundOptions) {
+        // Still reading the question text
+        questionText += (questionText ? " " : "") + line;
+      }
+    }
+
+    // Pad options if needed
+    while (options.length < 4) options.push('');
+
+    if (questionText && options.some(o => o.length > 0)) {
+      questions.push({
+        questionText,
+        options: options as [string, string, string, string],
+        correctAnswer,
+        hint: ''
+      });
+    }
+  });
+
+  return questions;
+}
+
 export default function TestsClient() {
   const { user, dbUser } = useAuth();
   const router = useRouter();
@@ -309,6 +361,8 @@ function CinematicQuizCreator({ isOpen, onClose }: { isOpen: boolean; onClose: (
   const { user, dbUser } = useAuth();
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const [showBulkMode, setShowBulkMode] = useState(false);
+  const [bulkText, setBulkText] = useState('');
   const [quizData, setQuizData] = useState<QuizDraft>({
     title: '',
     description: '',
@@ -326,6 +380,22 @@ function CinematicQuizCreator({ isOpen, onClose }: { isOpen: boolean; onClose: (
     correctAnswer: 0,
     hint: ''
   });
+
+  const handleBulkAdd = () => {
+    if (!bulkText.trim()) {
+      toast.error('Please paste your questions first!');
+      return;
+    }
+    const parsed = parseBulkQuestions(bulkText);
+    if (parsed.length === 0) {
+      toast.error('Could not find any valid questions. Please check the format.');
+      return;
+    }
+    setQuizData({ ...quizData, questions: [...quizData.questions, ...parsed] });
+    setBulkText('');
+    setShowBulkMode(false);
+    toast.success(`Successfully added ${parsed.length} questions!`);
+  };
 
   const addQuestion = () => {
     if (!currentQ.questionText.trim()) {
@@ -598,7 +668,17 @@ function CinematicQuizCreator({ isOpen, onClose }: { isOpen: boolean; onClose: (
                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16">
                     {/* List */}
                     <div className="space-y-6">
-                       <Label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-2">Syllabus Modules ({quizData.questions.length})</Label>
+                       <div className="flex items-center justify-between ml-2">
+                          <Label className="text-[10px] font-black uppercase tracking-widest text-white/30">Syllabus Modules ({quizData.questions.length})</Label>
+                          <button 
+                            onClick={() => setShowBulkMode(!showBulkMode)}
+                            className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                              showBulkMode ? 'bg-primary text-white' : 'bg-white/5 text-white/40 hover:bg-white/10'
+                            }`}
+                          >
+                            {showBulkMode ? 'Switch to Manual' : 'Bulk Paste'}
+                          </button>
+                       </div>
                        <div className="space-y-4 max-h-[400px] md:max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                           {quizData.questions.length > 0 ? (
                             quizData.questions.map((q, i) => (
@@ -620,8 +700,39 @@ function CinematicQuizCreator({ isOpen, onClose }: { isOpen: boolean; onClose: (
                        </div>
                     </div>
 
-                    {/* Editor */}
-                    <div className="space-y-8 p-10 bg-white/[0.02] border border-white/10 rounded-[3rem]">
+                    {/* Editor / Bulk Input */}
+                    {showBulkMode ? (
+                      <div className="space-y-8 p-10 bg-white/[0.02] border border-white/10 rounded-[3rem]">
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-3">
+                             <div className="p-2 bg-primary/10 rounded-lg">
+                                <ClipboardList className="w-4 h-4 text-primary" />
+                             </div>
+                             <h4 className="text-sm font-black text-white uppercase tracking-wider">Bulk Question Import</h4>
+                          </div>
+                          <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest leading-relaxed">
+                            Paste your entire quiz below (multiple questions). <br />
+                            The system will automatically detect each question, <br />
+                            its choices, and the correct answer.
+                          </p>
+                        </div>
+                        
+                        <textarea 
+                          placeholder="Paste your questions here..."
+                          value={bulkText}
+                          onChange={e => setBulkText(e.target.value)}
+                          className="w-full h-[300px] bg-white/[0.04] border border-white/10 rounded-2xl p-6 text-sm font-medium text-white placeholder:text-white/10 focus:outline-none focus:border-primary/50 transition-all resize-none custom-scrollbar"
+                        />
+
+                        <button 
+                          onClick={handleBulkAdd}
+                          className="w-full py-6 bg-primary text-white rounded-[2rem] font-black uppercase text-[10px] tracking-widest transition-all hover:scale-[1.02] active:scale-95 shadow-xl shadow-primary/20 flex items-center justify-center gap-3"
+                        >
+                           <Save className="w-5 h-5" /> Import & Add to Syllabus
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-8 p-10 bg-white/[0.02] border border-white/10 rounded-[3rem]">
                        <div className="space-y-3">
                           <Label className="text-[10px] font-black uppercase tracking-widest text-white/30 ml-2">Question Context</Label>
                           <Input 
@@ -678,13 +789,14 @@ function CinematicQuizCreator({ isOpen, onClose }: { isOpen: boolean; onClose: (
                           ))}
                        </div>
 
-                       <button 
+                        <button 
                          onClick={addQuestion}
                          className="w-full py-6 mt-4 border-2 border-primary text-primary hover:bg-primary hover:text-white rounded-[2rem] font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-3"
                        >
                           <PlusCircle className="w-5 h-5" /> Commit Module
                        </button>
                     </div>
+                   )}
                  </div>
 
                  <div className="pt-10 flex flex-col md:flex-row items-center justify-between gap-6 border-t border-white/5 pb-20">
