@@ -147,7 +147,19 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
   };
 
   return (
-    <div className="flex min-h-[100dvh] w-full bg-background text-foreground font-sans overflow-x-clip">
+    <div className="flex min-h-[100dvh] w-full bg-background text-foreground font-sans overflow-x-hidden">
+      <style jsx global>{`
+        ::-webkit-scrollbar {
+          width: 6px;
+        }
+        ::-webkit-scrollbar:horizontal {
+          height: 0px;
+          display: none;
+        }
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+      `}</style>
       {/* Desktop Sidebar (Left) */}
       {!hideNavigation && (
         <Sidebar 
@@ -163,7 +175,7 @@ export function Layout({ children, hideNavigation, hideMobileNav, hideHeader, sh
       )}
 
       {/* Main Container */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
         {/* Global Header */}
         {!hideNavigation && !hideHeader && (
           <header className="sticky top-0 z-50 h-[60px] md:h-[72px] bg-background/95 backdrop-blur-xl border-b border-border px-4 md:px-10 flex items-center justify-between gap-4 md:gap-6">

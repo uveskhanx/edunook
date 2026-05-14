@@ -43,7 +43,10 @@ export interface AiProfileSettings {
   responseEnergy?: 'low' | 'medium' | 'high' | null;
   favoriteTopics?: string[];
   summary?: string | null;
+  verifiedFacts?: string[];
   manualNotes?: string | null;
+  homeLocation?: string | null;
+  visitedLocations?: string[];
   lastUpdatedAt?: string;
 }
 
@@ -233,6 +236,18 @@ export interface Presence {
 export interface TeacherPaymentSettings {
   razorpay_account_id: string;
   updatedAt?: string;
+}
+
+export interface Story {
+  id: string;
+  userId: string;
+  mediaUrl: string;
+  mediaType: 'image' | 'video';
+  createdAt: string;
+  expiresAt: string;
+  filters?: string;
+  stickers?: string; // serialized JSON
+  viewers?: Record<string, number>;
 }
 
 let profileCache: Record<string, Profile> = {};
@@ -751,6 +766,102 @@ export const DbService = {
     const { uploadToCloudinary } = await import('./cloudinary');
     const result = await uploadToCloudinary(file, `edunook/avatars/${uid}`);
     return result.secure_url;
+  },
+
+  async uploadStoryMedia(uid: string, file: File): Promise<string> {
+    const { uploadToCloudinary } = await import('./cloudinary');
+    const result = await uploadToCloudinary(file, `edunook/stories/${uid}`);
+    return result.secure_url;
+  },
+
+  async addStory(userId: string, data: Omit<Story, 'id' | 'userId' | 'createdAt' | 'expiresAt'>): Promise<string> {
+    const storiesRef = ref(db, `stories/${userId}`);
+    const newRef = push(storiesRef);
+    const now = new Date();
+    const expires = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
+    
+    const story: Story = {
+      id: newRef.key!,
+      userId,
+      ...data,
+      createdAt: now.toISOString(),
+      expiresAt: expires.toISOString(),
+    };
+    
+    await set(newRef, story);
+    return newRef.key!;
+  },
+
+  async getStories(userIds: string[]): Promise<Record<string, Story[]>> {
+    const results: Record<string, Story[]> = {};
+    const now = new Date().toISOString();
+    
+    await Promise.all(userIds.map(async (uid) => {
+      const snap = await get(ref(db, `stories/${uid}`));
+      if (snap.exists()) {
+        const storiesData = snap.val();
+        const activeStories = Object.values(storiesData)
+          .filter((story: any) => story.expiresAt > now)
+          .map((s: any) => s as Story)
+          .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+          
+        if (activeStories.length > 0) {
+          results[uid] = activeStories;
+        }
+      }
+    }));
+    return results;
+  },
+
+  async deleteStory(userId: string, storyId: string): Promise<void> {
+    await remove(ref(db, `stories/${userId}/${storyId}`));
+  },
+
+  async markStoryViewed(authorId: string, storyId: string, viewerUid: string): Promise<void> {
+    if (authorId === viewerUid) return; // Don't track own views
+    const viewRef = ref(db, `stories/${authorId}/${storyId}/viewers/${viewerUid}`);
+    await set(viewRef, Date.now());
+  },
+
+  async getStoryViewers(authorId: string, storyId: string): Promise<{ profile: Profile, viewedAt: number }[]> {
+    const snap = await get(ref(db, `stories/${authorId}/${storyId}/viewers`));
+    if (!snap.exists()) return [];
+    
+    const viewersMap = snap.val();
+    const viewersList = await Promise.all(
+      Object.keys(viewersMap).map(async (uid) => {
+        const profile = await this.getProfile(uid);
+        return profile ? { profile, viewedAt: viewersMap[uid] } : null;
+      })
+    );
+    
+    return viewersList.filter(Boolean) as { profile: Profile, viewedAt: number }[];
+  },
+
+  async addStoryToHighlight(userId: string, highlightTitle: string, storyData: Story): Promise<void> {
+    const highlightId = this.slugify(highlightTitle);
+    
+    // First, ensure the highlight metadata exists
+    const highlightMetaRef = ref(db, `profiles/${userId}/highlights/${highlightId}`);
+    const metaSnap = await get(highlightMetaRef);
+    if (!metaSnap.exists()) {
+      await set(highlightMetaRef, {
+        id: highlightId,
+        title: highlightTitle,
+        type: 'custom',
+        coverImage: storyData.mediaUrl, // use first story as cover
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    // Then, add the story content to a dedicated subcollection or just a list of story items
+    const highlightStoriesRef = ref(db, `highlights_data/${userId}/${highlightId}`);
+    const newStoryRef = push(highlightStoriesRef);
+    await set(newStoryRef, {
+      ...storyData,
+      id: newStoryRef.key, // new ID inside the highlight
+      addedAt: new Date().toISOString()
+    });
   },
 
   // Utilities

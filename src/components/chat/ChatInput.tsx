@@ -437,7 +437,7 @@ export function ChatInput({
   };
 
   return (
-    <div className="absolute bottom-4 md:bottom-8 left-4 right-4 md:left-10 md:right-10 z-30 flex flex-col gap-3">
+    <div className="absolute bottom-4 md:bottom-8 left-4 right-4 md:left-10 md:right-10 z-30 flex flex-col gap-3 overflow-hidden">
       <AnimatePresence>
         {enableVoiceForAi && voiceModeEnabled && (
           <motion.div
@@ -533,7 +533,7 @@ export function ChatInput({
             type="button"
             disabled={isUploading}
             onClick={() => fileInputRef.current?.click()}
-            className="p-3 text-foreground/20 hover:text-foreground transition-colors rounded-full hover:bg-foreground/5 disabled:opacity-30"
+            className="p-2 md:p-3 text-foreground/20 hover:text-foreground transition-colors rounded-full hover:bg-foreground/5 disabled:opacity-30 flex-shrink-0"
             aria-label="Attach file"
           >
             {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
@@ -557,15 +557,15 @@ export function ChatInput({
           }}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
           placeholder="Type your message..."
-          className="flex-1 bg-transparent border-none text-foreground font-medium py-4 px-3 focus:outline-none placeholder:text-foreground/10 text-sm md:text-base selection:bg-primary/30"
+          className="flex-1 min-w-0 bg-transparent border-none text-foreground font-medium py-3 md:py-4 px-2 md:px-3 focus:outline-none placeholder:text-foreground/10 text-sm md:text-base selection:bg-primary/30"
         />
 
-        <div className="flex items-center pr-1 gap-1">
+        <div className="flex items-center pr-1 gap-1 flex-shrink-0">
           {enableVoiceForAi && (
             <button
               type="button"
               onClick={toggleVoiceMode}
-              className={`p-3 rounded-full transition-all ${
+              className={`p-2 md:p-3 rounded-full transition-all flex-shrink-0 ${
                 voiceModeEnabled
                   ? 'bg-rose-500 text-white shadow-[0_0_20px_rgba(244,63,94,0.35)]'
                   : 'text-foreground/20 hover:text-foreground hover:bg-foreground/5'
@@ -580,7 +580,7 @@ export function ChatInput({
             animate={{ scale: 1, opacity: 1 }}
             type="submit"
             disabled={sending || isUploading || !canSend}
-            className="p-3.5 bg-primary text-white rounded-full hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(59,130,246,0.4)] disabled:opacity-30 disabled:grayscale flex items-center justify-center"
+            className="p-3 md:p-3.5 bg-primary text-white rounded-full hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(59,130,246,0.4)] disabled:opacity-30 disabled:grayscale flex items-center justify-center flex-shrink-0"
             aria-label="Send message"
           >
             {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 fill-white/10" />}

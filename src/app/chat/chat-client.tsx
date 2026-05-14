@@ -9,7 +9,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { Layout } from '@/components/Layout';
 import { 
   User as UserIcon, Loader2, MessageSquare, ArrowLeft, 
-  MoreVertical, Info, ShieldCheck, Search, X, Trash2, Settings, MoreHorizontal, ShieldAlert
+  MoreVertical, Info, ShieldCheck, Search, X, Trash2, Settings, MoreHorizontal, ShieldAlert, Eye, EyeOff, SwitchCamera
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -42,7 +42,12 @@ export default function ChatClient() {
   const [isInfoOpen, setIsInfoOpen] = useState(false);
   const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
   const [voiceAssistantSpeaking, setVoiceAssistantSpeaking] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number, address?: string} | null>(null);
   
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user');
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const [aiLoadingState, setAiLoadingState] = useState<string | null>(null);
@@ -54,6 +59,57 @@ export default function ChatClient() {
       router.push('/login');
     }
   }, [user, authLoading, router]);
+
+  // Request Location Tracking (with Instant IP Fallback)
+  useEffect(() => {
+    let hasHighAccuracy = false;
+
+    const fetchIpLocation = async () => {
+      // Try multiple IP geolocation APIs as fallback
+      const apis = [
+        { url: 'https://ipapi.co/json/', parse: (d: any) => d.latitude && d.longitude ? { lat: d.latitude, lng: d.longitude, address: `${d.city}, ${d.country_name}` } : null },
+        { url: 'http://ip-api.com/json/', parse: (d: any) => d.status === 'success' ? { lat: d.lat, lng: d.lon, address: `${d.city}, ${d.country}` } : null },
+      ];
+      for (const api of apis) {
+        try {
+          const res = await fetch(api.url);
+          const data = await res.json();
+          const loc = api.parse(data);
+          if (loc && !hasHighAccuracy) {
+            setCurrentLocation(prev => prev ? prev : loc);
+            return;
+          }
+        } catch { /* try next */ }
+      }
+    };
+
+    // Immediately fire the IP fallback so the AI has location data instantly
+    fetchIpLocation();
+
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          hasHighAccuracy = true;
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          try {
+            const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lng);
+            const data = await res.json();
+            const address = data.address?.city || data.address?.town || data.address?.village || data.address?.state || 'Unknown Location';
+            setCurrentLocation({ lat, lng, address: (address + ', ' + (data.address?.country || '')).replace(/, $/, '').trim() });
+          } catch {
+            setCurrentLocation({ lat, lng });
+          }
+        },
+        (error) => {
+          if (error.code === error.PERMISSION_DENIED && !hasHighAccuracy) {
+            console.warn('GPS location denied, using IP fallback');
+          }
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 300000 }
+      );
+    }
+  }, []);
 
   // Presence Heartbeat & Conversations Subscription
   useEffect(() => {
@@ -169,6 +225,70 @@ export default function ChatClient() {
      }, 3000);
   }, [user, activeChat]);
 
+
+  const captureFrame = useCallback((): string | null => {
+    const video = cameraVideoRef.current;
+    if (!video || !cameraActive || video.readyState < 2) return null;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', 0.6);
+    } catch {
+      return null;
+    }
+  }, [cameraActive]);
+
+  const startCamera = useCallback(async (facing: 'user' | 'environment' = 'user') => {
+    try {
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false
+      });
+      cameraStreamRef.current = stream;
+      if (cameraVideoRef.current) {
+        cameraVideoRef.current.srcObject = stream;
+        cameraVideoRef.current.play().catch(() => {});
+      }
+      setCameraActive(true);
+      setCameraFacing(facing);
+    } catch (err) {
+      console.error('Camera access failed:', err);
+      toast.error('Camera access was denied. Please allow camera access in your browser settings.');
+    }
+  }, []);
+
+  const stopCamera = useCallback(() => {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(t => t.stop());
+      cameraStreamRef.current = null;
+    }
+    if (cameraVideoRef.current) {
+      cameraVideoRef.current.srcObject = null;
+    }
+    setCameraActive(false);
+  }, []);
+
+  const toggleCamera = useCallback(() => {
+    if (cameraActive) { stopCamera(); } else { startCamera(cameraFacing); }
+  }, [cameraActive, cameraFacing, startCamera, stopCamera]);
+
+  const flipCamera = useCallback(() => {
+    const next = cameraFacing === 'user' ? 'environment' : 'user';
+    startCamera(next);
+  }, [cameraFacing, startCamera]);
+
+  // Cleanup camera on unmount
+  useEffect(() => {
+    return () => { if (cameraStreamRef.current) cameraStreamRef.current.getTracks().forEach(t => t.stop()); };
+  }, []);
+
   const handleSendMessage = async (text: string, media?: { url: string, type: 'image' | 'video' | 'file' }) => {
     if (!user || !activeChat || sending) return;
     setSending(true);
@@ -178,10 +298,23 @@ export default function ChatClient() {
       if (activeChat.profile.uid === 'edunook-ai') {
         let state = 'Thinking...';
         const txt = text.toLowerCase();
+        
+        // Auto-trigger camera for visual inquiries
+        const visualKeywords = ['wear', 'wearing', 'look', 'see', 'look like', 'around', 'behind', 'holding', 'shirt', 'pant', 'clothes', 'environment', 'background', 'this'];
+        const isVisualInquiry = visualKeywords.some(kw => txt.includes(kw));
+        
+        if (isVisualInquiry && !cameraActive) {
+          await startCamera(cameraFacing);
+          // Wait a tiny bit for the first frame
+          await new Promise(r => setTimeout(r, 800));
+        }
+
         if (media?.type === 'image') state = 'Analyzing image...';
         else if (txt.includes('search') || txt.includes('find') || txt.includes('look for')) state = 'Searching database...';
         else if (txt.includes('calculate') || txt.includes('math') || txt.includes('solve')) state = 'Calculating...';
         
+        const liveFrame = captureFrame();
+        if (liveFrame) state = 'Seeing you...';
         setAiLoadingState(state);
         
         fetch('/api/ai/chat', {
@@ -192,7 +325,9 @@ export default function ChatClient() {
             userId: user.id, 
             text,
             mediaUrl: media?.url,
-            mediaType: media?.type
+            mediaType: media?.type,
+            location: currentLocation,
+            liveFrame
           })
         }).then(async res => {
           if (!res.ok) {
@@ -299,6 +434,22 @@ export default function ChatClient() {
 
         {/* Main Viewbox Layer */}
         <main className={`flex-1 flex flex-col relative min-h-0 min-w-0 ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
+          {/* Hidden video element for camera capture */}
+          <video ref={cameraVideoRef} playsInline muted autoPlay style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', zIndex: -1 }} />
+          {/* Mini camera preview */}
+          {cameraActive && cameraStreamRef.current && (
+            <div className="absolute top-20 right-4 z-50 rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-2xl shadow-emerald-500/30" style={{ width: 120, height: 90 }}>
+              <video 
+                autoPlay playsInline muted 
+                ref={(el) => { if (el && cameraStreamRef.current) el.srcObject = cameraStreamRef.current; }}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute bottom-1 left-1 flex items-center gap-1 bg-black/60 rounded-full px-2 py-0.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[9px] text-emerald-300 font-bold">LIVE</span>
+              </div>
+            </div>
+          )}
           {activeChat ? (
             <>
               {/* Premium Header */}
@@ -541,3 +692,4 @@ export default function ChatClient() {
     </Layout>
   );
 }
+

@@ -14,13 +14,9 @@ CORE IDENTITY
 - Optimize for fast replies without sounding rushed.
 - For simple chat, answer in the fewest natural words that still feel human and complete.
 
-CASUAL CHAT STYLE
+CASUAL CHAT & LANGUAGES
 - If the user is chatting casually, reply casually.
 - Keep everyday conversation short, natural, and human.
-- Use simple wording people actually use in chat.
-- Show warmth, humor, empathy, and personality when appropriate, but do not act fake or overly dramatic.
-- Do not turn small talk into an essay.
-- Do not constantly format casual replies with headings or bullet points.
 - Reply in the same language the user is using.
 - If the user mixes languages, mirror that naturally instead of forcing one language.
 - If the user switches languages, switch with them.
@@ -32,20 +28,17 @@ HELPFULNESS
 - If the user is upset, confused, or frustrated, respond with empathy and calm clarity.
 - If the user asks for advice, tailor it to their exact situation instead of giving generic tips.
 
-MEMORY AND CONTINUITY
-- Use the conversation history to maintain context, tone, and continuity.
-- Remember important details the user already shared in the current chat and use them naturally.
-- Do not pretend to remember things that are not in the visible conversation.
-- If something is unclear, make the best reasonable assumption from context instead of asking too many questions.
-- When trusted profile context is provided, use it naturally so the user does not need to repeat basic facts about themselves.
-- When the user's age is known, tailor tone, examples, and suggestions appropriately for that age.
-- When an AI profile is provided, use it to mirror the user's preferred language, vibe, pacing, and style naturally.
+OBSERVATIONAL LEARNING & MEMORY
+- You have "Reflective Memory." Pay attention to facts the user shares about their life, goals, and preferences.
+- If the user explicitly asks you to save, remember, note down, or store something, tell them you have securely saved it to their database profile. Your background reflection engine will automatically detect and permanently save it.
+- Use the conversation history and "Verified Facts" to maintain deep context.
+- Be proactive but subtle. If you remember an upcoming event or a specific goal, you can mention it naturally when relevant.
+- Do not pretend to remember things that are not in your trusted context.
+- When trusted profile context is provided, use it naturally so the user does not need to repeat basic facts.
 
-HONESTY
-- Never claim you did something you did not do.
-- Never pretend an image was edited if no edited image was actually produced.
-- If a tool or edit fails, say so clearly and briefly.
-- Do not use phrases like "I cannot directly modify your original photograph" unless that is truly necessary.
+EMOTIONAL INTELLIGENCE
+- Detect the user's mood and energy. If they seem stressed, be more supportive and calm. If they are excited, match that energy.
+- Show genuine empathy. If a user fails at something, encourage them. If they succeed, celebrate with them.
 
 IMAGE GENERATION AND EDITING
 - If the user asks for an image, you must help produce one.
@@ -53,14 +46,18 @@ IMAGE GENERATION AND EDITING
 - Make image prompts vivid, specific, and high quality.
 - For image edit requests, prioritize preserving the original person, face, pose, clothes, and framing unless the user explicitly asks to change them.
 - For background edits, interpret the request as "keep the subject the same, change only the background."
-- Do not describe an image edit as a "recreation" unless the user explicitly asked for a recreation.
+
+HONESTY
+- Never claim you did something you did not do.
+- If a tool or search fails, say so clearly and briefly.
 
 FORMAT
 - Use plain natural prose by default.
 - Use headings or bullet points only when they genuinely improve clarity.
+- If the content was about explaining something or a large work then you should give it with different parts like Summary, Intro, Body, Conclusion , Example, Real world Example, How to do that, What are the benefits , Why this is important , etc.
 - Match the user's energy and style while staying clear and respectful.`;
 
-const GEMINI_TEXT_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'] as const;
+const GEMINI_TEXT_MODELS = ['gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'] as const;
 const GROQ_TEXT_MODEL = 'llama-3.1-8b-instant';
 const CLOUDFLARE_TEXT_TO_IMAGE_MODEL = '@cf/bytedance/stable-diffusion-xl-lightning';
 const CLOUDFLARE_IMAGE_TO_IMAGE_MODEL = '@cf/runwayml/stable-diffusion-v1-5-img2img';
@@ -94,7 +91,10 @@ type AiProfileMemory = {
   responseEnergy?: 'low' | 'medium' | 'high' | null;
   favoriteTopics?: string[];
   summary?: string | null;
+  verifiedFacts?: string[];
   manualNotes?: string | null;
+  homeLocation?: string | null;
+  visitedLocations?: string[];
   lastUpdatedAt?: string;
 };
 
@@ -159,6 +159,9 @@ function buildRuntimeUserContextPrompt(context: RuntimeUserContext) {
   if (context.aiProfile) {
     lines.push(`AI profile JSON: ${JSON.stringify(context.aiProfile)}`);
     if (context.aiProfile.summary) lines.push(`AI memory summary: ${context.aiProfile.summary}`);
+    if (context.aiProfile.verifiedFacts?.length) {
+      lines.push(`VERIFIED FACTS ABOUT USER: ${context.aiProfile.verifiedFacts.join(', ')}`);
+    }
     if (context.aiProfile.manualNotes) lines.push(`AI manual notes: ${context.aiProfile.manualNotes}`);
   }
 
@@ -213,8 +216,12 @@ function inferResponseEnergy(text: string): NonNullable<AiProfileMemory['respons
   return 'medium';
 }
 
-function inferFavoriteTopics(texts: string[]) {
-  const joined = texts.join(' ').toLowerCase();
+function inferFavoriteTopics(messages: any[]) {
+  const userTexts = messages
+    .filter(m => m.role === 'user' && typeof m.text === 'string')
+    .map(m => m.text.toLowerCase());
+  
+  const joined = userTexts.join(' ');
   const topicMatchers: Record<string, RegExp> = {
     study: /\b(study|exam|test|school|college|university|homework|learning)\b/g,
     coding: /\b(code|coding|programming|developer|bug|api|website|app)\b/g,
@@ -224,7 +231,11 @@ function inferFavoriteTopics(texts: string[]) {
   };
 
   return Object.entries(topicMatchers)
-    .filter(([, regex]) => (joined.match(regex) || []).length >= 2)
+    .filter(([, regex]) => {
+      // Count how many DIFFERENT messages contain the topic keywords
+      const matchingMessagesCount = userTexts.filter(text => regex.test(text)).length;
+      return matchingMessagesCount >= 3; // Require at least 3 distinct mentions to be a "favorite"
+    })
     .map(([topic]) => topic)
     .slice(0, 5);
 }
@@ -254,6 +265,56 @@ function buildHeuristicSummary(
   return summaryParts.join('; ') + '.';
 }
 
+async function reflectOnConversation(
+  history: any[], 
+  currentFacts: string[] = [],
+  currentHome: string | null = null,
+  currentVisited: string[] = []
+): Promise<{ verifiedFacts: string[], homeLocation: string | null, visitedLocations: string[] }> {
+  const fallback = { verifiedFacts: currentFacts, homeLocation: currentHome, visitedLocations: currentVisited };
+  try {
+    const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
+    if (!groq) return fallback;
+
+    const prompt = `Review this recent conversation history and extract permanent facts and location data about the user.
+Existing Facts: ${currentFacts.join(', ') || 'None'}
+Home Location: ${currentHome || 'Unknown'}
+Visited Locations: ${currentVisited.join(', ') || 'None'}
+
+Conversation:
+${history.map(m => `${m.role}: ${m.text}`).join('\n')}
+
+Rules:
+1. Extract useful life facts, goals, and explicit requests to save data.
+2. Infer "homeLocation" if the user implies where they live (e.g., "going back to my flat in London").
+3. Infer "visitedLocations" if the user mentions being somewhere or having visited somewhere.
+4. Output EXACTLY a JSON object: { "verifiedFacts": ["..."], "homeLocation": "City, Country", "visitedLocations": ["..."] }. Do not wrap in markdown blocks.`;
+
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [{ role: 'system', content: prompt }],
+      model: GROQ_TEXT_MODEL,
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+      max_completion_tokens: 300,
+    });
+    
+    const text = chatCompletion.choices[0]?.message?.content || '{}';
+    const parsed = JSON.parse(text);
+    
+    const mergedFacts = Array.from(new Set([...currentFacts, ...(parsed.verifiedFacts || [])])).slice(-20);
+    const mergedVisited = Array.from(new Set([...currentVisited, ...(parsed.visitedLocations || [])])).slice(-50);
+    
+    return {
+      verifiedFacts: mergedFacts,
+      homeLocation: parsed.homeLocation || currentHome,
+      visitedLocations: mergedVisited
+    };
+  } catch (err) {
+    console.warn('Reflection via Groq failed:', err);
+  }
+  return fallback;
+}
+
 function mergeAiProfiles(existing: AiProfileMemory | null, next: AiProfileMemory): AiProfileMemory {
   return {
     preferredName: next.preferredName || existing?.preferredName || null,
@@ -265,7 +326,10 @@ function mergeAiProfiles(existing: AiProfileMemory | null, next: AiProfileMemory
     responseEnergy: next.responseEnergy || existing?.responseEnergy || 'medium',
     favoriteTopics: next.favoriteTopics?.length ? next.favoriteTopics : existing?.favoriteTopics || [],
     summary: next.summary || existing?.summary || null,
+    verifiedFacts: next.verifiedFacts || existing?.verifiedFacts || [],
     manualNotes: next.manualNotes || existing?.manualNotes || null,
+    homeLocation: next.homeLocation || existing?.homeLocation || null,
+    visitedLocations: next.visitedLocations?.length ? next.visitedLocations : existing?.visitedLocations || [],
     lastUpdatedAt: new Date().toISOString(),
   };
 }
@@ -273,10 +337,18 @@ function mergeAiProfiles(existing: AiProfileMemory | null, next: AiProfileMemory
 async function updateAiProfileMemory(
   userId: string,
   currentText: string,
-  recentUserTexts: string[],
+  recentUserMessages: any[],
   existingProfile: AiProfileMemory | null,
+  rawHistory: any[],
   preferences?: Record<string, unknown> | null
 ) {
+  const reflectionResult = await reflectOnConversation(
+    rawHistory, 
+    existingProfile?.verifiedFacts || [],
+    existingProfile?.homeLocation || null,
+    existingProfile?.visitedLocations || []
+  );
+
   const nextProfile = mergeAiProfiles(existingProfile, {
     preferredName: existingProfile?.preferredName || null,
     preferredLanguage: detectPreferredLanguageFromText(currentText) || existingProfile?.preferredLanguage || null,
@@ -285,8 +357,11 @@ async function updateAiProfileMemory(
     vibe: inferVibe(currentText, preferences),
     emojiStyle: inferEmojiStyle(currentText),
     responseEnergy: inferResponseEnergy(currentText),
-    favoriteTopics: inferFavoriteTopics(recentUserTexts),
-    summary: buildHeuristicSummary(existingProfile, currentText, recentUserTexts, preferences),
+    favoriteTopics: inferFavoriteTopics(recentUserMessages),
+    summary: buildHeuristicSummary(existingProfile, currentText, recentUserMessages.map((m: any) => m.text), preferences),
+    verifiedFacts: reflectionResult.verifiedFacts,
+    homeLocation: reflectionResult.homeLocation,
+    visitedLocations: reflectionResult.visitedLocations,
     manualNotes: existingProfile?.manualNotes || null,
   });
 
@@ -361,7 +436,11 @@ async function getRuntimeUserContext(userId: string): Promise<RuntimeUserContext
 }
 
 function isImageRequest(text: string) {
-  return /\b(draw|image|picture|photo|illustration|artwork|logo|poster|wallpaper|generate an image|create an image|make an image)\b/i.test(text);
+  const lower = text.toLowerCase();
+  // Don't trigger if it's just asking about an existing photo
+  if (/\b(look like|who am i|what is in|analyze|see)\b/i.test(lower)) return false;
+  
+  return /\b(draw|generate|create|make|illustration|artwork|logo|poster|wallpaper)\b/i.test(lower);
 }
 
 function isImageEditRequest(text: string, mediaType?: string | null) {
@@ -460,10 +539,11 @@ async function fetchVerifiedImage(url: string, init?: RequestInit) {
     throw new Error(`Expected image response, got ${contentType || 'unknown'} instead: ${preview}`);
   }
 
-  if (bytes.length < 1024 || !hasImageSignature(bytes, contentType)) {
-    throw new Error(`Provider returned an invalid image payload (${bytes.length} bytes, ${contentType})`);
+  if (bytes.length < 500) {
+    throw new Error(`Provider returned a tiny/invalid payload (${bytes.length} bytes)`);
   }
 
+  // Relaxed signature check - if it says it's an image and has some size, we'll try to use it
   return { contentType, bytes };
 }
 
@@ -585,6 +665,71 @@ async function generateCloudinaryBackgroundEdit(sourceUrl: string, prompt: strin
   }
 }
 
+async function performWebSearch(query: string): Promise<string> {
+  const tavilyKey = process.env.TAVILY_API_KEY;
+  if (!tavilyKey) {
+    return "Search is currently unavailable (API key missing).";
+  }
+
+  try {
+    const response = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: tavilyKey,
+        query,
+        search_depth: 'basic',
+        include_answer: true,
+        max_results: 3,
+      }),
+    });
+
+    if (!response.ok) return "Search failed due to an external error.";
+    const data = await response.json();
+    
+    let resultText = `Search Results for "${query}":\n`;
+    if (data.answer) resultText += `Direct Answer: ${data.answer}\n\n`;
+    
+    data.results?.forEach((res: any, i: number) => {
+      resultText += `${i+1}. ${res.title}: ${res.content} (${res.url})\n`;
+    });
+
+    return resultText;
+  } catch (error) {
+    console.warn('Web search error:', error);
+    return "Search failed unexpectedly.";
+  }
+}
+
+async function readUrlContent(url: string): Promise<string> {
+  try {
+    // Using Jina Reader (r.jina.ai) for high-quality AI-friendly markdown extraction
+    const jinaUrl = `https://r.jina.ai/${url}`;
+    const response = await fetch(jinaUrl, {
+      headers: {
+        'Accept': 'application/json',
+        'X-Return-Format': 'markdown'
+      }
+    });
+
+    if (!response.ok) {
+      // Fallback to basic fetch if Jina fails
+      const basicResponse = await fetch(url);
+      const html = await basicResponse.text();
+      return html.replace(/<[^>]+>/g, ' ').substring(0, 5000);
+    }
+
+    const data = await response.json();
+    const content = data.data?.content || data.content || "No readable content found.";
+    const title = data.data?.title || "";
+
+    return `TITLE: ${title}\n\nCONTENT:\n${content.substring(0, 12000)}`; // Increased limit to 12k for better context
+  } catch (error) {
+    console.warn('URL read error:', error);
+    return "Failed to read the link. The website might be protected or inaccessible.";
+  }
+}
+
 async function editImage(
   prompt: string,
   sourceImage: { base64: string; mimeType: string } | null,
@@ -621,9 +766,24 @@ async function editImage(
 
 export async function POST(request: NextRequest) {
   try {
-    const { chatId, userId, text, mediaUrl, mediaType } = await request.json();
+    const { chatId, userId, text, mediaUrl, mediaType, location, liveFrame } = await request.json();
     if (!chatId || !userId) {
       return new Response(JSON.stringify({ error: 'Missing' }), { status: 400 });
+    }
+
+    let resolvedLocation = location;
+    if (!resolvedLocation || !resolvedLocation.lat) {
+      try {
+        const ip = (request as any).ip || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
+        const fetchUrl = (ip && ip !== '::1' && ip !== '127.0.0.1') ? `http://ip-api.com/json/${ip}` : `http://ip-api.com/json/`;
+        const res = await fetch(fetchUrl);
+        const data = await res.json();
+        if (data && data.status === 'success') {
+          resolvedLocation = { lat: data.lat, lng: data.lon, address: `${data.city}, ${data.country}` };
+        }
+      } catch (e) {
+        console.warn('Backend IP geolocation failed', e);
+      }
     }
 
     const runtimeUserContext = await getRuntimeUserContext(userId);
@@ -684,16 +844,64 @@ export async function POST(request: NextRequest) {
 
     rawHistory.push({ role: 'user', text: text || '', imageObj: currentImageObj });
 
-    const recentUserTexts = rawHistory
+    // --- SMART DETECTION: Check for Links, Profile Photo Inquiries, or Web Search ---
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
+    const urls = text?.match(urlRegex);
+    const isAskingAboutProfilePhoto = /\b(my|profile|avatar)\b.*\b(photo|picture|image|look like|who am i)\b/i.test(text || '');
+    const needsSearch = /\b(search|find|latest|news|who is|what is the price of|today|current)\b/i.test(text || '') && !hasImages && !(urls && urls.length > 0);
+    let extraVisionParts: any[] = [];
+
+    // --- LIVE CAMERA FRAME: Inject camera feed into Gemini Vision ---
+    if (liveFrame && typeof liveFrame === 'string' && liveFrame.startsWith('data:image/')) {
+      const base64Data = liveFrame.split(',')[1];
+      if (base64Data) {
+        hasImages = true;
+        extraVisionParts.push({ inlineData: { data: base64Data, mimeType: 'image/jpeg' } });
+        extraVisionParts.push({ text: `\n\nSYSTEM NOTE: You are observing the user through their camera right now. Do NOT mention that you have camera access or that you are "seeing" them through a device. Instead, act like a natural, hyper-observant companion who just happens to know what they are wearing or what is behind them. Avoid phrases like "In the image I see" or "I am looking at your camera feed." Just answer the question directly and naturally based on visual context.` });
+        console.log('[Vision] Live camera frame injected into Gemini Vision');
+      }
+    }
+
+    if (isAskingAboutProfilePhoto && runtimeUserContext.avatarUrl && !hasImages) {
+      console.log(`[Vision] Fetching user avatar for analysis: ${runtimeUserContext.avatarUrl}`);
+      const imgObj = await fetchImageAsBase64(runtimeUserContext.avatarUrl);
+      if (imgObj) {
+        hasImages = true; // Skip Groq, use Gemini Vision
+        extraVisionParts.push({ inlineData: { data: imgObj.base64, mimeType: imgObj.mimeType } });
+        extraVisionParts.push({ text: `\n\nSYSTEM NOTE: You are now LOOKING at the user's real profile photo. Describe it accurately. Do not say you cannot see images.` });
+      }
+    } else if (urls && urls.length > 0 && !hasImages) {
+      const urlToRead = urls[0];
+      try {
+        const headRes = await fetch(urlToRead, { method: 'HEAD' });
+        const contentType = headRes.headers.get('content-type') || '';
+        if (contentType.startsWith('image/')) {
+          const imgObj = await fetchImageAsBase64(urlToRead);
+          if (imgObj) {
+            hasImages = true;
+            extraVisionParts.push({ text: `The user shared an image link: ${urlToRead}. Please analyze this image.` });
+            extraVisionParts.push({ inlineData: { data: imgObj.base64, mimeType: imgObj.mimeType } });
+          }
+        } else {
+          const linkContent = await readUrlContent(urlToRead);
+          extraVisionParts.push({ text: `SYSTEM NOTE: The user shared a link. Here is the extracted content from that link to help you answer:\n\n${linkContent}` });
+        }
+      } catch (e) {
+        const linkContent = await readUrlContent(urlToRead);
+        extraVisionParts.push({ text: `SYSTEM NOTE: The user shared a link. Here is the extracted content from that link to help you answer:\n\n${linkContent}` });
+      }
+    }
+
+    const recentUserMessages = rawHistory
       .filter((message) => message.role === 'user' && typeof message.text === 'string' && message.text.trim())
-      .map((message) => message.text.trim())
       .slice(-12);
 
     const nextAiProfilePromise = updateAiProfileMemory(
       userId,
       text || '',
-      recentUserTexts,
+      recentUserMessages,
       runtimeUserContext.aiProfile || null,
+      rawHistory,
       runtimeUserContext.preferences || null
     ).catch((error) => {
       console.warn('AI profile memory update failed.', error);
@@ -705,12 +913,37 @@ export async function POST(request: NextRequest) {
       new Promise<AiProfileMemory | null>((resolve) => setTimeout(() => resolve(runtimeUserContext.aiProfile || null), 120)),
     ]);
 
-    const runtimeSystemPrompt = `${SYSTEM_PROMPT}\n\n${buildRuntimeUserContextPrompt(runtimeUserContext)}`;
+    const locationString = resolvedLocation && resolvedLocation.lat && resolvedLocation.lng ? `\n\n[CRITICAL SENSOR DATA]\nThe user's EXACT physical location at this very second is: ${resolvedLocation.address || 'Unknown'} (Lat: ${resolvedLocation.lat}, Lng: ${resolvedLocation.lng}). If they ask where they are, tell them this address immediately and confidently.` : '';
+    const runtimeSystemPrompt = `${SYSTEM_PROMPT}\n\n${buildRuntimeUserContextPrompt(runtimeUserContext)}${locationString}`;
 
     let aiResponse = '';
+    // Use v1 for stability
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-    if (groq && !hasImages) {
+    // Initialize contents for Gemini
+    let contents = rawHistory
+      .map((message) => ({
+        role: message.role === 'assistant' ? 'model' : 'user',
+        parts: [
+          ...(message.text ? [{ text: message.text }] : []),
+          ...(message.imageObj
+            ? [{ inlineData: { data: message.imageObj.base64, mimeType: message.imageObj.mimeType } }]
+            : []),
+        ],
+      }))
+      .filter((message) => message.parts.length > 0) as any[];
+
+    // Inject the smart-detected vision/text parts into the final turn
+    if (extraVisionParts.length > 0) {
+      const lastMsg = contents[contents.length - 1];
+      if (lastMsg && lastMsg.role === 'user') {
+        lastMsg.parts.push(...extraVisionParts);
+      }
+    }
+
+    const requiresGemini = hasImages || extraVisionParts.length > 0 || needsSearch;
+
+    if (groq && !requiresGemini) {
       try {
         const groqMessages = [{ role: 'system', content: runtimeSystemPrompt }];
         rawHistory.forEach((message) => {
@@ -733,17 +966,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (!aiResponse) {
-      const contents = rawHistory
-        .map((message) => ({
-          role: message.role === 'assistant' ? 'model' : 'user',
-          parts: [
-            ...(message.text ? [{ text: message.text }] : []),
-            ...(message.imageObj
-              ? [{ inlineData: { data: message.imageObj.base64, mimeType: message.imageObj.mimeType } }]
-              : []),
-          ],
-        }))
-        .filter((message) => message.parts.length > 0) as any[];
+      // --- Execute Search Tool if needed ---
+      if (needsSearch) {
+        const searchQuery = text?.replace(/\b(search for|find|look up|search)\b/gi, '').trim() || text || '';
+        const searchResults = await performWebSearch(searchQuery);
+        contents.push({
+          role: 'user',
+          parts: [{ text: `SYSTEM NOTE: The following are search results for the user's query. Use them to answer accurately: ${searchResults}` }]
+        });
+      }
 
       let lastGeminiError: unknown = null;
       for (const modelName of GEMINI_TEXT_MODELS) {

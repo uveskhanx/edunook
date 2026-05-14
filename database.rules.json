@@ -166,6 +166,7 @@
     "messages": {
       "$chatId": {
         ".read": "auth != null && ($chatId.contains(auth.uid) || root.child('chats').child($chatId).child('users').child(auth.uid).exists())",
+        ".indexOn": ["createdAt"],
         "$msgId": {
           ".write": "auth != null && ($chatId.contains(auth.uid) || root.child('chats').child($chatId).child('users').child(auth.uid).exists())"
         }

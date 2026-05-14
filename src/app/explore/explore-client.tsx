@@ -16,6 +16,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 import { VerificationTick } from '@/components/VerificationTick';
+import { StoriesBar } from '@/components/Stories/StoriesBar';
 
 type TrendingCourse = Course & { profiles: Profile | null; trendingScore: number; isNew: boolean };
 type TopCreator = Profile & { followersCount: number };
@@ -170,6 +171,11 @@ export default function ExploreClient() {
               <h1 className="text-4xl font-black text-foreground tracking-tighter uppercase">Explore</h1>
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest opacity-60">Discover courses and the community</p>
            </div>
+
+           <StoriesBar 
+              currentUser={user ? allUsers.find(u => u.uid === user.id) || { uid: user.id, username: 'Loading...', fullName: 'User', role: 'student', createdAt: '' } : null} 
+              allUsers={allUsers} 
+           />
 
            <div className="relative group">
               <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full opacity-0 group-focus-within:opacity-100 transition-all duration-700" />

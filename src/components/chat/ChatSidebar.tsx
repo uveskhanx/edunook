@@ -64,7 +64,7 @@ export function ChatSidebar({
   );
 
   return (
-    <aside className={`w-full md:w-96 flex flex-col chat-glass border-r border-border transition-all chat-scrollbar ${activeChatId ? 'hidden md:flex' : 'flex'}`}>
+    <aside className={`w-full md:w-96 flex flex-col chat-glass border-r border-border transition-all chat-scrollbar overflow-x-hidden ${activeChatId ? 'hidden md:flex' : 'flex'}`}>
       <div className="p-8 space-y-8">
         <div className="flex items-center justify-between">
            <h1 className="text-3xl font-black text-foreground tracking-tighter uppercase italic">Communications</h1>

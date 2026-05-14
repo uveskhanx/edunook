@@ -17,6 +17,7 @@ import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 import { VerificationTick } from '@/components/VerificationTick';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
+import { StoriesBar } from '@/components/Stories/StoriesBar';
 
 type EnrichedProfile = Profile & { followersCount: number; isFollowing?: boolean };
 
@@ -111,20 +112,14 @@ export default function SearchClient() {
 
   return (
     <Layout>
-      <div className="max-w-5xl mx-auto px-4 md:px-10 py-8 md:py-16">
+      <div className="max-w-5xl mx-auto px-4 md:px-10 pt-2 pb-8 md:pt-6 md:pb-16">
         {/* Header Section */}
         <div className="space-y-8 mb-10">
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-primary">
-               <Sparkles className="w-3.5 h-3.5" />
-               <span className="text-[10px] font-black uppercase tracking-[0.4em]">Discovery</span>
-            </div>
-            <h1 className="text-4xl md:text-6xl font-black tracking-tighter leading-[0.9]">
-               Explore <span className="premium-gradient-text">Community.</span>
-            </h1>
-            <p className="text-sm md:text-base text-muted-foreground font-medium max-w-xl opacity-60 leading-relaxed">
-              Discover and follow the most influential educators and learners on EduNook.
-            </p>
+          <div className="-mx-4 md:-mx-10">
+             <StoriesBar 
+                currentUser={currentUser ? allUsers.find(u => u.uid === currentUser.id) || { uid: currentUser.id, username: 'Loading...', fullName: 'User', role: 'student', createdAt: '' } as Profile : null} 
+                allUsers={allUsers as Profile[]} 
+             />
           </div>
 
           {/* User Search Input */}

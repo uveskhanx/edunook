@@ -53,7 +53,7 @@ export function MessageList({
   };
 
   return (
-    <div className={`flex-1 overflow-y-auto px-4 py-4 scrollbar-hide min-h-0 ${isAIChat ? 'bg-[#020205] space-y-6' : 'bg-background space-y-4'}`}>
+    <div className={`flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 scrollbar-hide min-h-0 ${isAIChat ? 'bg-[#020205] space-y-6' : 'bg-background space-y-4'}`}>
       
       {isAIChat && (
         <style dangerouslySetInnerHTML={{ __html: `

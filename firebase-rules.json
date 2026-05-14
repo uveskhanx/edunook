@@ -185,6 +185,23 @@
           ".write": "auth != null && auth.uid === $uid"
         }
       }
+    },
+    "stories": {
+      ".read": "auth != null",
+      "$userId": {
+        ".write": "auth != null && auth.uid === $userId",
+        "viewers": {
+          "$viewerId": {
+            ".write": "auth != null && auth.uid === $viewerId"
+          }
+        }
+      }
+    },
+    "highlights_data": {
+      ".read": "auth != null",
+      "$userId": {
+        ".write": "auth != null && auth.uid === $userId"
+      }
     }
   }
 }
