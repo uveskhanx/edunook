@@ -160,6 +160,7 @@
     },
     "messages": {
       "$chatId": {
+        ".indexOn": "createdAt",
         ".read": "auth != null && root.child('chats').child($chatId).child('users').child(auth.uid).exists()",
         "$msgId": {
           ".write": "auth != null && root.child('chats').child($chatId).child('users').child(auth.uid).exists()"
