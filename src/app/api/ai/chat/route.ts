@@ -520,6 +520,14 @@ function isBackgroundEditRequest(text: string) {
   return /\bbackground\b/i.test(text) || /\b(place|put|set)\b.*\b(in|into|against)\b/i.test(text);
 }
 
+function isLiveVisionQuestion(text: string) {
+  return /\b(wear|wearing|outfit|shirt|dress|pants|clothes|look|face|hair|skin|background|behind me|around me|holding|in my hand|what is this|what's this|describe what you see|describe me|describe this|room|desk|screen|monitor|read this|scan this|identify this|recognize this)\b/i.test(text);
+}
+
+function looksLikeVisionFallback(text: string) {
+  return /\b(i\s*(do not|don't)\s*(have|see)|i\s*(cannot|can't)\s*(see|visually)|as a large language model|i don't have the ability to visually see)\b/i.test(text);
+}
+
 function getBackgroundDescription(text: string) {
   return text
     .replace(/\b(change|edit|modify|replace|swap)\b/gi, '')
@@ -835,18 +843,35 @@ export async function POST(request: NextRequest) {
     let resolvedLocation = location;
     const locationPromise = (!resolvedLocation || !resolvedLocation.lat)
       ? (async () => {
-          try {
-            const ip = (request as any).ip || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
-            const fetchUrl = (ip && ip !== '::1' && ip !== '127.0.0.1') ? `http://ip-api.com/json/${ip}` : `http://ip-api.com/json/`;
-            const res = await fetch(fetchUrl);
-            const data = await res.json();
-            if (data && data.status === 'success') {
-              return { lat: data.lat, lng: data.lon, address: `${data.city}, ${data.country}` };
+          const ip = (request as any).ip || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
+          const providers = [
+            ip ? `https://ipapi.co/${ip}/json/` : 'https://ipapi.co/json/',
+            'https://ipwho.is/',
+          ];
+
+          for (const fetchUrl of providers) {
+            try {
+              const res = await fetch(fetchUrl);
+              const data = await res.json();
+
+              if (fetchUrl.includes('ipapi.co')) {
+                if (data?.latitude && data?.longitude) {
+                  return { lat: data.latitude, lng: data.longitude, address: `${data.city}, ${data.country_name}` };
+                }
+              } else if (data?.success !== false && data?.latitude && data?.longitude) {
+                return { lat: data.latitude, lng: data.longitude, address: `${data.city}, ${data.country}` };
+              }
+            } catch (e) {
+              console.warn('Backend IP geolocation provider failed', fetchUrl, e);
             }
+          }
+
+          try {
+            return resolvedLocation;
           } catch (e) {
             console.warn('Backend IP geolocation failed', e);
+            return resolvedLocation;
           }
-          return resolvedLocation;
         })()
       : Promise.resolve(resolvedLocation);
 
@@ -915,6 +940,7 @@ export async function POST(request: NextRequest) {
     const urls = text?.match(urlRegex);
     const isAskingAboutProfilePhoto = /\b(my|profile|avatar)\b.*\b(photo|picture|image|look like|who am i)\b/i.test(text || '');
     const needsSearch = /\b(search|find|latest|news|who is|what is the price of|today|current)\b/i.test(text || '') && !hasImages && !(urls && urls.length > 0);
+    const wantsLiveVision = !!liveFrame && isLiveVisionQuestion(text || '');
     const extraVisionParts: any[] = [];
 
     // --- OBSERVATION FRAME: Inject current visual context into Gemini Vision ---
@@ -923,7 +949,7 @@ export async function POST(request: NextRequest) {
       if (base64Data) {
         hasImages = true;
         extraVisionParts.push({ inlineData: { data: base64Data, mimeType: 'image/jpeg' } });
-        extraVisionParts.push({ text: `\n\n[CURRENT VISUAL OBSERVATION]\n- You are quietly observing the user's present surroundings and appearance.\n- Notice what they are wearing, holding, and what is around or behind them.\n- ANSWER questions about their surroundings or appearance immediately and confidently.\n- DO NOT mention "camera," "feed," "image," "AI vision," or that you are looking at a frame.\n- If needed, phrase it naturally as simple observation, like you are just noticing what is there.` });
+        extraVisionParts.push({ text: `\n\n[CURRENT VISUAL OBSERVATION]\n- You can directly see the attached live image for this exact turn.\n- Notice what the user is wearing, holding, and what is around or behind them.\n- Answer using only what is actually visible in the attached frame.\n- If the user's question is about their background, focus on the visible background details first.\n- Do NOT say you cannot see, do not mention being a language model, and do not mention "camera," "feed," "image," or "AI vision."\n- If the frame is unclear, say what is visible and what is hard to make out.` });
         console.log('[Vision] Observation frame injected into Gemini Vision');
       }
     }
@@ -987,8 +1013,8 @@ export async function POST(request: NextRequest) {
     // Use v1 for stability
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-    // Initialize contents for Gemini
-    const contents = rawHistory
+    const historyForGemini = rawHistory.slice(0, -1);
+    const contents = historyForGemini
       .map((message) => ({
         role: message.role === 'assistant' ? 'model' : 'user',
         parts: [
@@ -1000,12 +1026,21 @@ export async function POST(request: NextRequest) {
       }))
       .filter((message) => message.parts.length > 0) as any[];
 
-    // Inject the smart-detected vision/text parts into the final turn
+    const currentTurnParts: any[] = [];
+    if (text) {
+      currentTurnParts.push({ text });
+    }
+    if (currentImageObj) {
+      currentTurnParts.push({ inlineData: { data: currentImageObj.base64, mimeType: currentImageObj.mimeType } });
+    }
     if (extraVisionParts.length > 0) {
-      const lastMsg = contents[contents.length - 1];
-      if (lastMsg && lastMsg.role === 'user') {
-        lastMsg.parts.push(...extraVisionParts);
-      }
+      currentTurnParts.push(...extraVisionParts);
+    }
+    if (currentTurnParts.length > 0) {
+      contents.push({
+        role: 'user',
+        parts: currentTurnParts,
+      });
     }
 
     const requiresGemini = hasImages || extraVisionParts.length > 0 || needsSearch;
@@ -1066,6 +1101,39 @@ export async function POST(request: NextRequest) {
       if (!aiResponse) {
         const message = lastGeminiError instanceof Error ? lastGeminiError.message : 'Gemini request failed';
         return new Response(JSON.stringify({ error: message }), { status: 500 });
+      }
+
+      if (wantsLiveVision && looksLikeVisionFallback(aiResponse)) {
+        for (const modelName of GEMINI_TEXT_MODELS) {
+          try {
+            const model = genAI.getGenerativeModel({
+              model: modelName,
+              systemInstruction: `${runtimeSystemPrompt}\n\nLIVE VISION OVERRIDE\n- For this turn, you have a live image attached.\n- The user is asking about something visible right now.\n- You must answer from the visible frame.\n- Never say you cannot see the image or that you are only text-based.`,
+            });
+
+            const retryContents = [
+              ...contents,
+              {
+                role: 'user',
+                parts: [
+                  {
+                    text: 'Retry the previous answer using the attached live frame. Describe only what is actually visible right now, especially the user background or appearance if asked.',
+                  },
+                ],
+              },
+            ] as any[];
+
+            const retryResult = await model.generateContent({ contents: retryContents });
+            const retryText = retryResult.response.text() || '';
+
+            if (retryText && !looksLikeVisionFallback(retryText)) {
+              aiResponse = retryText;
+              break;
+            }
+          } catch (retryError) {
+            console.warn(`Gemini live-vision retry failed for ${modelName}:`, retryError);
+          }
+        }
       }
     }
 

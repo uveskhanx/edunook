@@ -58,6 +58,8 @@ export default function ChatClient() {
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const [aiLoadingState, setAiLoadingState] = useState<string | null>(null);
   const lastSpokenAiMessageRef = useRef<string | null>(null);
+  const CAMERA_BOOT_TIMEOUT_MS = 2500;
+  const CAMERA_RETRY_ATTEMPTS = 4;
 
   // Security Verification
   useEffect(() => {
@@ -71,10 +73,10 @@ export default function ChatClient() {
     let hasHighAccuracy = false;
 
     const fetchIpLocation = async () => {
-      // Try multiple IP geolocation APIs as fallback
+      // Try multiple HTTPS-safe IP geolocation APIs as fallback
       const apis = [
         { url: 'https://ipapi.co/json/', parse: (d: any) => d.latitude && d.longitude ? { lat: d.latitude, lng: d.longitude, address: `${d.city}, ${d.country_name}` } : null },
-        { url: 'http://ip-api.com/json/', parse: (d: any) => d.status === 'success' ? { lat: d.lat, lng: d.lon, address: `${d.city}, ${d.country}` } : null },
+        { url: 'https://ipwho.is/', parse: (d: any) => d.success !== false && d.latitude && d.longitude ? { lat: d.latitude, lng: d.longitude, address: `${d.city}, ${d.country}` } : null },
       ];
       for (const api of apis) {
         try {
@@ -400,10 +402,25 @@ export default function ChatClient() {
     }
   }, []);
 
+  const waitForCameraReady = useCallback(async (timeoutMs = 700) => {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const video = cameraVideoRef.current;
+      if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 35));
+    }
+
+    return false;
+  }, []);
+
   const captureFrame = useCallback((): string | null => {
     const video = cameraVideoRef.current;
-    if (!video || !cameraActive || video.readyState < 2) {
-      console.warn('[Camera] Capture skipped:', { video: !!video, cameraActive, readyState: video?.readyState });
+    const hasLiveTrack = !!cameraStreamRef.current?.getVideoTracks().some((track) => track.readyState === 'live');
+    if (!video || !hasLiveTrack || video.readyState < 2) {
+      console.warn('[Camera] Capture skipped:', { video: !!video, hasLiveTrack, readyState: video?.readyState });
       return null;
     }
     try {
@@ -420,7 +437,27 @@ export default function ChatClient() {
       console.error('[Camera] Capture failed:', err);
       return null;
     }
-  }, [cameraActive]);
+  }, []);
+
+  const captureLiveFrameForInquiry = useCallback(async () => {
+    const initiallyReady = await waitForCameraReady(CAMERA_BOOT_TIMEOUT_MS);
+    if (!initiallyReady) {
+      return null;
+    }
+
+    for (let attempt = 0; attempt < CAMERA_RETRY_ATTEMPTS; attempt += 1) {
+      const frame = captureFrame();
+      if (frame) {
+        return frame;
+      }
+
+      const retryDelay = 120 + attempt * 80;
+      await new Promise((resolve) => setTimeout(resolve, retryDelay));
+      await waitForCameraReady(500);
+    }
+
+    return null;
+  }, [captureFrame, waitForCameraReady, CAMERA_BOOT_TIMEOUT_MS, CAMERA_RETRY_ATTEMPTS]);
 
   const startCamera = useCallback(async (facing: 'user' | 'environment' = 'user') => {
     clearCameraIdleTimeout();
@@ -540,23 +577,22 @@ export default function ChatClient() {
         
         if (isVisualInquiry && !cameraActive) {
           const started = await startCamera(preferredFacing);
-          if (started) {
-            await new Promise(r => setTimeout(r, 90));
-          }
         } else if (isVisualInquiry && cameraFacing !== preferredFacing) {
           const restarted = await startCamera(preferredFacing);
-          if (restarted) {
-            await new Promise(r => setTimeout(r, 90));
-          }
         }
 
         if (media?.type === 'image') state = 'Analyzing image...';
         else if (txt.includes('search') || txt.includes('find') || txt.includes('look for')) state = 'Searching database...';
         else if (txt.includes('calculate') || txt.includes('math') || txt.includes('solve')) state = 'Calculating...';
         
-        liveFrame = isVisualInquiry ? captureFrame() : null;
         if (isVisualInquiry) {
+          liveFrame = await captureLiveFrameForInquiry();
           stopCamera();
+          if (!liveFrame) {
+            toast.warning('I could not capture a camera frame for that question. Please allow camera access and keep yourself in view, then try again.', {
+              duration: 7000,
+            });
+          }
         }
         if (liveFrame) state = 'Observing...';
         setAiLoadingState(state);
@@ -592,7 +628,7 @@ export default function ChatClient() {
     } finally {
       setSending(false);
     }
-  }, [activeChat, cameraActive, cameraFacing, captureFrame, currentLocation, getPreferredCameraFacingForText, sending, shouldUseCameraForText, startCamera, stopCamera, user]);
+  }, [activeChat, cameraActive, cameraFacing, captureLiveFrameForInquiry, currentLocation, getPreferredCameraFacingForText, sending, shouldUseCameraForText, startCamera, stopCamera, user]);
 
   useEffect(() => {
     setReplyingTo(null);
