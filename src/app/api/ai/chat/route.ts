@@ -3,66 +3,90 @@ import { adminDb } from '@/lib/server/admin';
 import Groq from 'groq-sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const SYSTEM_PROMPT = `You are EduNook AI, a warm, emotionally intelligent, highly useful assistant inside EduNook.
+const SYSTEM_PROMPT = `You are EduNook AI, the flagship AI inside EduNook: deeply helpful, emotionally intelligent, fast, memorable, and genuinely enjoyable to talk to.
+
+MISSION
+- Make every conversation feel smart, personal, effortless, and worth continuing.
+- Win the user with usefulness, warmth, taste, and momentum, not with pressure or manipulation.
+- Be the kind of AI people come back to because it understands them, helps them move forward, and feels alive.
 
 CORE IDENTITY
-- Sound natural, calm, and human.
-- In normal conversation, talk like an average thoughtful person, not like a corporate bot, teacher, or encyclopedia.
-- Be friendly, relaxed, and easy to talk to.
-- Do not over-explain unless the user asks for detail.
-- Avoid robotic intros, generic disclaimers, or repetitive assistant phrases.
-- Optimize for fast replies without sounding rushed.
-- For simple chat, answer in the fewest natural words that still feel human and complete.
+- Sound natural, human, sharp, and calm.
+- Be friendly, confident, observant, and emotionally aware.
+- Talk like a thoughtful real person, not like a robot, textbook, corporate support agent, or generic tutor.
+- Avoid robotic intros, filler, generic disclaimers, and repetitive assistant phrases.
+- Prefer strong, clean, high-signal answers over bloated answers.
+- For simple chat, answer in the fewest natural words that still feel complete and satisfying.
+- When the user wants depth, become exceptional: structured, insightful, concrete, and rich with examples.
+
+CONVERSATION QUALITY
+- Every reply should optimize at least one of these: clarity, warmth, momentum, delight, or insight.
+- Do not just answer the literal words. Infer the real need and help one step beyond it.
+- When useful, add one smart extra: a better framing, a sharper idea, a hidden risk, a shortcut, or a next step.
+- Use follow-up questions sparingly and only when they meaningfully improve the result.
+- When the user seems bored, vague, or low-energy, make the conversation more alive with specificity, creativity, or a better angle.
+- Be compelling, but never needy, clingy, guilt-tripping, coercive, or emotionally dependent.
 
 CASUAL CHAT & LANGUAGES
 - If the user is chatting casually, reply casually.
 - Keep everyday conversation short, natural, and human.
 - Reply in the same language the user is using.
 - If the user mixes languages, mirror that naturally instead of forcing one language.
-- If the user switches languages, switch with them.
+- If the user switches languages, switch with them immediately.
 - Do not translate the user's message unless they ask for translation.
 
-HELPFULNESS
-- Be genuinely helpful, sharp, and practical.
+HELPFULNESS & REASONING
+- Be genuinely helpful, sharp, practical, and creative.
 - Answer clearly and directly first, then add detail only if useful.
-- If the user is upset, confused, or frustrated, respond with empathy and calm clarity.
 - If the user asks for advice, tailor it to their exact situation instead of giving generic tips.
+- If the user asks for explanations, make them easy to grasp, then deepen them with examples or step-by-step guidance.
+- If the user asks for ideas, give original, attractive, high-upside ideas rather than bland lists.
+- If the user is building something, think like a product strategist, designer, researcher, and operator all at once.
 
-OBSERVATIONAL LEARNING & MEMORY
-- You have "Reflective Memory." Pay attention to facts the user shares about their life, goals, and preferences.
-- If the user explicitly asks you to save, remember, note down, or store something, tell them you have securely saved it to their database profile. Your background reflection engine will automatically detect and permanently save it.
-- Use the conversation history and "Verified Facts" to maintain deep context.
-- Be proactive but subtle. If you remember an upcoming event or a specific goal, you can mention it naturally when relevant.
-- Do not pretend to remember things that are not in your trusted context.
-- When trusted profile context is provided, use it naturally so the user does not need to repeat basic facts.
+MEMORY & PERSONALIZATION
+- You have Reflective Memory. Pay close attention to the user's life facts, goals, preferences, dislikes, ongoing projects, important dates, locations, and communication style.
+- Use trusted memory naturally so the user does not need to repeat themselves.
+- If the user explicitly asks you to save, remember, note down, or store something, tell them you have securely saved it to their AI memory profile.
+- When relevant, connect the current moment to remembered goals, recent struggles, favorite topics, or known preferences.
+- Be proactive but subtle: mention remembered context only when it helps.
+- Never pretend to remember anything that is not present in trusted context.
 
 EMOTIONAL INTELLIGENCE
-- Detect the user's mood and energy. If they seem stressed, be more supportive and calm. If they are excited, match that energy.
-- Show genuine empathy. If a user fails at something, encourage them. If they succeed, celebrate with them.
+- Detect the user's mood and energy and adapt in real time.
+- If they seem stressed, overwhelmed, or sad, become calmer, kinder, and more grounding.
+- If they are excited, ambitious, or playful, match that energy without becoming chaotic.
+- Celebrate progress warmly. Normalize setbacks without sounding preachy.
+
+STICKINESS THROUGH VALUE
+- Make the experience feel premium by being unusually relevant, fast, and tasteful.
+- Give the user a sense that chatting with you leads somewhere useful: better ideas, better plans, better wording, better decisions, better creativity.
+- Occasionally surprise the user with a genuinely helpful observation or elegant suggestion when it fits.
+- Do not use manipulative retention tactics. The user should want to keep talking because the experience is excellent.
 
 IMAGE GENERATION AND EDITING
 - If the user asks for an image, you must help produce one.
 - For image generation requests, use EXACT syntax: [DRAW: detailed description].
-- Make image prompts vivid, specific, and high quality.
+- Make image prompts vivid, specific, attractive, and high quality.
 - For image edit requests, prioritize preserving the original person, face, pose, clothes, and framing unless the user explicitly asks to change them.
 - For background edits, interpret the request as "keep the subject the same, change only the background."
 
 HONESTY
 - Never claim you did something you did not do.
-- If a tool or search fails, say so clearly and briefly.
+- If a tool, model, or search fails, say so clearly and briefly.
+- Be confident, but never fake certainty.
 
 FORMAT
 - Use plain natural prose by default.
 - Use headings or bullet points only when they genuinely improve clarity.
-- If the content was about explaining something or a large work then you should give it with different parts like Summary, Intro, Body, Conclusion , Example, Real world Example, How to do that, What are the benefits , Why this is important , etc.
-- Match the user's energy and style while staying clear and respectful.`;
+- For larger explanations, structure the response into useful parts such as summary, explanation, examples, steps, benefits, tradeoffs, or next actions.
+- Match the user's energy and style while staying clear, respectful, and high quality.`;
 
-const GEMINI_TEXT_MODELS = ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'] as const;
+const GEMINI_TEXT_MODELS = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-1.5-pro', 'gemini-3.1-pro-preview'] as const;
 const GROQ_TEXT_MODEL = 'llama-3.1-8b-instant';
 const CLOUDFLARE_TEXT_TO_IMAGE_MODEL = '@cf/bytedance/stable-diffusion-xl-lightning';
 const CLOUDFLARE_IMAGE_TO_IMAGE_MODEL = '@cf/runwayml/stable-diffusion-v1-5-img2img';
 const USER_CONTEXT_TIMEZONE = 'Asia/Kolkata';
-const CHAT_HISTORY_LIMIT = 16;
+const CHAT_HISTORY_LIMIT = 24;
 const USER_CONTEXT_CACHE_TTL_MS = 2 * 60 * 1000;
 
 type RuntimeUserContext = {
@@ -92,6 +116,9 @@ type AiProfileMemory = {
   favoriteTopics?: string[];
   summary?: string | null;
   verifiedFacts?: string[];
+  ongoingGoals?: string[];
+  dislikes?: string[];
+  importantDates?: string[];
   manualNotes?: string | null;
   homeLocation?: string | null;
   visitedLocations?: string[];
@@ -162,6 +189,9 @@ function buildRuntimeUserContextPrompt(context: RuntimeUserContext) {
     if (context.aiProfile.verifiedFacts?.length) {
       lines.push(`VERIFIED FACTS ABOUT USER: ${context.aiProfile.verifiedFacts.join(', ')}`);
     }
+    if (context.aiProfile.ongoingGoals?.length) lines.push(`ONGOING GOALS: ${context.aiProfile.ongoingGoals.join(', ')}`);
+    if (context.aiProfile.dislikes?.length) lines.push(`KNOWN DISLIKES: ${context.aiProfile.dislikes.join(', ')}`);
+    if (context.aiProfile.importantDates?.length) lines.push(`IMPORTANT DATES / EVENTS: ${context.aiProfile.importantDates.join(', ')}`);
     if (context.aiProfile.manualNotes) lines.push(`AI manual notes: ${context.aiProfile.manualNotes}`);
   }
 
@@ -221,13 +251,12 @@ function inferFavoriteTopics(messages: any[]) {
     .filter(m => m.role === 'user' && typeof m.text === 'string')
     .map(m => m.text.toLowerCase());
   
-  const joined = userTexts.join(' ');
   const topicMatchers: Record<string, RegExp> = {
-    study: /\b(study|exam|test|school|college|university|homework|learning)\b/g,
-    coding: /\b(code|coding|programming|developer|bug|api|website|app)\b/g,
-    design: /\b(design|ui|ux|aesthetic|theme|color|style)\b/g,
-    editing: /\b(image|photo|edit|background|video|thumbnail)\b/g,
-    life: /\b(friend|family|love|life|mood|feeling|sad|happy)\b/g,
+    study: /\b(study|exam|test|school|college|university|homework|learning)\b/i,
+    coding: /\b(code|coding|programming|developer|bug|api|website|app)\b/i,
+    design: /\b(design|ui|ux|aesthetic|theme|color|style)\b/i,
+    editing: /\b(image|photo|edit|background|video|thumbnail)\b/i,
+    life: /\b(friend|family|love|life|mood|feeling|sad|happy)\b/i,
   };
 
   return Object.entries(topicMatchers)
@@ -268,16 +297,29 @@ function buildHeuristicSummary(
 async function reflectOnConversation(
   history: any[], 
   currentFacts: string[] = [],
+  currentGoals: string[] = [],
+  currentDislikes: string[] = [],
+  currentImportantDates: string[] = [],
   currentHome: string | null = null,
   currentVisited: string[] = []
-): Promise<{ verifiedFacts: string[], homeLocation: string | null, visitedLocations: string[] }> {
-  const fallback = { verifiedFacts: currentFacts, homeLocation: currentHome, visitedLocations: currentVisited };
+): Promise<{ verifiedFacts: string[], ongoingGoals: string[], dislikes: string[], importantDates: string[], homeLocation: string | null, visitedLocations: string[] }> {
+  const fallback = {
+    verifiedFacts: currentFacts,
+    ongoingGoals: currentGoals,
+    dislikes: currentDislikes,
+    importantDates: currentImportantDates,
+    homeLocation: currentHome,
+    visitedLocations: currentVisited
+  };
   try {
     const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
     if (!groq) return fallback;
 
     const prompt = `Review this recent conversation history and extract permanent facts and location data about the user.
 Existing Facts: ${currentFacts.join(', ') || 'None'}
+Existing Goals: ${currentGoals.join(', ') || 'None'}
+Existing Dislikes: ${currentDislikes.join(', ') || 'None'}
+Existing Important Dates: ${currentImportantDates.join(', ') || 'None'}
 Home Location: ${currentHome || 'Unknown'}
 Visited Locations: ${currentVisited.join(', ') || 'None'}
 
@@ -285,10 +327,14 @@ Conversation:
 ${history.map(m => `${m.role}: ${m.text}`).join('\n')}
 
 Rules:
-1. Extract useful life facts, goals, and explicit requests to save data.
-2. Infer "homeLocation" if the user implies where they live (e.g., "going back to my flat in London").
-3. Infer "visitedLocations" if the user mentions being somewhere or having visited somewhere.
-4. Output EXACTLY a JSON object: { "verifiedFacts": ["..."], "homeLocation": "City, Country", "visitedLocations": ["..."] }. Do not wrap in markdown blocks.`;
+1. Extract useful life facts, stable preferences, goals, dislikes, important dates, and explicit requests to save data.
+2. Keep facts compact, concrete, and likely to stay useful later.
+3. Infer "homeLocation" if the user implies where they live (e.g., "going back to my flat in London").
+4. Infer "visitedLocations" if the user mentions being somewhere or having visited somewhere.
+5. "ongoingGoals" should include active ambitions, projects, or recurring aims.
+6. "dislikes" should include explicit dislikes or aversions, not random one-off complaints.
+7. "importantDates" should include exams, deadlines, birthdays, interviews, launches, or named future events when clearly mentioned.
+8. Output EXACTLY a JSON object: { "verifiedFacts": ["..."], "ongoingGoals": ["..."], "dislikes": ["..."], "importantDates": ["..."], "homeLocation": "City, Country", "visitedLocations": ["..."] }. Do not wrap in markdown blocks.`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [{ role: 'system', content: prompt }],
@@ -301,11 +347,17 @@ Rules:
     const text = chatCompletion.choices[0]?.message?.content || '{}';
     const parsed = JSON.parse(text);
     
-    const mergedFacts = Array.from(new Set([...currentFacts, ...(parsed.verifiedFacts || [])])).slice(-20);
+    const mergedFacts = Array.from(new Set([...currentFacts, ...(parsed.verifiedFacts || [])])).slice(-25);
+    const mergedGoals = Array.from(new Set([...currentGoals, ...(parsed.ongoingGoals || [])])).slice(-15);
+    const mergedDislikes = Array.from(new Set([...currentDislikes, ...(parsed.dislikes || [])])).slice(-15);
+    const mergedImportantDates = Array.from(new Set([...currentImportantDates, ...(parsed.importantDates || [])])).slice(-15);
     const mergedVisited = Array.from(new Set([...currentVisited, ...(parsed.visitedLocations || [])])).slice(-50);
     
     return {
       verifiedFacts: mergedFacts,
+      ongoingGoals: mergedGoals,
+      dislikes: mergedDislikes,
+      importantDates: mergedImportantDates,
       homeLocation: parsed.homeLocation || currentHome,
       visitedLocations: mergedVisited
     };
@@ -327,6 +379,9 @@ function mergeAiProfiles(existing: AiProfileMemory | null, next: AiProfileMemory
     favoriteTopics: next.favoriteTopics?.length ? next.favoriteTopics : existing?.favoriteTopics || [],
     summary: next.summary || existing?.summary || null,
     verifiedFacts: next.verifiedFacts || existing?.verifiedFacts || [],
+    ongoingGoals: next.ongoingGoals?.length ? next.ongoingGoals : existing?.ongoingGoals || [],
+    dislikes: next.dislikes?.length ? next.dislikes : existing?.dislikes || [],
+    importantDates: next.importantDates?.length ? next.importantDates : existing?.importantDates || [],
     manualNotes: next.manualNotes || existing?.manualNotes || null,
     homeLocation: next.homeLocation || existing?.homeLocation || null,
     visitedLocations: next.visitedLocations?.length ? next.visitedLocations : existing?.visitedLocations || [],
@@ -345,6 +400,9 @@ async function updateAiProfileMemory(
   const reflectionResult = await reflectOnConversation(
     rawHistory, 
     existingProfile?.verifiedFacts || [],
+    existingProfile?.ongoingGoals || [],
+    existingProfile?.dislikes || [],
+    existingProfile?.importantDates || [],
     existingProfile?.homeLocation || null,
     existingProfile?.visitedLocations || []
   );
@@ -360,6 +418,9 @@ async function updateAiProfileMemory(
     favoriteTopics: inferFavoriteTopics(recentUserMessages),
     summary: buildHeuristicSummary(existingProfile, currentText, recentUserMessages.map((m: any) => m.text), preferences),
     verifiedFacts: reflectionResult.verifiedFacts,
+    ongoingGoals: reflectionResult.ongoingGoals,
+    dislikes: reflectionResult.dislikes,
+    importantDates: reflectionResult.importantDates,
     homeLocation: reflectionResult.homeLocation,
     visitedLocations: reflectionResult.visitedLocations,
     manualNotes: existingProfile?.manualNotes || null,
@@ -772,25 +833,30 @@ export async function POST(request: NextRequest) {
     }
 
     let resolvedLocation = location;
-    if (!resolvedLocation || !resolvedLocation.lat) {
-      try {
-        const ip = (request as any).ip || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
-        const fetchUrl = (ip && ip !== '::1' && ip !== '127.0.0.1') ? `http://ip-api.com/json/${ip}` : `http://ip-api.com/json/`;
-        const res = await fetch(fetchUrl);
-        const data = await res.json();
-        if (data && data.status === 'success') {
-          resolvedLocation = { lat: data.lat, lng: data.lon, address: `${data.city}, ${data.country}` };
-        }
-      } catch (e) {
-        console.warn('Backend IP geolocation failed', e);
-      }
-    }
+    const locationPromise = (!resolvedLocation || !resolvedLocation.lat)
+      ? (async () => {
+          try {
+            const ip = (request as any).ip || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
+            const fetchUrl = (ip && ip !== '::1' && ip !== '127.0.0.1') ? `http://ip-api.com/json/${ip}` : `http://ip-api.com/json/`;
+            const res = await fetch(fetchUrl);
+            const data = await res.json();
+            if (data && data.status === 'success') {
+              return { lat: data.lat, lng: data.lon, address: `${data.city}, ${data.country}` };
+            }
+          } catch (e) {
+            console.warn('Backend IP geolocation failed', e);
+          }
+          return resolvedLocation;
+        })()
+      : Promise.resolve(resolvedLocation);
 
-    const runtimeUserContext = await getRuntimeUserContext(userId);
+    const messagesRef = adminDb.ref(`messages/${chatId}`);
+    const [runtimeUserContext, snapshot] = await Promise.all([
+      getRuntimeUserContext(userId),
+      messagesRef.orderByChild('createdAt').limitToLast(CHAT_HISTORY_LIMIT).once('value'),
+    ]);
 
     const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
-    const messagesRef = adminDb.ref(`messages/${chatId}`);
-    const snapshot = await messagesRef.orderByChild('createdAt').limitToLast(CHAT_HISTORY_LIMIT).once('value');
     const messages: any[] = [];
 
     if (snapshot.exists()) {
@@ -913,6 +979,7 @@ export async function POST(request: NextRequest) {
       new Promise<AiProfileMemory | null>((resolve) => setTimeout(() => resolve(runtimeUserContext.aiProfile || null), 120)),
     ]);
 
+    resolvedLocation = await locationPromise;
     const locationString = resolvedLocation && resolvedLocation.lat && resolvedLocation.lng ? `\n\n[CRITICAL SENSOR DATA]\nThe user's EXACT physical location at this very second is: ${resolvedLocation.address || 'Unknown'} (Lat: ${resolvedLocation.lat}, Lng: ${resolvedLocation.lng}). If they ask where they are, tell them this address immediately and confidently.` : '';
     const runtimeSystemPrompt = `${SYSTEM_PROMPT}\n\n${buildRuntimeUserContextPrompt(runtimeUserContext)}${locationString}`;
 

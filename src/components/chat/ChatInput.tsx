@@ -68,6 +68,7 @@ interface ChatInputProps {
   onTyping: () => void;
   sending: boolean;
   onUploadMedia: (file: File) => Promise<{ url: string, type: 'image' | 'video' | 'file' }>;
+  onTextChange?: (text: string) => void;
   enableVoiceForAi?: boolean;
   voiceAssistantSpeaking?: boolean;
   onVoiceModeChange?: (enabled: boolean) => void;
@@ -81,6 +82,7 @@ export function ChatInput({
   onTyping,
   sending,
   onUploadMedia,
+  onTextChange,
   enableVoiceForAi = false,
   voiceAssistantSpeaking = false,
   onVoiceModeChange,
@@ -189,6 +191,7 @@ export function ChatInput({
       if (nextText) {
         setText(nextText);
         onTyping();
+        onTextChange?.(nextText);
       }
 
       if (finalTranscript.trim() && !sending && !isUploading) {
@@ -225,7 +228,7 @@ export function ChatInput({
       }
       recognitionRef.current = null;
     };
-  }, [isUploading, onSendMessage, onTyping, sending, voiceAssistantSpeaking]);
+  }, [isUploading, onSendMessage, onTextChange, onTyping, sending, voiceAssistantSpeaking]);
 
   useEffect(() => {
     onVoiceModeChange?.(voiceModeEnabled);
@@ -556,6 +559,7 @@ export function ChatInput({
           onChange={(e) => {
             setText(e.target.value);
             onTyping();
+            onTextChange?.(e.target.value);
           }}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
           placeholder="Type your message..."

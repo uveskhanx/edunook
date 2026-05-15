@@ -9,7 +9,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { Layout } from '@/components/Layout';
 import { 
   User as UserIcon, Loader2, MessageSquare, ArrowLeft, 
-  MoreVertical, Info, ShieldCheck, Search, X, Trash2, Settings, MoreHorizontal, ShieldAlert, Eye, EyeOff, SwitchCamera, Ghost
+  MoreVertical, Info, ShieldCheck, Search, X, Trash2, Settings, MoreHorizontal, ShieldAlert, Ghost
 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -49,6 +49,8 @@ export default function ChatClient() {
   const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user');
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStartPromiseRef = useRef<Promise<boolean> | null>(null);
+  const cameraIdleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const [aiLoadingState, setAiLoadingState] = useState<string | null>(null);
@@ -113,6 +115,17 @@ export default function ChatClient() {
         (error) => {
           if (error.code === error.PERMISSION_DENIED && !hasHighAccuracy) {
             console.warn('GPS location denied, using IP fallback');
+            toast.warning('Exact device location is blocked. Allow location access in your browser if you want hardware GPS.', {
+              duration: 7000,
+            });
+          } else if (error.code === error.POSITION_UNAVAILABLE) {
+            toast.warning('Your device could not determine a hardware location, so IP-based location is being used instead.', {
+              duration: 7000,
+            });
+          } else if (error.code === error.TIMEOUT) {
+            toast.warning('Hardware location timed out, so IP-based location is being used instead.', {
+              duration: 7000,
+            });
           }
         },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 300000 }
@@ -241,6 +254,73 @@ export default function ChatClient() {
      }, 3000);
   }, [user, activeChat]);
 
+  const shouldUseCameraForText = useCallback((rawText: string) => {
+    const text = rawText.toLowerCase().trim();
+    if (!text) return false;
+
+    const directVisualPatterns = [
+      /\bwhat do you see\b/,
+      /\bcan you see\b/,
+      /\blook at\b/,
+      /\bhow do i look\b/,
+      /\bwhat am i wearing\b/,
+      /\bwhat is behind me\b/,
+      /\bwhat'?s behind me\b/,
+      /\bwhat is around me\b/,
+      /\bwhat'?s around me\b/,
+      /\bwhat am i holding\b/,
+      /\bdescribe (me|my outfit|my room|my background|this)\b/,
+      /\bdo i look\b/,
+      /\bdoes this look\b/,
+      /\bwhich outfit\b/,
+      /\bwhich shirt\b/,
+      /\bwhich color suits\b/,
+      /\bshowing you\b/,
+      /\bsee this\b/,
+    ];
+
+    const contextWords = /\b(wear|wearing|outfit|shirt|dress|pant|pants|clothes|face|hair|skin|room|desk|background|behind|around|holding|object|item|screen|board|book|paper)\b/;
+    const visualVerbs = /\b(look|see|watch|describe|identify|recognize|check|analyze|rate|compare)\b/;
+
+    return directVisualPatterns.some((pattern) => pattern.test(text)) || (visualVerbs.test(text) && contextWords.test(text));
+  }, []);
+
+  const getPreferredCameraFacingForText = useCallback((rawText: string): 'user' | 'environment' => {
+    const text = rawText.toLowerCase().trim();
+    if (!text) return 'user';
+
+    const rearCameraPatterns = [
+      /\bwhat do you see\b/,
+      /\blook at this\b/,
+      /\bsee this\b/,
+      /\bshowing you\b/,
+      /\bwhat is this\b/,
+      /\bwhat'?s this\b/,
+      /\bread this\b/,
+      /\bscan this\b/,
+      /\bsolve this\b/,
+      /\bwhat is around me\b/,
+      /\bwhat'?s around me\b/,
+      /\bwhat is behind me\b/,
+      /\bwhat'?s behind me\b/,
+      /\bmy room\b/,
+      /\bmy desk\b/,
+      /\bmy screen\b/,
+      /\bbackground\b/,
+      /\bobject\b/,
+      /\bbook\b/,
+      /\bpaper\b/,
+    ];
+
+    return rearCameraPatterns.some((pattern) => pattern.test(text)) ? 'environment' : 'user';
+  }, []);
+
+  const clearCameraIdleTimeout = useCallback(() => {
+    if (cameraIdleTimeoutRef.current) {
+      clearTimeout(cameraIdleTimeoutRef.current);
+      cameraIdleTimeoutRef.current = null;
+    }
+  }, []);
 
   const captureFrame = useCallback((): string | null => {
     const video = cameraVideoRef.current;
@@ -265,40 +345,80 @@ export default function ChatClient() {
   }, [cameraActive]);
 
   const startCamera = useCallback(async (facing: 'user' | 'environment' = 'user') => {
+    clearCameraIdleTimeout();
+    const activeStream = cameraStreamRef.current;
+    const hasLiveTrack = !!activeStream?.getVideoTracks().some((track) => track.readyState === 'live');
+    if (hasLiveTrack) {
+      const currentFacing = cameraFacing;
+      if (currentFacing === facing) {
+        if (!cameraActive) setCameraActive(true);
+        return true;
+      }
+      activeStream?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+      if (cameraVideoRef.current) {
+        cameraVideoRef.current.srcObject = null;
+      }
+      setCameraActive(false);
+    }
+
+    if (cameraStartPromiseRef.current) {
+      return cameraStartPromiseRef.current;
+    }
+
     if (!window.isSecureContext) {
       toast.error('Camera requires a secure (HTTPS) connection. Please check your URL.');
-      return;
+      return false;
     }
-    try {
-      if (cameraStreamRef.current) {
-        cameraStreamRef.current.getTracks().forEach(t => t.stop());
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
-        audio: false
-      });
-      cameraStreamRef.current = stream;
-      if (cameraVideoRef.current) {
-        cameraVideoRef.current.srcObject = stream;
-        cameraVideoRef.current.play().catch(() => {});
-      }
-      setCameraActive(true);
-      setCameraFacing(facing);
-      console.log('[Camera] Started successfully');
-    } catch (err: any) {
-      console.error('Camera access failed:', err);
-      const errName = err.name || 'UnknownError';
-      if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
-        toast.error(`Camera is blocked! 1. Click the lock icon in your URL bar and set Camera to "Allow". 2. If on mobile, check your PHONE SETTINGS > APPS > CHROME > PERMISSIONS and allow Camera there.`, { duration: 10000 });
-      } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
-        toast.error('No camera found on this device.');
-      } else {
-        toast.error(`Could not start camera: ${errName} - ${err.message}`);
-      }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error('This browser does not expose camera access here. Try HTTPS in Chrome or Edge and check site permissions.');
+      return false;
     }
-  }, []);
+
+    const startPromise = (async () => {
+      try {
+        if (cameraStreamRef.current) {
+          cameraStreamRef.current.getTracks().forEach(t => t.stop());
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        cameraStreamRef.current = stream;
+        if (cameraVideoRef.current) {
+          cameraVideoRef.current.srcObject = stream;
+          cameraVideoRef.current.play().catch(() => {});
+        }
+        setCameraActive(true);
+        setCameraFacing(facing);
+        console.log('[Camera] Started successfully');
+        return true;
+      } catch (err: any) {
+        console.error('Camera access failed:', err);
+        const errName = err.name || 'UnknownError';
+        if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+          toast.error(`Camera is blocked! 1. Click the lock icon in your URL bar and set Camera to "Allow". 2. If on mobile, check your PHONE SETTINGS > APPS > CHROME > PERMISSIONS and allow Camera there.`, { duration: 10000 });
+        } else if (errName === 'SecurityError') {
+          toast.error('Camera access was blocked by browser security or site policy. Refresh after checking site permissions and HTTPS.');
+        } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+          toast.error('No camera found on this device.');
+        } else if (errName === 'NotReadableError' || errName === 'TrackStartError') {
+          toast.error('Your camera is busy in another app. Close other camera apps and try again.');
+        } else {
+          toast.error(`Could not start camera: ${errName} - ${err.message}`);
+        }
+        return false;
+      } finally {
+        cameraStartPromiseRef.current = null;
+      }
+    })();
+
+    cameraStartPromiseRef.current = startPromise;
+    return startPromise;
+  }, [cameraActive, cameraFacing, clearCameraIdleTimeout]);
 
   const stopCamera = useCallback(() => {
+    clearCameraIdleTimeout();
     if (cameraStreamRef.current) {
       cameraStreamRef.current.getTracks().forEach(t => t.stop());
       cameraStreamRef.current = null;
@@ -306,24 +426,26 @@ export default function ChatClient() {
     if (cameraVideoRef.current) {
       cameraVideoRef.current.srcObject = null;
     }
+    cameraStartPromiseRef.current = null;
     setCameraActive(false);
-  }, []);
+  }, [clearCameraIdleTimeout]);
 
-  const toggleCamera = useCallback(() => {
-    if (cameraActive) { stopCamera(); } else { startCamera(cameraFacing); }
-  }, [cameraActive, cameraFacing, startCamera, stopCamera]);
-
-  const flipCamera = useCallback(() => {
-    const next = cameraFacing === 'user' ? 'environment' : 'user';
-    startCamera(next);
-  }, [cameraFacing, startCamera]);
+  const scheduleCameraIdleStop = useCallback((delayMs = 1200) => {
+    clearCameraIdleTimeout();
+    cameraIdleTimeoutRef.current = setTimeout(() => {
+      stopCamera();
+    }, delayMs);
+  }, [clearCameraIdleTimeout, stopCamera]);
 
   // Cleanup camera on unmount
   useEffect(() => {
-    return () => { if (cameraStreamRef.current) cameraStreamRef.current.getTracks().forEach(t => t.stop()); };
-  }, []);
+    return () => {
+      clearCameraIdleTimeout();
+      if (cameraStreamRef.current) cameraStreamRef.current.getTracks().forEach(t => t.stop());
+    };
+  }, [clearCameraIdleTimeout]);
 
-  const handleSendMessage = async (text: string, media?: { url: string, type: 'image' | 'video' | 'file' }) => {
+  const handleSendMessage = useCallback(async (text: string, media?: { url: string, type: 'image' | 'video' | 'file' }) => {
     if (!user || !activeChat || sending) return;
     setSending(true);
     try {
@@ -332,22 +454,29 @@ export default function ChatClient() {
       if (activeChat.profile.uid === 'edunook-ai') {
         let state = 'Thinking...';
         const txt = text.toLowerCase();
-        
-        // Auto-trigger camera for visual inquiries
-        const visualKeywords = ['wear', 'wearing', 'look', 'see', 'look like', 'around', 'behind', 'holding', 'shirt', 'pant', 'clothes', 'environment', 'background', 'this'];
-        const isVisualInquiry = visualKeywords.some(kw => txt.includes(kw));
+        const isVisualInquiry = shouldUseCameraForText(text);
+        const preferredFacing = getPreferredCameraFacingForText(text);
         
         if (isVisualInquiry && !cameraActive) {
-          await startCamera(cameraFacing);
-          // Wait a tiny bit for the first frame
-          await new Promise(r => setTimeout(r, 800));
+          const started = await startCamera(preferredFacing);
+          if (started) {
+            await new Promise(r => setTimeout(r, 90));
+          }
+        } else if (isVisualInquiry && cameraFacing !== preferredFacing) {
+          const restarted = await startCamera(preferredFacing);
+          if (restarted) {
+            await new Promise(r => setTimeout(r, 90));
+          }
         }
 
         if (media?.type === 'image') state = 'Analyzing image...';
         else if (txt.includes('search') || txt.includes('find') || txt.includes('look for')) state = 'Searching database...';
         else if (txt.includes('calculate') || txt.includes('math') || txt.includes('solve')) state = 'Calculating...';
         
-        const liveFrame = captureFrame();
+        const liveFrame = isVisualInquiry ? captureFrame() : null;
+        if (isVisualInquiry) {
+          stopCamera();
+        }
         if (liveFrame) state = 'Seeing you...';
         setAiLoadingState(state);
         
@@ -377,7 +506,22 @@ export default function ChatClient() {
     } finally {
       setSending(false);
     }
-  };
+  }, [activeChat, cameraActive, cameraFacing, captureFrame, currentLocation, getPreferredCameraFacingForText, sending, shouldUseCameraForText, startCamera, stopCamera, user]);
+
+  const handleDraftTextChange = useCallback((draft: string) => {
+    if (!activeChat || activeChat.profile.uid !== 'edunook-ai') return;
+    if (!shouldUseCameraForText(draft)) {
+      if (cameraActive) scheduleCameraIdleStop(250);
+      return;
+    }
+
+    const preferredFacing = getPreferredCameraFacingForText(draft);
+    void startCamera(preferredFacing).then((started) => {
+      if (started) {
+        scheduleCameraIdleStop(1500);
+      }
+    });
+  }, [activeChat, cameraActive, getPreferredCameraFacingForText, scheduleCameraIdleStop, shouldUseCameraForText, startCamera]);
 
   const handleUploadMedia = async (file: File) => {
     if (!user) throw new Error("Auth required");
@@ -476,20 +620,6 @@ export default function ChatClient() {
           )}
           {/* Hidden video element for camera capture */}
           <video ref={cameraVideoRef} playsInline muted autoPlay style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', zIndex: -1 }} />
-          {/* Mini camera preview */}
-          {cameraActive && cameraStreamRef.current && (
-            <div className="absolute top-20 right-4 z-50 rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-2xl shadow-emerald-500/30" style={{ width: 120, height: 90 }}>
-              <video 
-                autoPlay playsInline muted 
-                ref={(el) => { if (el && cameraStreamRef.current) el.srcObject = cameraStreamRef.current; }}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute bottom-1 left-1 flex items-center gap-1 bg-black/60 rounded-full px-2 py-0.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[9px] text-emerald-300 font-bold">LIVE</span>
-              </div>
-            </div>
-          )}
           {activeChat ? (
             <>
               {/* Premium Header */}
@@ -532,26 +662,6 @@ export default function ChatClient() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                   {activeChat.profile.uid === 'edunook-ai' && (
-                    <>
-                      <button 
-                        onClick={toggleCamera}
-                        title={cameraActive ? 'Disable AI Vision' : 'Enable AI Vision'}
-                        className={`p-3 rounded-2xl border transition-all ${cameraActive ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-500/30 animate-pulse' : 'bg-foreground/5 text-foreground/40 border-border hover:text-foreground'}`}
-                      >
-                        {cameraActive ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                      </button>
-                      {cameraActive && (
-                        <button 
-                          onClick={flipCamera}
-                          title="Switch Camera"
-                          className="p-3 rounded-2xl border bg-foreground/5 text-foreground/40 border-border hover:text-foreground transition-all"
-                        >
-                          <SwitchCamera className="w-5 h-5" />
-                        </button>
-                      )}
-                    </>
-                   )}
                    <button 
                      onClick={() => setChatSearchOpen(!chatSearchOpen)}
                      className={`p-3 rounded-2xl border transition-all ${chatSearchOpen ? 'bg-primary text-white border-primary shadow-lg' : 'bg-foreground/5 text-foreground/40 border-border hover:text-foreground'}`}
@@ -642,11 +752,12 @@ export default function ChatClient() {
               />
 
               {/* Input Terminal */}
-              <ChatInput 
+              <ChatInput
                 onSendMessage={handleSendMessage}
                 onTyping={handleTyping}
                 sending={sending}
                 onUploadMedia={handleUploadMedia}
+                onTextChange={handleDraftTextChange}
                 enableVoiceForAi={activeChat.profile.uid === 'edunook-ai'}
                 voiceAssistantSpeaking={voiceAssistantSpeaking}
                 onVoiceModeChange={setVoiceModeEnabled}

@@ -662,11 +662,21 @@ export const DbService = {
 
   async getAchievements(uid: string): Promise<Achievement[]> {
     const snapshot = await get(ref(db, `profiles/${uid}/achievements`));
-    const privateSnapshot = !snapshot.exists() && getAuth().currentUser?.uid === uid
-      ? await get(ref(db, `users/${uid}/achievements`))
-      : null;
-    const source = snapshot.exists() ? snapshot : privateSnapshot;
-    if (!source?.exists()) return [];
+    
+    // Self-healing: migration for achievements
+    if (getAuth().currentUser?.uid === uid && !snapshot.exists()) {
+      const privateSnapshot = await get(ref(db, `users/${uid}/achievements`));
+      if (privateSnapshot.exists()) {
+        const data = privateSnapshot.val();
+        await set(ref(db, `profiles/${uid}/achievements`), data);
+        const achievements: Achievement[] = Object.keys(data).map(id => ({ ...data[id], id }));
+        return achievements.reverse();
+      }
+    }
+
+    if (!snapshot?.exists()) return [];
+    
+    const source = snapshot;
     
     const achievements: Achievement[] = [];
     source.forEach((child) => {
@@ -678,22 +688,29 @@ export const DbService = {
 
   async getHighlights(uid: string): Promise<Highlight[]> {
     const snapshot = await get(ref(db, `profiles/${uid}/highlights`));
-    const privateSnapshot = !snapshot.exists() && getAuth().currentUser?.uid === uid
-      ? await get(ref(db, `users/${uid}/highlights`))
-      : null;
-    const source = snapshot.exists() ? snapshot : privateSnapshot;
-    if (!source?.exists()) return [];
+    
+    // Self-healing: migration for highlights
+    if (getAuth().currentUser?.uid === uid && !snapshot.exists()) {
+      const privateSnapshot = await get(ref(db, `users/${uid}/highlights`));
+      if (privateSnapshot.exists()) {
+        const data = privateSnapshot.val();
+        await set(ref(db, `profiles/${uid}/highlights`), data);
+        const highlights: Highlight[] = Object.keys(data).map(id => ({ ...data[id], id }));
+        return highlights.reverse();
+      }
+    }
+
+    if (!snapshot?.exists()) return [];
     
     const highlights: Highlight[] = [];
-    source.forEach((child) => {
+    snapshot.forEach((child) => {
       highlights.push({ id: child.key as string, ...child.val() });
     });
     return highlights.reverse();
   },
 
   async addAchievement(uid: string, achievement: Omit<Achievement, 'id'>): Promise<string> {
-    const path = await this.getProfilePath(uid);
-    const achievementsRef = ref(db, `${path}/${uid}/achievements`);
+    const achievementsRef = ref(db, `profiles/${uid}/achievements`);
     const newRef = push(achievementsRef);
     await set(newRef, achievement);
     return newRef.key!;
