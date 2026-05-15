@@ -6,6 +6,7 @@ import { Profile, DbService } from '@/lib/db-service';
 import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 import { formatDistanceToNow } from 'date-fns';
 import { VerificationTick } from '@/components/VerificationTick';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 interface ChatSidebarProps {
   user: { id: string } | null;
@@ -40,6 +41,7 @@ export function ChatSidebar({
   openMenuId,
   setOpenMenuId
 }: ChatSidebarProps) {
+  const [chatPendingDelete, setChatPendingDelete] = React.useState<(typeof conversations)[number] | null>(null);
   
   const aiChatId = user ? [user.id, 'edunook-ai'].sort().join('_') : '';
   const aiConversationPresent = conversations.some(c => c.uid === 'edunook-ai');
@@ -183,10 +185,8 @@ export function ChatSidebar({
                          <DropdownMenuItem 
                            onClick={(e) => { 
                                e.stopPropagation(); 
-                               if (window.confirm('Are you sure you want to delete this conversation? This will hide it for you.')) {
-                                 DbService.deleteChat(user!.id, conv.chatId);
-                                 setOpenMenuId(null);
-                               }
+                               setChatPendingDelete(conv);
+                               setOpenMenuId(null);
                            }}
                            className="cursor-pointer text-rose-500 font-bold focus:bg-rose-500/10 focus:text-rose-500 rounded-xl py-2.5 px-4 mt-1 flex items-center justify-between transition-all"
                          >
@@ -247,6 +247,21 @@ export function ChatSidebar({
           )}
         </AnimatePresence>
       </div>
+      <ConfirmDialog
+        open={Boolean(chatPendingDelete)}
+        onOpenChange={(open) => {
+          if (!open) setChatPendingDelete(null);
+        }}
+        title="Delete this chat?"
+        description="This will hide the conversation for you. It will not remove the other person's copy."
+        confirmLabel="Delete chat"
+        destructive
+        onConfirm={async () => {
+          if (!user || !chatPendingDelete) return;
+          await DbService.deleteChat(user.id, chatPendingDelete.chatId);
+          setChatPendingDelete(null);
+        }}
+      />
     </aside>
   );
 }

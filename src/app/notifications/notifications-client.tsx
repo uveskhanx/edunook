@@ -73,6 +73,14 @@ export default function NotificationsClient() {
     }
   }, [user]);
 
+  // Auto-mark as seen
+  useEffect(() => {
+    if (user && notifications.length > 0 && notifications.some(n => !n.seen)) {
+      // Mark all as seen when the user views the notifications page
+      DbService.markNotificationsAsSeen(user.id);
+    }
+  }, [user, notifications]);
+
   const filteredNotifications = useMemo(() => {
     return notifications.filter(n => {
       if (activeFilter === 'all') return true;

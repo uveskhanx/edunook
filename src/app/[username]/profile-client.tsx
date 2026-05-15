@@ -495,30 +495,54 @@ export default function ProfileClient({ username }: { username: string }) {
                  </div>
               </div>
             
-              <div className="flex flex-wrap items-center gap-4 w-full">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
                 {achievements.length > 0 ? achievements.map(achievement => {
+                  const is1st = achievement.title.includes('1st Place');
+                  const is2nd = achievement.title.includes('2nd Place');
+                  const is3rd = achievement.title.includes('3rd Place');
+                  
                   const Icon = achievement.icon === 'trophy' ? Trophy :
                                achievement.icon === 'medal' ? Medal :
                                achievement.icon === 'award' ? Award : Trophy;
+
+                  const getRankStyles = () => {
+                    if (is1st) return "from-amber-400/20 to-yellow-600/20 text-amber-500 border-amber-500/20 group-hover:border-amber-500/50 shadow-amber-500/10";
+                    if (is2nd) return "from-slate-300/20 to-slate-500/20 text-slate-400 border-slate-400/20 group-hover:border-slate-400/50 shadow-slate-400/10";
+                    if (is3rd) return "from-orange-400/20 to-orange-700/20 text-orange-600 border-orange-500/20 group-hover:border-orange-500/50 shadow-orange-500/10";
+                    return "from-violet-600/10 to-blue-600/10 text-violet-500 border-border group-hover:border-primary/50 shadow-primary/5";
+                  };
+
+                  const getIconBg = () => {
+                    if (is1st) return "bg-gradient-to-br from-amber-400 to-yellow-600 text-white shadow-lg shadow-amber-500/20";
+                    if (is2nd) return "bg-gradient-to-br from-slate-300 to-slate-500 text-white shadow-lg shadow-slate-400/20";
+                    if (is3rd) return "bg-gradient-to-br from-orange-400 to-orange-700 text-white shadow-lg shadow-orange-500/20";
+                    return "bg-gradient-to-br from-violet-500 to-blue-500 text-white";
+                  };
                                
                   return (
                   <motion.div 
                     key={achievement.id} 
-                    whileHover={{ scale: 1.02, y: -2 }}
-                    className="flex items-center gap-5 p-6 bg-card border border-border rounded-3xl flex-1 min-w-[280px] group transition-all hover:border-primary/50"
+                    whileHover={{ scale: 1.02, y: -4 }}
+                    className={`flex items-center gap-5 p-5 bg-card/50 backdrop-blur-xl border rounded-[2rem] group transition-all duration-300 shadow-2xl ${getRankStyles()}`}
                   >
-                     <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-600/20 to-blue-600/20 text-violet-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-500 ${getIconBg()}`}>
                         <Icon className="w-7 h-7" />
                      </div>
-                     <div className="flex flex-col">
-                        <span className="text-[15px] font-black text-foreground">{achievement.title}</span>
-                        <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest mt-0.5">
-                           Earned — {new Date(achievement.earnedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
-                        </span>
+                     <div className="flex flex-col min-w-0">
+                        <span className="text-[15px] font-black text-foreground truncate group-hover:text-primary transition-colors">{achievement.title}</span>
+                        <div className="flex items-center gap-2 mt-1">
+                           <span className="px-2 py-0.5 rounded-full bg-foreground/5 text-[9px] text-muted-foreground uppercase font-black tracking-widest">
+                              {new Date(achievement.earnedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
+                           </span>
+                           {is1st && <span className="text-[10px] font-black text-amber-500 uppercase tracking-tighter">Gold Tier</span>}
+                           {is2nd && <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Silver Tier</span>}
+                           {is3rd && <span className="text-[10px] font-black text-orange-500 uppercase tracking-tighter">Bronze Tier</span>}
+                        </div>
                      </div>
                   </motion.div>
                 )}) : (
-                  <div className="w-full flex items-center justify-center py-6">
+                  <div className="w-full flex flex-col items-center justify-center py-12 bg-muted/5 border border-dashed border-border rounded-[2rem]">
+                     <Trophy className="w-12 h-12 text-muted-foreground/20 mb-4" />
                      <p className="text-sm font-medium text-muted-foreground opacity-70">No achievements unlocked yet.</p>
                   </div>
                 )}

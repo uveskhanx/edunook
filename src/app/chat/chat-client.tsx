@@ -19,6 +19,7 @@ import { MessageList } from '@/components/chat/MessageList';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { toast } from 'sonner';
 import { ReportModal } from '@/components/ReportModal';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 export default function ChatClient() {
   const searchParams = useSearchParams();
@@ -40,10 +41,12 @@ export default function ChatClient() {
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [isReporting, setIsReporting] = useState(false);
   const [isInfoOpen, setIsInfoOpen] = useState(false);
+  const [confirmClearChatOpen, setConfirmClearChatOpen] = useState(false);
   const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
   const [voiceAssistantSpeaking, setVoiceAssistantSpeaking] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number, address?: string} | null>(null);
   const [vanishMode, setVanishMode] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user');
@@ -114,7 +117,6 @@ export default function ChatClient() {
         },
         (error) => {
           if (error.code === error.PERMISSION_DENIED && !hasHighAccuracy) {
-            console.warn('GPS location denied, using IP fallback');
             toast.warning('Exact device location is blocked. Allow location access in your browser if you want hardware GPS.', {
               duration: 7000,
             });
@@ -262,25 +264,59 @@ export default function ChatClient() {
       /\bwhat do you see\b/,
       /\bcan you see\b/,
       /\blook at\b/,
+      /\blook closely\b/,
+      /\btake a look\b/,
+      /\bcheck this out\b/,
+      /\bsee me\b/,
       /\bhow do i look\b/,
+      /\bhow am i looking\b/,
+      /\bhow does my\b/,
       /\bwhat am i wearing\b/,
+      /\bwhat color am i wearing\b/,
+      /\bhow is my outfit\b/,
+      /\bhow is my face\b/,
+      /\bhow is my hair\b/,
+      /\bhow is my skin\b/,
+      /\bam i looking\b/,
+      /\bdo i look\b/,
+      /\bdoes my face look\b/,
+      /\bdoes my outfit look\b/,
       /\bwhat is behind me\b/,
       /\bwhat'?s behind me\b/,
       /\bwhat is around me\b/,
       /\bwhat'?s around me\b/,
       /\bwhat am i holding\b/,
+      /\bwhat is in my hand\b/,
+      /\bwhat'?s in my hand\b/,
+      /\bwhat is this\b/,
+      /\bwhat'?s this\b/,
+      /\bwhat is on my screen\b/,
+      /\bwhat'?s on my screen\b/,
+      /\bread this\b/,
+      /\bscan this\b/,
+      /\bsolve this from camera\b/,
+      /\bidentify this\b/,
+      /\brecognize this\b/,
+      /\bdescribe what you see\b/,
       /\bdescribe (me|my outfit|my room|my background|this)\b/,
-      /\bdo i look\b/,
       /\bdoes this look\b/,
       /\bwhich outfit\b/,
       /\bwhich shirt\b/,
+      /\bwhich dress\b/,
+      /\bwhich side\b/,
+      /\bwhich one looks better\b/,
       /\bwhich color suits\b/,
+      /\bmatch this\b/,
+      /\bcompare these\b/,
       /\bshowing you\b/,
       /\bsee this\b/,
+      /\bwatch this\b/,
+      /\bjudge my\b/,
+      /\brate my\b/,
     ];
 
-    const contextWords = /\b(wear|wearing|outfit|shirt|dress|pant|pants|clothes|face|hair|skin|room|desk|background|behind|around|holding|object|item|screen|board|book|paper)\b/;
-    const visualVerbs = /\b(look|see|watch|describe|identify|recognize|check|analyze|rate|compare)\b/;
+    const contextWords = /\b(wear|wearing|outfit|shirt|dress|pant|pants|clothes|face|hair|skin|beard|makeup|room|desk|background|behind|around|holding|object|item|thing|screen|monitor|display|board|book|paper|document|note|homework|equation|problem|surroundings|camera)\b/;
+    const visualVerbs = /\b(look|see|watch|describe|identify|recognize|check|analyze|rate|compare|judge|read|scan|solve|inspect)\b/;
 
     return directVisualPatterns.some((pattern) => pattern.test(text)) || (visualVerbs.test(text) && contextWords.test(text));
   }, []);
@@ -289,9 +325,36 @@ export default function ChatClient() {
     const text = rawText.toLowerCase().trim();
     if (!text) return 'user';
 
+    const frontCameraPatterns = [
+      /\bhow do i look\b/,
+      /\bhow am i looking\b/,
+      /\bwhat am i wearing\b/,
+      /\bwhat color am i wearing\b/,
+      /\bhow is my outfit\b/,
+      /\bhow is my face\b/,
+      /\bhow is my hair\b/,
+      /\bhow is my skin\b/,
+      /\bam i looking\b/,
+      /\bdo i look\b/,
+      /\bdoes my face look\b/,
+      /\bdoes my outfit look\b/,
+      /\bwhich outfit\b/,
+      /\bwhich shirt\b/,
+      /\bwhich dress\b/,
+      /\bwhich color suits\b/,
+      /\bjudge my\b/,
+      /\brate my\b/,
+      /\bselfie\b/,
+      /\bmy face\b/,
+      /\bmy look\b/,
+    ];
+
     const rearCameraPatterns = [
       /\bwhat do you see\b/,
       /\blook at this\b/,
+      /\blook closely\b/,
+      /\btake a look\b/,
+      /\bcheck this out\b/,
       /\bsee this\b/,
       /\bshowing you\b/,
       /\bwhat is this\b/,
@@ -299,19 +362,34 @@ export default function ChatClient() {
       /\bread this\b/,
       /\bscan this\b/,
       /\bsolve this\b/,
+      /\bidentify this\b/,
+      /\brecognize this\b/,
       /\bwhat is around me\b/,
       /\bwhat'?s around me\b/,
       /\bwhat is behind me\b/,
       /\bwhat'?s behind me\b/,
+      /\bwhat am i holding\b/,
+      /\bwhat is in my hand\b/,
+      /\bwhat'?s in my hand\b/,
       /\bmy room\b/,
       /\bmy desk\b/,
       /\bmy screen\b/,
+      /\bon my screen\b/,
+      /\bmonitor\b/,
+      /\bdisplay\b/,
       /\bbackground\b/,
       /\bobject\b/,
+      /\bitem\b/,
       /\bbook\b/,
       /\bpaper\b/,
+      /\bdocument\b/,
+      /\bnote\b/,
+      /\bhomework\b/,
+      /\bequation\b/,
+      /\bproblem\b/,
     ];
 
+    if (frontCameraPatterns.some((pattern) => pattern.test(text))) return 'user';
     return rearCameraPatterns.some((pattern) => pattern.test(text)) ? 'environment' : 'user';
   }, []);
 
@@ -449,13 +527,16 @@ export default function ChatClient() {
     if (!user || !activeChat || sending) return;
     setSending(true);
     try {
-      await DbService.sendMessage(activeChat.chatId, user.id, text, media);
-      
+      const outgoingText = replyingTo
+        ? `Replying to: "${(replyingTo.text?.trim() || replyingTo.mediaType || 'message').slice(0, 100)}"\n${text}`.trim()
+        : text;
+      const txt = text.toLowerCase();
+      const isVisualInquiry = shouldUseCameraForText(text);
+      const preferredFacing = getPreferredCameraFacingForText(text);
+      let liveFrame: string | null = null;
+
       if (activeChat.profile.uid === 'edunook-ai') {
         let state = 'Thinking...';
-        const txt = text.toLowerCase();
-        const isVisualInquiry = shouldUseCameraForText(text);
-        const preferredFacing = getPreferredCameraFacingForText(text);
         
         if (isVisualInquiry && !cameraActive) {
           const started = await startCamera(preferredFacing);
@@ -473,20 +554,25 @@ export default function ChatClient() {
         else if (txt.includes('search') || txt.includes('find') || txt.includes('look for')) state = 'Searching database...';
         else if (txt.includes('calculate') || txt.includes('math') || txt.includes('solve')) state = 'Calculating...';
         
-        const liveFrame = isVisualInquiry ? captureFrame() : null;
+        liveFrame = isVisualInquiry ? captureFrame() : null;
         if (isVisualInquiry) {
           stopCamera();
         }
-        if (liveFrame) state = 'Seeing you...';
+        if (liveFrame) state = 'Observing...';
         setAiLoadingState(state);
-        
+      }
+
+      await DbService.sendMessage(activeChat.chatId, user.id, outgoingText, media);
+      setReplyingTo(null);
+
+      if (activeChat.profile.uid === 'edunook-ai') {
         fetch('/api/ai/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             chatId: activeChat.chatId, 
             userId: user.id, 
-            text,
+            text: outgoingText,
             mediaUrl: media?.url,
             mediaType: media?.type,
             location: currentLocation,
@@ -508,20 +594,16 @@ export default function ChatClient() {
     }
   }, [activeChat, cameraActive, cameraFacing, captureFrame, currentLocation, getPreferredCameraFacingForText, sending, shouldUseCameraForText, startCamera, stopCamera, user]);
 
+  useEffect(() => {
+    setReplyingTo(null);
+  }, [activeChat?.chatId]);
+
   const handleDraftTextChange = useCallback((draft: string) => {
     if (!activeChat || activeChat.profile.uid !== 'edunook-ai') return;
-    if (!shouldUseCameraForText(draft)) {
-      if (cameraActive) scheduleCameraIdleStop(250);
-      return;
+    if (!shouldUseCameraForText(draft) && cameraActive) {
+      scheduleCameraIdleStop(250);
     }
-
-    const preferredFacing = getPreferredCameraFacingForText(draft);
-    void startCamera(preferredFacing).then((started) => {
-      if (started) {
-        scheduleCameraIdleStop(1500);
-      }
-    });
-  }, [activeChat, cameraActive, getPreferredCameraFacingForText, scheduleCameraIdleStop, shouldUseCameraForText, startCamera]);
+  }, [activeChat, cameraActive, scheduleCameraIdleStop, shouldUseCameraForText]);
 
   const handleUploadMedia = async (file: File) => {
     if (!user) throw new Error("Auth required");
@@ -690,9 +772,7 @@ export default function ChatClient() {
                        </DropdownMenuItem>
                        <DropdownMenuItem 
                          onClick={() => {
-                            if (window.confirm("Clear all messages in this conversation? This action is irreversible.")) {
-                               DbService.deleteChat(user!.id, activeChat.chatId);
-                            }
+                            setConfirmClearChatOpen(true);
                          }}
                          className="cursor-pointer text-rose-500 font-bold focus:bg-rose-500/10 focus:text-rose-500 rounded-xl py-3 px-4 flex items-center justify-between"
                        >
@@ -749,6 +829,7 @@ export default function ChatClient() {
                 chatId={activeChat.chatId}
                 aiLoadingState={aiLoadingState}
                 vanishMode={vanishMode}
+                onReplyToMessage={setReplyingTo}
               />
 
               {/* Input Terminal */}
@@ -762,6 +843,12 @@ export default function ChatClient() {
                 voiceAssistantSpeaking={voiceAssistantSpeaking}
                 onVoiceModeChange={setVoiceModeEnabled}
                 vanishMode={vanishMode}
+                replyPreview={replyingTo ? {
+                  senderLabel: replyingTo.senderId === user?.id ? 'yourself' : activeChat.profile.fullName,
+                  text: replyingTo.text,
+                  mediaType: replyingTo.mediaType
+                } : null}
+                onCancelReply={() => setReplyingTo(null)}
               />
             </>
           ) : (
@@ -805,6 +892,19 @@ export default function ChatClient() {
         targetId={activeChat?.profile.uid || ''}
         targetType="user"
         targetName={activeChat?.profile.fullName || 'User'}
+      />
+
+      <ConfirmDialog
+        open={confirmClearChatOpen}
+        onOpenChange={setConfirmClearChatOpen}
+        title="Clear this conversation?"
+        description="This will remove the conversation from your side and cannot be undone."
+        confirmLabel="Clear chat"
+        destructive
+        onConfirm={async () => {
+          if (!user || !activeChat) return;
+          await DbService.deleteChat(user.id, activeChat.chatId);
+        }}
       />
 
       <AnimatePresence>

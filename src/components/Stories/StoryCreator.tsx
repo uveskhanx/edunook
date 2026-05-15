@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue } from 'framer-motion';
 import { X, Type, Check, Loader2, Image as ImageIcon, Smile, Square, Sliders, Type as TypeIcon, Trash2 } from 'lucide-react';
 import { DbService, Profile } from '@/lib/db-service';
+import { toast } from 'sonner';
 
 const FILTERS = [
   { name: 'Normal', value: 'none' },
@@ -141,7 +142,7 @@ export function StoryCreator({ currentUser, onClose, onStoryAdded }: StoryCreato
     if (selectedFiles.length === 0) return;
 
     if (selectedFiles.some((selected) => selected.size > 20 * 1024 * 1024)) {
-      alert("One or more files are too large. Max 20MB allowed.");
+      toast.error('Upload too large', { description: 'One or more files exceed the 20MB limit.' });
       return;
     }
 
@@ -226,7 +227,7 @@ export function StoryCreator({ currentUser, onClose, onStoryAdded }: StoryCreato
       onStoryAdded();
     } catch (err) {
       console.error('Failed to upload story:', err);
-      alert('Failed to upload story. Please try again.');
+      toast.error('Story upload failed', { description: 'Please try again in a moment.' });
     } finally {
       setIsUploading(false);
     }

@@ -917,14 +917,14 @@ export async function POST(request: NextRequest) {
     const needsSearch = /\b(search|find|latest|news|who is|what is the price of|today|current)\b/i.test(text || '') && !hasImages && !(urls && urls.length > 0);
     const extraVisionParts: any[] = [];
 
-    // --- LIVE CAMERA FRAME: Inject camera feed into Gemini Vision ---
+    // --- OBSERVATION FRAME: Inject current visual context into Gemini Vision ---
     if (liveFrame && typeof liveFrame === 'string' && liveFrame.startsWith('data:image/')) {
       const base64Data = liveFrame.split(',')[1];
       if (base64Data) {
         hasImages = true;
         extraVisionParts.push({ inlineData: { data: base64Data, mimeType: 'image/jpeg' } });
-        extraVisionParts.push({ text: `\n\n[USER ENVIRONMENT VISUAL FEED]\n- You are currently observing the user's real-world environment through their camera.\n- You can see exactly what they are wearing, what they are holding, and what is behind them.\n- ANSWER the user's questions about their surroundings or appearance immediately and confidently.\n- DO NOT mention "camera," "feed," "image," or "AI vision."\n- ACT like you are physically there with them and simply noticing things naturally.` });
-        console.log('[Vision] Live camera frame injected into Gemini Vision');
+        extraVisionParts.push({ text: `\n\n[CURRENT VISUAL OBSERVATION]\n- You are quietly observing the user's present surroundings and appearance.\n- Notice what they are wearing, holding, and what is around or behind them.\n- ANSWER questions about their surroundings or appearance immediately and confidently.\n- DO NOT mention "camera," "feed," "image," "AI vision," or that you are looking at a frame.\n- If needed, phrase it naturally as simple observation, like you are just noticing what is there.` });
+        console.log('[Vision] Observation frame injected into Gemini Vision');
       }
     }
 
@@ -934,7 +934,7 @@ export async function POST(request: NextRequest) {
       if (imgObj) {
         hasImages = true; // Skip Groq, use Gemini Vision
         extraVisionParts.push({ inlineData: { data: imgObj.base64, mimeType: imgObj.mimeType } });
-        extraVisionParts.push({ text: `\n\nSYSTEM NOTE: You are now LOOKING at the user's real profile photo. Describe it accurately. Do not say you cannot see images.` });
+        extraVisionParts.push({ text: `\n\nSYSTEM NOTE: You are quietly observing the user's real profile photo. Describe it accurately and naturally. Do not say you cannot see images.` });
       }
     } else if (urls && urls.length > 0 && !hasImages) {
       const urlToRead = urls[0];

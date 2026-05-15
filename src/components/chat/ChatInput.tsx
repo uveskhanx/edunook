@@ -73,6 +73,12 @@ interface ChatInputProps {
   voiceAssistantSpeaking?: boolean;
   onVoiceModeChange?: (enabled: boolean) => void;
   vanishMode?: boolean;
+  replyPreview?: {
+    senderLabel: string;
+    text?: string;
+    mediaType?: 'image' | 'video' | 'file';
+  } | null;
+  onCancelReply?: () => void;
 }
 
 const EMOJIS = ['😊', '😂', '🔥', '👍', '❤️', '🙌', '🎉', '💡', '💯', '🚀', '✨', '👏', '🤔', '😎', '🎓', '📚'];
@@ -86,7 +92,9 @@ export function ChatInput({
   enableVoiceForAi = false,
   voiceAssistantSpeaking = false,
   onVoiceModeChange,
-  vanishMode
+  vanishMode,
+  replyPreview,
+  onCancelReply
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
@@ -474,6 +482,35 @@ export function ChatInput({
       </AnimatePresence>
 
       <AnimatePresence>
+        {replyPreview && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            className="ml-4 flex w-fit max-w-[calc(100%-2rem)] items-start gap-3 rounded-2xl border border-primary/20 bg-card/90 px-4 py-3 text-left shadow-2xl"
+          >
+            <div className="mt-0.5 h-10 w-1 rounded-full bg-primary/70" />
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">
+                Replying to {replyPreview.senderLabel}
+              </div>
+              <div className="mt-1 truncate text-xs font-medium text-foreground/65">
+                {replyPreview.text?.trim() || (replyPreview.mediaType ? `${replyPreview.mediaType} attachment` : 'Message')}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onCancelReply}
+              className="rounded-full p-1 text-foreground/50 transition hover:bg-white/5 hover:text-foreground"
+              aria-label="Cancel reply"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {attachedMedia && (
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.9 }}
@@ -514,10 +551,10 @@ export function ChatInput({
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             className="absolute bottom-24 left-4 p-4 bg-card/95 backdrop-blur-3xl border border-border rounded-3xl shadow-3xl grid grid-cols-4 gap-2 z-40"
           >
-            {EMOJIS.map(emoji => (
+            {EMOJIS.map((emoji, index) => (
               <button
                 type="button"
-                key={emoji}
+                key={`emoji-${index}`}
                 onClick={() => { setText(p => p + emoji); setShowEmojis(false); }}
                 className="w-10 h-10 flex items-center justify-center text-xl hover:bg-foreground/5 rounded-xl transition-all hover:scale-110 active:scale-90"
               >

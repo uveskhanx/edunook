@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CourseViewSkeleton } from '@/components/SkeletonLoader';
 import { isPremium } from '@/lib/subscription-utils';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 type EnrichedCourse = Course & { profiles: Profile | null };
 function formatPrice(price: number) {
@@ -70,6 +71,7 @@ export default function CourseClient({ slug }: { slug: string }) {
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [checkingAccess, setCheckingAccess] = useState(true);
   const [enrollmentError, setEnrollmentError] = useState('');
+  const [chapterPendingDelete, setChapterPendingDelete] = useState<string | null>(null);
 
   const isExpired = useMemo(() => {
     if (!course?.expiresInDays) return false;
@@ -497,7 +499,7 @@ export default function CourseClient({ slug }: { slug: string }) {
   };
 
   const handleDeleteChapter = async (chapterId: string) => {
-    if (!course || !confirm('Are you sure you want to delete this module? This cannot be undone.')) return;
+    if (!course) return;
     try {
       await DbService.deleteChapter(course.id, chapterId);
       setChapters(prev => prev.filter(c => c.id !== chapterId));
@@ -1228,7 +1230,7 @@ export default function CourseClient({ slug }: { slug: string }) {
                                         </div>
                                      </div>
                                      <button 
-                                        onClick={() => handleDeleteChapter(ch.id)}
+                                        onClick={() => setChapterPendingDelete(ch.id)}
                                         className="p-3 bg-destructive/10 text-destructive rounded-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-destructive hover:text-white"
                                      >
                                         <Trash2 className="w-4 h-4" />
@@ -1414,6 +1416,21 @@ export default function CourseClient({ slug }: { slug: string }) {
             </div>
           </aside>
         )}
+        <ConfirmDialog
+          open={Boolean(chapterPendingDelete)}
+          onOpenChange={(open) => {
+            if (!open) setChapterPendingDelete(null);
+          }}
+          title="Delete this module?"
+          description="This module will be permanently removed from the course and cannot be restored."
+          confirmLabel="Delete module"
+          destructive
+          onConfirm={async () => {
+            if (!chapterPendingDelete) return;
+            await handleDeleteChapter(chapterPendingDelete);
+            setChapterPendingDelete(null);
+          }}
+        />
       </div>
     </Layout>
   );

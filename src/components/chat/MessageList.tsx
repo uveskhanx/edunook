@@ -1,11 +1,15 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, ShieldCheck, MoreHorizontal, Trash2, X, Star, Zap, Diamond, Sparkles, Download, RotateCcw, Maximize2, Loader2, Ghost } from 'lucide-react';
+import { Copy, CornerUpLeft, Forward, MessageSquare, MoreHorizontal, Trash2, X, Diamond, Sparkles, Download, RotateCcw, Maximize2, Ghost } from 'lucide-react';
 import { format } from 'date-fns';
 import { Message, Profile, DbService } from '@/lib/db-service';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
+import { useIsMobile } from '@/hooks/use-mobile';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 interface MessageListProps {
   messages: Message[];
@@ -15,6 +19,7 @@ interface MessageListProps {
   chatId: string;
   aiLoadingState?: string | null;
   vanishMode?: boolean;
+  onReplyToMessage?: (message: Message) => void;
 }
 
 export function MessageList({
@@ -24,10 +29,14 @@ export function MessageList({
   typingUsers,
   chatId,
   aiLoadingState,
-  vanishMode
+  vanishMode,
+  onReplyToMessage
 }: MessageListProps) {
   const [viewerImage, setViewerImage] = useState<string | null>(null);
+  const [activeMobileMessage, setActiveMobileMessage] = useState<Message | null>(null);
+  const [messagePendingUnsend, setMessagePendingUnsend] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
 
   const isAIChat = recipientProfile.uid === 'edunook-ai';
 
@@ -36,6 +45,100 @@ export function MessageList({
   }, [messages, typingUsers, aiLoadingState]);
 
   const bulletColors = ['#818cf8', '#c084fc', '#22d3ee', '#f43f5e', '#10b981'];
+
+  const getMessageSnippet = (message: Message) => {
+    const text = message.text?.trim();
+    if (text) return text.length > 120 ? `${text.slice(0, 117)}...` : text;
+    if (message.mediaType) return `${message.mediaType} attachment`;
+    return 'Message';
+  };
+
+  const closeMobileActions = () => setActiveMobileMessage(null);
+
+  const handleCopy = async (message: Message) => {
+    const value = message.text?.trim() || message.mediaUrl;
+    if (!value) {
+      toast.info('Nothing to copy from this message.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success('Message copied.');
+    } catch {
+      toast.error('Copy failed on this device.');
+    } finally {
+      closeMobileActions();
+    }
+  };
+
+  const handleForward = async (message: Message) => {
+    const text = message.text?.trim() || '';
+    const url = message.mediaUrl?.trim() || '';
+    const shareText = [text, url].filter(Boolean).join('\n');
+
+    try {
+      if (navigator.share && shareText) {
+        await navigator.share({ text: shareText });
+        toast.success('Message shared.');
+      } else if (shareText) {
+        await navigator.clipboard.writeText(shareText);
+        toast.success('Message copied so you can forward it.');
+      } else {
+        toast.info('Nothing to forward from this message.');
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name !== 'AbortError') {
+        toast.error('Forward failed on this device.');
+      }
+    } finally {
+      closeMobileActions();
+    }
+  };
+
+  const handleReply = (message: Message) => {
+    onReplyToMessage?.(message);
+    toast.success('Reply ready.');
+    closeMobileActions();
+  };
+
+  const handleDeleteForMe = async (message: Message) => {
+    await DbService.deleteMessageForMe(currentUserId, chatId, message.id);
+    closeMobileActions();
+  };
+
+  const handleUnsend = async (message: Message) => {
+    setMessagePendingUnsend(message);
+  };
+
+  const confirmUnsend = async () => {
+    if (!messagePendingUnsend) return;
+    await DbService.unsendMessage(chatId, messagePendingUnsend.id);
+    closeMobileActions();
+    setMessagePendingUnsend(null);
+  };
+
+  const renderMessageActions = (message: Message, isOwn: boolean) => (
+    <>
+      <DropdownMenuItem className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-muted font-medium" onClick={() => handleReply(message)}>
+        <CornerUpLeft className="w-3.5 h-3.5" /><span>Reply</span>
+      </DropdownMenuItem>
+      <DropdownMenuItem className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-muted font-medium" onClick={() => handleCopy(message)}>
+        <Copy className="w-3.5 h-3.5" /><span>Copy</span>
+      </DropdownMenuItem>
+      <DropdownMenuItem className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-muted font-medium" onClick={() => handleForward(message)}>
+        <Forward className="w-3.5 h-3.5" /><span>Forward</span>
+      </DropdownMenuItem>
+      <DropdownMenuItem className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-muted font-medium" onClick={() => handleDeleteForMe(message)}>
+        <Trash2 className="w-3.5 h-3.5 text-rose-500" /><span>Delete for Me</span>
+      </DropdownMenuItem>
+      {isOwn && (
+        <DropdownMenuItem className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-rose-500/10 text-rose-500 font-bold" onClick={() => handleUnsend(message)}>
+          <RotateCcw className="w-3.5 h-3.5" /><span>Unsend for All</span>
+        </DropdownMenuItem>
+      )}
+    </>
+  );
 
   const handleDownload = async (url: string) => {
     try {
@@ -84,29 +187,26 @@ export function MessageList({
           {messages.length > 0 ? (
             messages.map((msg, i) => {
               const isOwn = msg.senderId === currentUserId;
+              const messageKey = msg.id?.trim() ? msg.id : `message-${msg.senderId}-${msg.createdAt}-${i}`;
               
               if (!isAIChat) {
                 return (
-                  <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                  <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} key={messageKey} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[80%] flex items-center gap-2 group ${isOwn ? 'flex-row' : 'flex-row-reverse'}`}>
-                       <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                       <div className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                           <DropdownMenu>
                              <DropdownMenuTrigger asChild>
                                <button className="p-1.5 hover:bg-muted rounded-full text-muted-foreground"><MoreHorizontal className="w-4 h-4" /></button>
                              </DropdownMenuTrigger>
                              <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="bg-popover border border-border shadow-xl rounded-xl p-1 min-w-[160px]">
-                                <DropdownMenuItem className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-muted font-medium" onClick={() => DbService.deleteMessageForMe(currentUserId, chatId, msg.id)}>
-                                   <Trash2 className="w-3.5 h-3.5 text-rose-500" /><span>Delete for Me</span>
-                                </DropdownMenuItem>
-                                {isOwn && (
-                                   <DropdownMenuItem className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-rose-500/10 text-rose-500 font-bold" onClick={() => window.confirm("Unsend?") && DbService.unsendMessage(chatId, msg.id)}>
-                                      <RotateCcw className="w-3.5 h-3.5" /><span>Unsend for All</span>
-                                   </DropdownMenuItem>
-                                )}
+                                {renderMessageActions(msg, isOwn)}
                              </DropdownMenuContent>
                           </DropdownMenu>
                        </div>
-                       <div className={`px-4 py-2.5 rounded-2xl shadow-sm text-[15px] ${isOwn ? 'bg-primary text-white rounded-tr-none' : 'bg-muted text-foreground rounded-tl-none'}`}>
+                       <div
+                         onClick={isMobile ? () => setActiveMobileMessage(msg) : undefined}
+                         className={`px-4 py-2.5 rounded-2xl shadow-sm text-[15px] ${isMobile ? 'cursor-pointer' : ''} ${isOwn ? 'bg-primary text-white rounded-tr-none' : 'bg-muted text-foreground rounded-tl-none'}`}
+                       >
                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text || ''}</ReactMarkdown>
                       </div>
                     </div>
@@ -115,24 +215,17 @@ export function MessageList({
               }
 
               return (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={messageKey} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
 	                <div className={`group relative flex flex-col gap-1.5 ${isOwn ? 'items-end max-w-[85%]' : 'items-start w-full'}`}>
                     <div className={`relative ${isOwn ? 'bg-primary p-3 px-5 rounded-[1.25rem] rounded-tr-none shadow-lg border border-white/10' : 'w-full'}`}>
                       
-                      <div className={`absolute top-2 ${isOwn ? '-left-10' : '-right-10'} opacity-0 group-hover:opacity-100 transition-opacity`}>
+                      <div className={`absolute top-2 ${isOwn ? '-left-10' : '-right-10'} opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity`}>
                         <DropdownMenu>
                            <DropdownMenuTrigger asChild>
                              <button className="p-1.5 hover:bg-white/5 rounded-full text-white/40 hover:text-white"><MoreHorizontal className="w-4 h-4" /></button>
                            </DropdownMenuTrigger>
                            <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="bg-[#12121a] border border-white/10 shadow-2xl rounded-2xl p-1 min-w-[160px]">
-                              <DropdownMenuItem className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-white/5 text-white/70 font-medium" onClick={() => DbService.deleteMessageForMe(currentUserId, chatId, msg.id)}>
-                                 <Trash2 className="w-3.5 h-3.5 text-rose-500" /><span>Delete for Me</span>
-                              </DropdownMenuItem>
-                              {isOwn && (
-                                 <DropdownMenuItem className="flex items-center gap-2 p-2 rounded-lg cursor-pointer hover:bg-rose-500/10 text-rose-500 font-bold" onClick={() => window.confirm("Unsend?") && DbService.unsendMessage(chatId, msg.id)}>
-                                    <RotateCcw className="w-3.5 h-3.5" /><span>Unsend Message</span>
-                                 </DropdownMenuItem>
-                              )}
+                              {renderMessageActions(msg, isOwn)}
                            </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
@@ -146,7 +239,10 @@ export function MessageList({
                             </div>
                          </div>
                       )}
-                      <div className={!isOwn ? 'text-white' : 'text-white font-bold text-[14px]'}>
+                      <div
+                        onClick={isMobile ? () => setActiveMobileMessage(msg) : undefined}
+                        className={`${!isOwn ? 'text-white' : 'text-white font-bold text-[14px]'} ${isMobile ? 'cursor-pointer' : ''}`}
+                      >
                         <ReactMarkdown 
                           remarkPlugins={[remarkGfm]}
                           components={{
@@ -228,6 +324,54 @@ export function MessageList({
            </motion.div>
          )}
       </AnimatePresence>
+
+      <Drawer open={Boolean(activeMobileMessage) && isMobile} onOpenChange={(open) => { if (!open) closeMobileActions(); }}>
+        <DrawerContent className="border-border bg-card text-foreground">
+          <DrawerHeader className="text-left">
+            <DrawerTitle className="text-base font-black tracking-tight">Message actions</DrawerTitle>
+            <DrawerDescription className="text-sm text-foreground/55">
+              {activeMobileMessage ? getMessageSnippet(activeMobileMessage) : 'Choose what to do with this message.'}
+            </DrawerDescription>
+          </DrawerHeader>
+          <div className="px-4 pb-6">
+            <div className="overflow-hidden rounded-2xl border border-border bg-background/70">
+              {activeMobileMessage && (
+                <>
+                  <button type="button" onClick={() => handleReply(activeMobileMessage)} className="flex w-full items-center gap-3 px-4 py-4 text-left text-sm font-semibold transition hover:bg-foreground/5">
+                    <CornerUpLeft className="h-4 w-4" /> Reply
+                  </button>
+                  <button type="button" onClick={() => handleCopy(activeMobileMessage)} className="flex w-full items-center gap-3 border-t border-border px-4 py-4 text-left text-sm font-semibold transition hover:bg-foreground/5">
+                    <Copy className="h-4 w-4" /> Copy
+                  </button>
+                  <button type="button" onClick={() => handleForward(activeMobileMessage)} className="flex w-full items-center gap-3 border-t border-border px-4 py-4 text-left text-sm font-semibold transition hover:bg-foreground/5">
+                    <Forward className="h-4 w-4" /> Forward
+                  </button>
+                  <button type="button" onClick={() => handleDeleteForMe(activeMobileMessage)} className="flex w-full items-center gap-3 border-t border-border px-4 py-4 text-left text-sm font-semibold transition hover:bg-foreground/5">
+                    <Trash2 className="h-4 w-4 text-rose-500" /> Delete for Me
+                  </button>
+                  {activeMobileMessage.senderId === currentUserId && (
+                    <button type="button" onClick={() => handleUnsend(activeMobileMessage)} className="flex w-full items-center gap-3 border-t border-border px-4 py-4 text-left text-sm font-bold text-rose-500 transition hover:bg-rose-500/10">
+                      <RotateCcw className="h-4 w-4" /> Unsend for All
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </DrawerContent>
+      </Drawer>
+
+      <ConfirmDialog
+        open={Boolean(messagePendingUnsend)}
+        onOpenChange={(open) => {
+          if (!open) setMessagePendingUnsend(null);
+        }}
+        title="Unsend message?"
+        description="This will remove the message for everyone in the conversation."
+        confirmLabel="Unsend"
+        destructive
+        onConfirm={confirmUnsend}
+      />
 
       <div ref={messagesEndRef} />
     </div>

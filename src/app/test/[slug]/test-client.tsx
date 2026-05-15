@@ -261,7 +261,8 @@ export default function TestViewClient() {
         toast.error('Leaderboard sync delay. Standings will refresh shortly.');
       });
 
-      // 3. Trophy Check
+      // 3. Trophy Check - REMOVED: Achievements now awarded after quiz expiration.
+      /* 
       try {
         const standings = await DbService.getLeaderboard(test.slug || test.id, test.slug, questions.length);
         const myRank = standings.findIndex((r: any) => r.uid === user.id) + 1;
@@ -286,6 +287,7 @@ export default function TestViewClient() {
       } catch (err) {
         console.error('Achievement check failed:', err);
       }
+      */
 
       toast.success('Performance archived in Hall of Fame!');
 

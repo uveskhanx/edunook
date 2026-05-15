@@ -662,6 +662,9 @@ export const DbService = {
   },
 
   async getAchievements(uid: string): Promise<Achievement[]> {
+    // Trigger background processing for any pending quiz achievements
+    this.processPendingQuizAchievements(uid).catch(e => console.warn("Achievement processing failed", e));
+
     const snapshot = await get(ref(db, `profiles/${uid}/achievements`));
     
     // Self-healing: migration for achievements
@@ -1996,6 +1999,60 @@ subscribeToUnseenCount(uid: string, callback: (count: number) => void) {
         return aTime - bTime;
       });
     return matching[0] || null;
+  },
+
+  async processPendingQuizAchievements(userId: string): Promise<void> {
+    const attempts = await this.getTestAttempts(userId);
+    const now = new Date().toISOString();
+
+    for (const attempt of attempts) {
+      try {
+        const test = await this.getTest(attempt.testId);
+        if (test && test.expiresAt && test.expiresAt < now) {
+          // Quiz has expired. Check if achievements have been awarded globally.
+          const finalizedRef = ref(db, `finalized_quizzes/${test.id}`);
+          const finalizedSnap = await get(finalizedRef);
+          
+          if (!finalizedSnap.exists()) {
+            // Quiz is expired but not finalized. Use transaction to claim the processing right.
+            const result = await runTransaction(finalizedRef, (current) => {
+              if (current === null) return { awarded: true, awardedAt: now };
+              return; 
+            });
+
+            if (result.committed) {
+              // We won the race! Calculate final standings and award top 3 trophies.
+              const standings = await this.getLeaderboard(test.id, test.slug);
+              const top3 = standings.slice(0, 3);
+              
+              const medalIcons = ['trophy', 'medal', 'award'];
+              const rankTitles = ['1st Place', '2nd Place', '3rd Place'];
+
+              await Promise.all(top3.map(async (contender, index) => {
+                const achievementTitle = `${rankTitles[index]} - ${test.title}`;
+                await this.addAchievement(contender.uid, {
+                  title: achievementTitle,
+                  icon: medalIcons[index],
+                  earnedAt: now
+                });
+
+                // Notify user
+                await this.createNotification(contender.uid, {
+                  type: 'quiz',
+                  fromUid: 'edunook-ai',
+                  text: `Congratulations! You earned ${rankTitles[index]} in the quiz: ${test.title}`,
+                  createdAt: now,
+                  seen: false
+                });
+              }));
+            }
+          }
+        }
+      } catch (err) {
+        // Fail silently for individual tests to avoid blocking others
+        continue;
+      }
+    }
   },
 
   // Leaderboards
