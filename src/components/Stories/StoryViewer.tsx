@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, MoreVertical, Trash2, Heart, Send, Eye, Plus, Star, ChevronUp } from 'lucide-react';
+import { X, MoreVertical, Trash2, Heart, Send, Eye, Plus, Star, Check } from 'lucide-react';
 import { optimizeCloudinaryUrl } from '@/lib/image-utils';
-import { DbService, Story, Profile } from '@/lib/db-service';
+import { DbService, Story, Profile, Highlight } from '@/lib/db-service';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
@@ -19,6 +19,12 @@ interface StoryViewerProps {
   onComplete?: () => void;
   onDelete?: (storyId: string) => void;
   onAddMore?: () => void;
+  disableViewTracking?: boolean;
+  hideBottomBar?: boolean;
+  headerSubLabel?: string;
+  existingHighlights?: Highlight[];
+  highlightSourceStories?: Story[];
+  onHighlightSaved?: (highlight: Highlight) => void;
 }
 
 function formatStoryTime(createdAt: string) {
@@ -30,7 +36,21 @@ function formatStoryTime(createdAt: string) {
   return `${diffHours}h`;
 }
 
-export function StoryViewer({ stories, user, isOwnStory, onClose, onComplete, onDelete, onAddMore }: StoryViewerProps) {
+export function StoryViewer({
+  stories,
+  user,
+  isOwnStory,
+  onClose,
+  onComplete,
+  onDelete,
+  onAddMore,
+  disableViewTracking,
+  hideBottomBar,
+  headerSubLabel,
+  existingHighlights = [],
+  highlightSourceStories,
+  onHighlightSaved,
+}: StoryViewerProps) {
   const { user: authUser } = useAuth();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -45,6 +65,10 @@ export function StoryViewer({ stories, user, isOwnStory, onClose, onComplete, on
   const [loadingViewers, setLoadingViewers] = useState(false);
   const [showHighlight, setShowHighlight] = useState(false);
   const [highlightName, setHighlightName] = useState('');
+  const [selectedHighlightId, setSelectedHighlightId] = useState<string | null>(null);
+  const [creatingNewHighlight, setCreatingNewHighlight] = useState(false);
+  const [selectedStoryIds, setSelectedStoryIds] = useState<string[]>([]);
+  const [savingHighlight, setSavingHighlight] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [shareSearch, setShareSearch] = useState('');
   const [shareResults, setShareResults] = useState<Profile[]>([]);
@@ -54,10 +78,24 @@ export function StoryViewer({ stories, user, isOwnStory, onClose, onComplete, on
 
   // Mark story as viewed
   useEffect(() => {
-    if (currentStory && authUser && user.uid !== authUser.id) {
+    if (!disableViewTracking && currentStory && authUser && user.uid !== authUser.id) {
       DbService.markStoryViewed(user.uid, currentStory.id, authUser.id).catch(() => {});
     }
-  }, [currentStory?.id, authUser, user.uid]);
+  }, [currentStory?.id, authUser, user.uid, disableViewTracking]);
+
+  useEffect(() => {
+    if (!showHighlight) return;
+    setSelectedStoryIds((prev) => (prev.length > 0 ? prev : currentStory ? [currentStory.id] : []));
+    if (existingHighlights.length > 0) {
+      setSelectedHighlightId(existingHighlights[0].id);
+      setCreatingNewHighlight(false);
+      setHighlightName(existingHighlights[0].title);
+    } else {
+      setSelectedHighlightId(null);
+      setCreatingNewHighlight(true);
+      setHighlightName('');
+    }
+  }, [showHighlight, currentStory?.id, existingHighlights]);
 
   const handleNext = useCallback(() => {
     if (currentIndex < stories.length - 1) {
@@ -111,7 +149,7 @@ export function StoryViewer({ stories, user, isOwnStory, onClose, onComplete, on
   if (currentStory.filters) {
     try {
       const parsed = JSON.parse(currentStory.filters);
-      cssFilter = parsed.filter || 'none';
+      cssFilter = parsed.cssFilter || parsed.filter || 'none';
       if (parsed.frame) frameSettings = parsed.frame;
     } catch { cssFilter = currentStory.filters; }
   }
@@ -135,12 +173,30 @@ export function StoryViewer({ stories, user, isOwnStory, onClose, onComplete, on
   };
 
   const handleHighlight = async () => {
-    if (!highlightName.trim()) { toast.error('Enter a highlight name'); return; }
+    const storiesForHighlight = (highlightSourceStories?.length ? highlightSourceStories : stories)
+      .filter((story) => selectedStoryIds.includes(story.id));
+    const existingHighlight = existingHighlights.find((item) => item.id === selectedHighlightId);
+    const finalHighlightName = creatingNewHighlight
+      ? highlightName.trim()
+      : (existingHighlight?.title || highlightName.trim());
+
+    if (!finalHighlightName) { toast.error('Select or create a highlight'); return; }
+    if (storiesForHighlight.length === 0) { toast.error('Choose at least one story'); return; }
+
     try {
-      await DbService.addStoryToHighlight(user.uid, highlightName.trim(), currentStory);
-      toast.success('Added to highlight!');
-      setShowHighlight(false); setHighlightName(''); setIsPaused(false);
+      setSavingHighlight(true);
+      const savedHighlight = await DbService.addStoriesToHighlight(user.uid, storiesForHighlight, {
+        highlightId: creatingNewHighlight ? undefined : existingHighlight?.id,
+        highlightTitle: finalHighlightName,
+      });
+      toast.success(`Added ${storiesForHighlight.length} stor${storiesForHighlight.length > 1 ? 'ies' : 'y'} to highlight`);
+      onHighlightSaved?.(savedHighlight);
+      setShowHighlight(false);
+      setHighlightName('');
+      setSelectedStoryIds([]);
+      setIsPaused(false);
     } catch { toast.error('Failed to add highlight'); }
+    finally { setSavingHighlight(false); }
   };
 
   const searchUsersForShare = async (q: string) => {
@@ -164,7 +220,15 @@ export function StoryViewer({ stories, user, isOwnStory, onClose, onComplete, on
     } catch { toast.error('Failed to share'); }
   };
 
-  const anyModalOpen = showViewers || showHighlight || showShare;
+  const storiesAvailableForHighlight = highlightSourceStories?.length ? highlightSourceStories : stories;
+
+  const toggleStorySelection = (storyId: string) => {
+    setSelectedStoryIds((prev) => (
+      prev.includes(storyId)
+        ? prev.filter((id) => id !== storyId)
+        : [...prev, storyId]
+    ));
+  };
 
   return (
     <motion.div
@@ -195,7 +259,7 @@ export function StoryViewer({ stories, user, isOwnStory, onClose, onComplete, on
               )}
             </div>
             <span className="text-sm font-bold text-white drop-shadow-md">{user.username}</span>
-            <span className="text-xs text-white/70 drop-shadow-md ml-1">{formatStoryTime(currentStory.createdAt)}</span>
+            <span className="text-xs text-white/70 drop-shadow-md ml-1">{headerSubLabel || formatStoryTime(currentStory.createdAt)}</span>
           </div>
 
           <div className="flex items-center gap-1">
@@ -259,7 +323,7 @@ export function StoryViewer({ stories, user, isOwnStory, onClose, onComplete, on
         </div>
 
         {/* Bottom Bar - Own Story */}
-        {isOwnStory && (
+        {isOwnStory && !hideBottomBar && (
           <div className="absolute bottom-0 left-0 right-0 p-4 flex items-center justify-between z-20 bg-gradient-to-t from-black/80 to-transparent">
             <button onClick={(e) => { e.stopPropagation(); openViewers(); }} className="flex items-center gap-2 text-white/80 hover:text-white transition-colors">
               <Eye className="w-5 h-5" />
@@ -277,7 +341,7 @@ export function StoryViewer({ stories, user, isOwnStory, onClose, onComplete, on
         )}
 
         {/* Bottom Bar - Other's Story */}
-        {!isOwnStory && (
+        {!isOwnStory && !hideBottomBar && (
           <div className="absolute bottom-0 left-0 right-0 p-4 flex items-center gap-3 z-20 bg-gradient-to-t from-black/80 to-transparent">
             <input type="text" placeholder={`Reply to ${user.username}...`}
               className="flex-1 bg-black/40 border border-white/20 rounded-full px-4 py-2.5 text-sm text-white placeholder:text-white/60 focus:outline-none focus:border-white/50 backdrop-blur-md"
@@ -327,13 +391,82 @@ export function StoryViewer({ stories, user, isOwnStory, onClose, onComplete, on
         <AnimatePresence>
           {showHighlight && (
             <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25 }}
-              className="absolute inset-x-0 bottom-0 bg-zinc-900/95 backdrop-blur-xl rounded-t-3xl z-50 p-6 space-y-4 border-t border-white/10">
+              className="absolute inset-x-0 bottom-0 bg-zinc-900/95 backdrop-blur-xl rounded-t-3xl z-50 p-6 space-y-5 border-t border-white/10 max-h-[80%] overflow-y-auto">
               <div className="flex items-center justify-between">
                 <h3 className="text-white font-bold flex items-center gap-2"><Star className="w-5 h-5 text-yellow-400" /> Add to Highlight</h3>
                 <button onClick={() => { setShowHighlight(false); setIsPaused(false); }} className="p-2 hover:bg-white/10 rounded-full"><X className="w-5 h-5 text-white" /></button>
               </div>
-              <input type="text" value={highlightName} onChange={e => setHighlightName(e.target.value)} placeholder="Highlight name (e.g. Travel, Study)" className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-primary" />
-              <button onClick={handleHighlight} className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-white/90 transition-colors">Save to Highlight</button>
+
+              <div className="space-y-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-white/40">Choose Stories</p>
+                <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+                  {storiesAvailableForHighlight.map((story) => {
+                    const isSelected = selectedStoryIds.includes(story.id);
+                    return (
+                      <button
+                        key={story.id}
+                        onClick={() => toggleStorySelection(story.id)}
+                        className={`relative w-20 h-28 rounded-2xl overflow-hidden border transition-all shrink-0 ${isSelected ? 'border-white scale-[1.02]' : 'border-white/10 opacity-70'}`}
+                      >
+                        {story.mediaType === 'video' ? (
+                          <video src={story.mediaUrl} className="w-full h-full object-cover" muted playsInline />
+                        ) : (
+                          <img src={story.mediaUrl} className="w-full h-full object-cover" alt="" />
+                        )}
+                        <div className={`absolute top-2 right-2 w-5 h-5 rounded-full border border-white/40 flex items-center justify-center ${isSelected ? 'bg-white text-black' : 'bg-black/40 text-transparent'}`}>
+                          <Check className="w-3.5 h-3.5" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-white/40">Add To</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {existingHighlights.map((highlight) => (
+                    <button
+                      key={highlight.id}
+                      onClick={() => {
+                        setCreatingNewHighlight(false);
+                        setSelectedHighlightId(highlight.id);
+                        setHighlightName(highlight.title);
+                      }}
+                      className={`rounded-2xl border px-4 py-3 text-left transition-all ${!creatingNewHighlight && selectedHighlightId === highlight.id ? 'border-white bg-white text-black' : 'border-white/10 bg-white/5 text-white hover:bg-white/10'}`}
+                    >
+                      <span className="block text-sm font-bold truncate">{highlight.title}</span>
+                      <span className={`block text-[10px] uppercase tracking-[0.2em] mt-1 ${!creatingNewHighlight && selectedHighlightId === highlight.id ? 'text-black/60' : 'text-white/40'}`}>Existing Highlight</span>
+                    </button>
+                  ))}
+
+                  <button
+                    onClick={() => {
+                      setCreatingNewHighlight(true);
+                      setSelectedHighlightId(null);
+                      setHighlightName('');
+                    }}
+                    className={`rounded-2xl border px-4 py-3 text-left transition-all ${creatingNewHighlight ? 'border-white bg-white text-black' : 'border-white/10 bg-white/5 text-white hover:bg-white/10'}`}
+                  >
+                    <span className="block text-sm font-bold truncate">Create New</span>
+                    <span className={`block text-[10px] uppercase tracking-[0.2em] mt-1 ${creatingNewHighlight ? 'text-black/60' : 'text-white/40'}`}>New Highlight</span>
+                  </button>
+                </div>
+              </div>
+
+              {creatingNewHighlight && (
+                <input
+                  type="text"
+                  value={highlightName}
+                  onChange={e => setHighlightName(e.target.value)}
+                  placeholder="Highlight name"
+                  className="w-full bg-white/10 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-primary"
+                />
+              )}
+
+              <button onClick={handleHighlight} disabled={savingHighlight} className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-white/90 transition-colors disabled:opacity-60">
+                {savingHighlight ? 'Saving...' : 'Save to Highlight'}
+              </button>
             </motion.div>
           )}
         </AnimatePresence>

@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus } from 'lucide-react';
-import { DbService, Profile, Story } from '@/lib/db-service';
+import { DbService, Profile, Story, Highlight } from '@/lib/db-service';
 import { useAuth } from '@/hooks/use-auth';
 import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 import { StoryViewer } from './StoryViewer';
@@ -19,6 +19,7 @@ export function StoriesBar({ currentUser, allUsers }: StoriesBarProps) {
   const [loading, setLoading] = useState(true);
   const [activeStoryUserId, setActiveStoryUserId] = useState<string | null>(null);
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
+  const [ownHighlights, setOwnHighlights] = useState<Highlight[]>([]);
 
   useEffect(() => {
     async function fetchStories() {
@@ -28,8 +29,12 @@ export function StoriesBar({ currentUser, allUsers }: StoriesBarProps) {
         userIds.push(currentUser.uid);
       }
       try {
-        const stories = await DbService.getStories(userIds);
+        const [stories, highlights] = await Promise.all([
+          DbService.getStories(userIds),
+          currentUser ? DbService.getHighlights(currentUser.uid) : Promise.resolve([])
+        ]);
         setStoriesMap(stories);
+        setOwnHighlights(highlights);
       } catch (err) {
         console.error('Failed to fetch stories:', err);
       } finally {
@@ -170,6 +175,19 @@ export function StoriesBar({ currentUser, allUsers }: StoriesBarProps) {
               }
             }}
             onAddMore={() => setIsCreatorOpen(true)}
+            existingHighlights={activeStoryUserId === currentUser?.uid ? ownHighlights : []}
+            highlightSourceStories={activeStoryUserId === currentUser?.uid ? (storiesMap[currentUser.uid] || []) : undefined}
+            onHighlightSaved={(savedHighlight) => {
+              setOwnHighlights((prev) => {
+                const existingIndex = prev.findIndex((item) => item.id === savedHighlight.id);
+                if (existingIndex >= 0) {
+                  const next = [...prev];
+                  next[existingIndex] = { ...next[existingIndex], ...savedHighlight };
+                  return next;
+                }
+                return [savedHighlight, ...prev];
+              });
+            }}
           />
         )}
       </AnimatePresence>

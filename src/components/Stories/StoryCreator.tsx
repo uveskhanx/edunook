@@ -113,7 +113,7 @@ interface StoryCreatorProps {
 }
 
 export function StoryCreator({ currentUser, onClose, onStoryAdded }: StoryCreatorProps) {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video' | null>(null);
   
@@ -137,18 +137,18 @@ export function StoryCreator({ currentUser, onClose, onStoryAdded }: StoryCreato
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
-    if (!selected) return;
+    const selectedFiles = Array.from(e.target.files || []);
+    if (selectedFiles.length === 0) return;
 
-    if (selected.size > 20 * 1024 * 1024) {
-      alert("File is too large. Max 20MB allowed.");
+    if (selectedFiles.some((selected) => selected.size > 20 * 1024 * 1024)) {
+      alert("One or more files are too large. Max 20MB allowed.");
       return;
     }
 
-    setFile(selected);
-    const url = URL.createObjectURL(selected);
+    setFiles(selectedFiles);
+    const url = URL.createObjectURL(selectedFiles[0]);
     setPreviewUrl(url);
-    setMediaType(selected.type.startsWith('video/') ? 'video' : 'image');
+    setMediaType(selectedFiles[0].type.startsWith('video/') ? 'video' : 'image');
   };
 
   const handleTransformUpdate = useCallback((id: string, x: number, y: number) => {
@@ -196,12 +196,10 @@ export function StoryCreator({ currentUser, onClose, onStoryAdded }: StoryCreato
   };
 
   const handleUpload = async () => {
-    if (!file || !currentUser) return;
+    if (files.length === 0 || !currentUser) return;
     setIsUploading(true);
 
     try {
-      const url = await DbService.uploadStoryMedia(currentUser.uid, file);
-      
       const mappedOverlays = overlays.map(o => ({
         ...o,
         x: (o.x / CANVAS_W) * 100,
@@ -213,12 +211,17 @@ export function StoryCreator({ currentUser, onClose, onStoryAdded }: StoryCreato
         frame: frameSettings
       });
 
-      await DbService.addStory(currentUser.uid, {
-        mediaUrl: url,
-        mediaType: mediaType as 'image' | 'video',
-        filters: finalFiltersData,
-        stickers: mappedOverlays.length > 0 ? JSON.stringify(mappedOverlays) : undefined
-      });
+      await Promise.all(
+        files.map(async (file) => {
+          const url = await DbService.uploadStoryMedia(currentUser.uid, file);
+          await DbService.addStory(currentUser.uid, {
+            mediaUrl: url,
+            mediaType: file.type.startsWith('video/') ? 'video' : 'image',
+            filters: finalFiltersData,
+            stickers: mappedOverlays.length > 0 ? JSON.stringify(mappedOverlays) : undefined
+          });
+        })
+      );
 
       onStoryAdded();
     } catch (err) {
@@ -275,7 +278,7 @@ export function StoryCreator({ currentUser, onClose, onStoryAdded }: StoryCreato
           >
             Select Media
           </button>
-          <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileSelect} />
+          <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" multiple onChange={handleFileSelect} />
         </div>
       ) : (
         <div 
@@ -451,6 +454,12 @@ export function StoryCreator({ currentUser, onClose, onStoryAdded }: StoryCreato
               </motion.div>
             )}
           </AnimatePresence>
+
+          {files.length > 1 && (
+            <div className="absolute bottom-4 left-4 z-30 rounded-full bg-black/60 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em] text-white backdrop-blur-md">
+              {files.length} stories selected
+            </div>
+          )}
         </div>
       )}
 

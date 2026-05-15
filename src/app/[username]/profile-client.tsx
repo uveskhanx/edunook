@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { DbService, Profile, Course, Achievement, Highlight } from '@/lib/db-service';
+import { DbService, Profile, Course, Achievement, Highlight, Story } from '@/lib/db-service';
 import { useAuth } from '@/hooks/use-auth';
 import { Layout } from '@/components/Layout';
 import { CourseCard } from '@/components/CourseCard';
@@ -17,6 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ReportModal } from '@/components/ReportModal';
 import { ShieldAlert, Info, MoreVertical, Grid2X2, Waves, Hash, Dot, Upload, CircuitBoard, Star } from 'lucide-react';
 import { ALL_THEMES } from '@/lib/themes';
+import { StoryViewer } from '@/components/Stories/StoryViewer';
 
 const COLOR_MAP: Record<string, string> = {
   blue: '#3b82f6',
@@ -58,19 +59,10 @@ export default function ProfileClient({ username }: { username: string }) {
   const [communityThemes, setCommunityThemes] = useState<any[]>([]);
   const [uploadingTheme, setUploadingTheme] = useState(false);
 
-  const [isAddingHighlight, setIsAddingHighlight] = useState(false);
-  const [highlightFile, setHighlightFile] = useState<File | null>(null);
-  const [highlightPreviewUrl, setHighlightPreviewUrl] = useState<string | null>(null);
-  const [highlightType, setHighlightType] = useState<'image' | 'video'>('image');
-  const [highlightTitle, setHighlightTitle] = useState('');
-  const [uploadingHighlight, setUploadingHighlight] = useState(false);
-  const [highlightZoom, setHighlightZoom] = useState(1);
-  const [highlightRatio, setHighlightRatio] = useState<'square' | 'portrait' | 'original'>('original');
-  const [highlightFilter, setHighlightFilter] = useState('Original');
-
   // Highlight Viewer State
   const [viewerHighlight, setViewerHighlight] = useState<Highlight | null>(null);
-  const [viewerProgress, setViewerProgress] = useState(0);
+  const [viewerHighlightStories, setViewerHighlightStories] = useState<Story[]>([]);
+  const [loadingHighlightId, setLoadingHighlightId] = useState<string | null>(null);
 
   // Avatar Long-press State
   const [isPressingAvatar, setIsPressingAvatar] = useState(false);
@@ -89,85 +81,24 @@ export default function ProfileClient({ username }: { username: string }) {
     setIsPressingAvatar(false);
   };
 
-  const handleHighlightSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setHighlightFile(file);
-      setHighlightPreviewUrl(URL.createObjectURL(file));
-      setHighlightType(file.type.startsWith('video/') ? 'video' : 'image');
-      setHighlightTitle('New Highlight');
-      setIsAddingHighlight(true);
-    }
-    e.target.value = '';
-  };
-
-  const uploadHighlight = async () => {
-    if (!user || !highlightFile) return;
-    setUploadingHighlight(true);
+  const openHighlightViewer = async (highlight: Highlight) => {
+    if (!resolvedUid) return;
     try {
-      toast.loading(`Uploading ${highlightType}...`, { id: 'hl-upload' });
-      const url = await DbService.uploadAvatar(user.id, highlightFile); 
-
-      const newHighlight = {
-         title: highlightTitle,
-         coverImage: url,
-         type: 'update' as const,
-      };
-
-      const id = await DbService.addHighlight(user.id, newHighlight);
-      setHighlights(prev => [{ id, ...newHighlight }, ...prev]);
-      
-      setIsAddingHighlight(false);
-      setHighlightFile(null);
-      setHighlightPreviewUrl(null);
-      toast.success("Highlight Added!", { id: 'hl-upload' });
+      setLoadingHighlightId(highlight.id);
+      const stories = await DbService.getHighlightStories(resolvedUid, highlight.id, highlight);
+      if (stories.length === 0) {
+        toast.error('No stories found in this highlight yet');
+        return;
+      }
+      setViewerHighlightStories(stories);
+      setViewerHighlight(highlight);
     } catch (err) {
-      console.error(err);
-      toast.error("Failed to add highlight", { id: 'hl-upload' });
+      console.error('Failed to load highlight stories:', err);
+      toast.error('Could not open highlight');
     } finally {
-      setUploadingHighlight(false);
+      setLoadingHighlightId(null);
     }
   };
-
-  const cancelHighlight = () => {
-    setIsAddingHighlight(false);
-    setHighlightFile(null);
-    setHighlightPreviewUrl(null);
-    setHighlightZoom(1);
-    setHighlightRatio('original');
-    setHighlightFilter('Original');
-  };
-
-  const getFilterStyle = (filter: string) => {
-    switch(filter) {
-      case 'Noir': return { filter: 'grayscale(100%) contrast(120%)' };
-      case 'Vivid': return { filter: 'contrast(110%) saturate(150%)' };
-      case 'Warm': return { filter: 'sepia(30%) saturate(140%) hue-rotate(-10deg)' };
-      case 'Cold': return { filter: 'sepia(20%) saturate(120%) hue-rotate(180deg)' };
-      default: return {};
-    }
-  };
-
-  useEffect(() => {
-    if (viewerHighlight) {
-      setViewerProgress(0);
-      const startTime = Date.now();
-      const duration = 10000; 
-
-      const interval = setInterval(() => {
-        const elapsed = Date.now() - startTime;
-        const progress = Math.min((elapsed / duration) * 100, 100);
-        setViewerProgress(progress);
-        
-        if (elapsed >= duration) {
-          setViewerHighlight(null);
-          clearInterval(interval);
-        }
-      }, 50);
-
-      return () => clearInterval(interval);
-    }
-  }, [viewerHighlight]);
 
   const isOwnProfile = user?.id === resolvedUid;
 
@@ -612,7 +543,7 @@ export default function ProfileClient({ username }: { username: string }) {
                   <motion.div 
                     key={highlight.id}
                     whileHover={{ scale: 1.05, y: -4 }}
-                    onClick={() => setViewerHighlight(highlight)}
+                    onClick={() => openHighlightViewer(highlight)}
                     className="flex flex-col items-center gap-4 cursor-pointer shrink-0"
                   >
                      <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-muted/20 flex items-center justify-center border-[3px] border-border relative group p-1 transition-all hover:border-primary">
@@ -624,6 +555,11 @@ export default function ProfileClient({ username }: { username: string }) {
                              <Sparkles className="w-8 h-8 text-primary/20 m-auto mt-6 md:mt-8" />
                            )}
                         </div>
+                        {loadingHighlightId === highlight.id && (
+                          <div className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center">
+                            <Loader2 className="w-5 h-5 text-white animate-spin" />
+                          </div>
+                        )}
                      </div>
                      <span className="text-[11px] font-black text-muted-foreground uppercase tracking-widest text-center truncate w-24">
                         {highlight.title}
@@ -640,12 +576,11 @@ export default function ProfileClient({ username }: { username: string }) {
                     whileHover={{ scale: 1.05, y: -4 }}
                     className="flex flex-col items-center gap-4 shrink-0 transition-opacity"
                   >
-                     <label className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-muted/20 border-[3px] border-border border-dashed hover:border-primary hover:bg-primary/5 flex items-center justify-center text-muted-foreground/40 hover:text-primary transition-all group cursor-pointer shadow-xl">
+                     <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-muted/20 border-[3px] border-border border-dashed hover:border-primary hover:bg-primary/5 flex items-center justify-center text-muted-foreground/40 hover:text-primary transition-all group shadow-xl">
                         <Plus className="w-8 h-8 group-hover:rotate-90 transition-transform duration-500" />
-                        <input type="file" accept="image/*,video/*" className="hidden" onChange={handleHighlightSelect} disabled={uploadingHighlight} />
-                     </label>
+                     </div>
                       <span className="text-[11px] font-black text-primary uppercase tracking-widest">
-                        Add Highlight
+                        From Story
                       </span>
                   </motion.div>
                 )}
@@ -700,131 +635,6 @@ export default function ProfileClient({ username }: { username: string }) {
             </motion.section>
           </div>
         </motion.div>
-
-        <AnimatePresence>
-          {isAddingHighlight && highlightPreviewUrl && (
-            <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/95 backdrop-blur-xl">
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.9, y: 50 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, y: 50 }}
-                  className="relative w-full h-full md:max-w-md md:h-[90vh] bg-card overflow-hidden md:rounded-[3rem] md:border md:border-border shadow-[0_0_100px_rgba(0,0,0,0.4)] flex flex-col"
-                >
-                  <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between p-4 bg-gradient-to-b from-card/80 to-transparent pt-12 md:pt-6">
-                      <button onClick={cancelHighlight} disabled={uploadingHighlight} className="p-3 rounded-full bg-card/40 text-foreground backdrop-blur-xl hover:bg-foreground/10 transition-all">
-                         <X className="w-6 h-6" />
-                      </button>
-                   </div>
-
-                    <div className="flex-1 w-full relative bg-background flex flex-col overflow-hidden">
-                       <div className="flex-1 w-full bg-black relative flex items-center justify-center overflow-hidden" style={{ minHeight: '40vh' }}>
-                         <div className={`transition-all duration-300 flex items-center justify-center
-                            ${highlightRatio === 'square' ? 'aspect-square h-full' : highlightRatio === 'portrait' ? 'aspect-[9/16] h-full' : 'w-full h-full'}`}>
-                            <motion.div 
-                              style={{ scale: highlightZoom, ...getFilterStyle(highlightFilter) }}
-                              className="w-full h-full flex items-center justify-center"
-                            >
-                               {highlightType === 'video' ? (
-                                  <video src={highlightPreviewUrl} className="w-full h-full object-cover" autoPlay loop playsInline />
-                               ) : (
-                                  <img src={highlightPreviewUrl} className="w-full h-full object-cover" alt="Previewing" />
-                               )}
-                            </motion.div>
-                         </div>
-                       </div>
-                       
-                       <div className="bg-card p-6 pb-24 md:pb-6 space-y-6 overflow-y-auto max-h-[50vh]">
-                          <div className="flex items-center gap-6">
-                             <div className="flex-1 flex flex-col gap-2">
-                                <div className="flex justify-between items-center text-[10px] font-black uppercase text-foreground/40 tracking-widest px-1">
-                                   <span>Zoom</span>
-                                   <span>{Math.round(highlightZoom * 100)}%</span>
-                                </div>
-                                <input 
-                                  type="range" 
-                                  min="1" 
-                                  max="3" 
-                                  step="0.01" 
-                                  value={highlightZoom}
-                                  onChange={(e) => setHighlightZoom(parseFloat(e.target.value))}
-                                  className="w-full accent-primary bg-foreground/10 h-1.5 rounded-full appearance-none cursor-pointer"
-                                />
-                             </div>
-
-                             <div className="flex flex-col gap-2">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-foreground/40 px-1">Format</span>
-                                <div className="flex items-center gap-2">
-                                   {[
-                                     {id: 'square', label: '1:1'},
-                                     {id: 'portrait', label: '9:16'},
-                                     {id: 'original', label: 'Fit'}
-                                   ].map(r => (
-                                     <button
-                                       key={r.id}
-                                       onClick={() => setHighlightRatio(r.id as 'square' | 'portrait' | 'original')}
-                                       className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all
-                                         ${highlightRatio === r.id ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}
-                                     >
-                                       {r.label}
-                                     </button>
-                                   ))}
-                                </div>
-                             </div>
-                          </div>
-
-                          <div className="flex flex-col gap-3">
-                             <span className="text-[10px] font-black uppercase tracking-widest text-foreground/40 px-1">Filters</span>
-                             <div className="flex items-center gap-4 overflow-x-auto no-scrollbar pb-2 pt-1 px-1">
-                                {['Original', 'Noir', 'Vivid', 'Warm', 'Cold'].map(f => (
-                                   <div key={f} className="flex flex-col items-center gap-2 shrink-0">
-                                      <button 
-                                        onClick={() => setHighlightFilter(f)}
-                                        className={`w-16 h-20 rounded-2xl overflow-hidden border-2 transition-all p-0.5 ${highlightFilter === f ? 'border-primary shadow-lg shadow-primary/20 scale-105' : 'border-transparent hover:border-white/20'}`}
-                                      >
-                                         <div className="w-full h-full rounded-xl overflow-hidden bg-muted">
-                                            {highlightType === 'image' && (
-                                              <img 
-                                                src={highlightPreviewUrl} 
-                                                style={getFilterStyle(f)}
-                                                className="w-full h-full object-cover" 
-                                                alt={f} 
-                                              />
-                                            )}
-                                         </div>
-                                      </button>
-                                      <span className={`text-[9px] font-black uppercase ${highlightFilter === f ? 'text-primary' : 'text-foreground/40'}`}>{f}</span>
-                                   </div>
-                                ))}
-                             </div>
-                          </div>
-                       </div>
-                    </div>
-
-                    <div className="absolute bottom-0 inset-x-0 z-20 p-4 md:p-6 bg-gradient-to-t from-card via-card to-transparent border-t border-border/50">
-                       <div className="flex items-center justify-between gap-3 md:gap-4">
-                          <input 
-                            type="text"
-                            value={highlightTitle}
-                            onChange={(e) => setHighlightTitle(e.target.value)}
-                            className="flex-1 w-full bg-background border border-border rounded-2xl px-5 py-3.5 text-foreground text-sm font-medium focus:outline-none focus:border-primary transition-all shadow-sm placeholder:text-foreground/50"
-                            placeholder="Highlight Name..."
-                            disabled={uploadingHighlight}
-                            maxLength={15}
-                          />
-                         
-                         <button 
-                            onClick={uploadHighlight}
-                            disabled={uploadingHighlight || !highlightTitle.trim()}
-                            className="px-5 py-3.5 bg-primary text-white rounded-2xl font-black text-[12px] md:text-[14px] flex shrink-0 items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-50 uppercase tracking-widest"
-                         >
-                            {uploadingHighlight ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Upload Highlight'}
-                         </button>
-                      </div>
-                   </div>
-                </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
 
         <AnimatePresence>
           {isEditing && isOwnProfile && (
@@ -1023,41 +833,22 @@ export default function ProfileClient({ username }: { username: string }) {
         </AnimatePresence>
         
         <AnimatePresence>
-          {viewerHighlight && (
-            <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center overflow-hidden">
-                <div className="absolute top-0 inset-x-0 h-1.5 flex gap-1 p-2 z-30">
-                  <div className="flex-1 bg-white/20 rounded-full h-full overflow-hidden">
-                    <motion.div 
-                      className="bg-white h-full"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${viewerProgress}%` }}
-                      transition={{ ease: "linear" }}
-                    />
-                  </div>
-                </div>
-
-                <div className="absolute top-6 inset-x-0 flex items-center justify-between p-4 z-30 pt-10">
-                   <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full border-2 border-primary p-0.5">
-                         <img src={optimizeCloudinaryUrl(profile.avatarUrl || '', 80)} className="w-full h-full rounded-full object-cover" alt="" />
-                      </div>
-                       <div className="flex flex-col">
-                          <div className="flex items-center gap-1">
-                             <span className="text-white text-sm font-bold">{profile.fullName}</span>
-                             <VerificationTick planId={profile.subscription?.planId} size={14} />
-                          </div>
-                          <span className="text-white/60 text-[10px] font-medium uppercase tracking-widest">{viewerHighlight.title}</span>
-                       </div>
-                   </div>
-                   <button onClick={() => setViewerHighlight(null)} className="p-2 text-white/60 hover:text-white">
-                      <X className="w-6 h-6" />
-                   </button>
-                </div>
-
-                <div className="w-full h-full flex items-center justify-center">
-                   <img src={optimizeCloudinaryUrl(viewerHighlight.coverImage || '', 1200)} className="w-full h-full object-contain" alt="" />
-                </div>
-            </div>
+          {viewerHighlight && viewerHighlightStories.length > 0 && (
+            <StoryViewer
+              stories={viewerHighlightStories}
+              user={profile}
+              onClose={() => {
+                setViewerHighlight(null);
+                setViewerHighlightStories([]);
+              }}
+              onComplete={() => {
+                setViewerHighlight(null);
+                setViewerHighlightStories([]);
+              }}
+              disableViewTracking
+              hideBottomBar
+              headerSubLabel={viewerHighlight.title}
+            />
           )}
         </AnimatePresence>
 

@@ -183,8 +183,9 @@ export interface Highlight {
   id: string;
   title: string;
   coverImage?: string;
-  type: 'course' | 'achievement' | 'update';
+  type: 'course' | 'achievement' | 'update' | 'custom';
   linkId?: string;
+  createdAt?: string;
 }
 
 export interface Attempt {
@@ -855,29 +856,104 @@ export const DbService = {
   },
 
   async addStoryToHighlight(userId: string, highlightTitle: string, storyData: Story): Promise<void> {
-    const highlightId = this.slugify(highlightTitle);
-    
-    // First, ensure the highlight metadata exists
-    const highlightMetaRef = ref(db, `profiles/${userId}/highlights/${highlightId}`);
-    const metaSnap = await get(highlightMetaRef);
-    if (!metaSnap.exists()) {
-      await set(highlightMetaRef, {
-        id: highlightId,
-        title: highlightTitle,
-        type: 'custom',
-        coverImage: storyData.mediaUrl, // use first story as cover
-        createdAt: new Date().toISOString()
-      });
+    await this.addStoriesToHighlight(userId, [storyData], { highlightTitle });
+  },
+
+  async addStoriesToHighlight(
+    userId: string,
+    stories: Story[],
+    options: { highlightTitle: string; highlightId?: string }
+  ): Promise<Highlight> {
+    const trimmedTitle = options.highlightTitle.trim();
+    const safeId = options.highlightId && this.isValidFirebaseKey(options.highlightId)
+      ? options.highlightId
+      : this.slugify(trimmedTitle || 'highlight');
+    const highlightId = safeId || `highlight-${Date.now()}`;
+    const now = new Date().toISOString();
+    const selectedStories = stories.filter(Boolean);
+
+    if (!trimmedTitle || selectedStories.length === 0) {
+      throw new Error('Highlight title and stories are required');
     }
 
-    // Then, add the story content to a dedicated subcollection or just a list of story items
-    const highlightStoriesRef = ref(db, `highlights_data/${userId}/${highlightId}`);
-    const newStoryRef = push(highlightStoriesRef);
-    await set(newStoryRef, {
-      ...storyData,
-      id: newStoryRef.key, // new ID inside the highlight
-      addedAt: new Date().toISOString()
+    const highlightMetaRef = ref(db, `profiles/${userId}/highlights/${highlightId}`);
+    const highlightStoriesRoot = `highlights_data/${userId}/${highlightId}`;
+    const [metaSnap, storiesSnap] = await Promise.all([
+      get(highlightMetaRef),
+      get(ref(db, highlightStoriesRoot))
+    ]);
+
+    const existingMeta = metaSnap.exists() ? metaSnap.val() : null;
+    const existingStories = storiesSnap.exists() ? Object.values(storiesSnap.val() || {}) as any[] : [];
+    const existingOriginalIds = new Set(
+      existingStories
+        .map((item) => item?.originalStoryId || item?.sourceStoryId || item?.id)
+        .filter(Boolean)
+    );
+
+    const coverImage = existingMeta?.coverImage || selectedStories[0]?.mediaUrl || '';
+    const highlightMeta: Highlight = {
+      id: highlightId,
+      title: trimmedTitle,
+      type: 'custom',
+      coverImage,
+      createdAt: existingMeta?.createdAt || now,
+      linkId: existingMeta?.linkId,
+    };
+
+    const updates: Record<string, any> = {
+      [`profiles/${userId}/highlights/${highlightId}`]: highlightMeta,
+    };
+
+    selectedStories.forEach((story) => {
+      const originalStoryId = story.id;
+      if (existingOriginalIds.has(originalStoryId)) return;
+
+      const newStoryRef = push(ref(db, highlightStoriesRoot));
+      updates[`${highlightStoriesRoot}/${newStoryRef.key}`] = {
+        ...story,
+        id: newStoryRef.key,
+        originalStoryId,
+        sourceStoryId: originalStoryId,
+        addedAt: now,
+      };
     });
+
+    await update(ref(db), updates);
+    return highlightMeta;
+  },
+
+  async getHighlightStories(uid: string, highlightId: string, fallbackHighlight?: Highlight): Promise<Story[]> {
+    const snapshot = await get(ref(db, `highlights_data/${uid}/${highlightId}`));
+
+    if (snapshot.exists()) {
+      return Object.values(snapshot.val() || {})
+        .map((story: any) => ({
+          ...story,
+          userId: story.userId || uid,
+          createdAt: story.createdAt || story.addedAt || new Date().toISOString(),
+          expiresAt: story.expiresAt || '9999-12-31T23:59:59.999Z',
+        } as Story))
+        .sort((a, b) => {
+          const aTime = new Date((a as any).addedAt || a.createdAt).getTime();
+          const bTime = new Date((b as any).addedAt || b.createdAt).getTime();
+          return aTime - bTime;
+        });
+    }
+
+    if (fallbackHighlight?.coverImage) {
+      const mediaType = /\.(mp4|mov|webm|m4v)(\?|$)/i.test(fallbackHighlight.coverImage) ? 'video' : 'image';
+      return [{
+        id: `legacy-${highlightId}`,
+        userId: uid,
+        mediaUrl: fallbackHighlight.coverImage,
+        mediaType,
+        createdAt: fallbackHighlight.createdAt || new Date().toISOString(),
+        expiresAt: '9999-12-31T23:59:59.999Z',
+      }];
+    }
+
+    return [];
   },
 
   // Utilities
