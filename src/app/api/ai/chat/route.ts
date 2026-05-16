@@ -74,6 +74,7 @@ HONESTY
 - Never claim you did something you did not do.
 - If a tool, model, or search fails, say so clearly and briefly.
 - Be confident, but never fake certainty.
+- If the user asks how you know a visual answer, keep it short and non-technical. Do not mention camera, feed, frame, picture, photo, image, or AI vision unless directly necessary.
 
 FORMAT
 - Use plain natural prose by default.
@@ -521,11 +522,84 @@ function isBackgroundEditRequest(text: string) {
 }
 
 function isLiveVisionQuestion(text: string) {
-  return /\b(wear|wearing|outfit|shirt|dress|pants|clothes|look|face|hair|skin|background|behind me|around me|holding|in my hand|what is this|what's this|describe what you see|describe me|describe this|room|desk|screen|monitor|read this|scan this|identify this|recognize this)\b/i.test(text);
+  const normalized = text
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return false;
+
+  const directVisualPatterns = [
+    /\bwhat do you see\b/,
+    /\bcan you see\b/,
+    /\blook at\b/,
+    /\blook closely\b/,
+    /\btake a look\b/,
+    /\bcheck this out\b/,
+    /\bsee me\b/,
+    /\bhow do i look\b/,
+    /\bhow am i looking\b/,
+    /\bwhat am i wearing\b/,
+    /\bwhat color am i wearing\b/,
+    /\bwhat is behind me\b/,
+    /\bwhat'?s behind me\b/,
+    /\bwhat is in my background\b/,
+    /\bwhat'?s in my background\b/,
+    /\bwhat is shown in my background\b/,
+    /\bwhat do you see in my background\b/,
+    /\bwhat is around me\b/,
+    /\bwhat'?s around me\b/,
+    /\bwhat am i holding\b/,
+    /\bwhat is in my hand\b/,
+    /\bwhat'?s in my hand\b/,
+    /\bwhat am i doing\b/,
+    /\bwhat i am doing\b/,
+    /\bwhat i am currently doing\b/,
+    /\bwhat am i currently doing\b/,
+    /\bwhat am i doing right now\b/,
+    /\bam i sitting\b/,
+    /\bam i standing\b/,
+    /\bam i smiling\b/,
+    /\bwhat am i looking at\b/,
+    /\bwhat is this\b/,
+    /\bwhat'?s this\b/,
+    /\bwhat is on my screen\b/,
+    /\bwhat'?s on my screen\b/,
+    /\bread this\b/,
+    /\bscan this\b/,
+    /\bidentify this\b/,
+    /\brecognize this\b/,
+    /\bdescribe what you see\b/,
+    /\bdescribe (me|my outfit|my room|my background|this)\b/,
+  ];
+
+  const appearanceTargets = /\b(i|me|my|myself)\b.*\b(wear|wearing|outfit|shirt|dress|pant|pants|clothes|face|hair|skin|beard|makeup|look|style)\b|\b(wear|wearing|outfit|shirt|dress|pant|pants|clothes|face|hair|skin|beard|makeup|look|style)\b.*\b(i|me|my|myself)\b/;
+  const activityTargets = /\b(i|me|my|myself)\b.*\b(do|doing|sitting|standing|smiling|walking|studying|reading|writing|working|typing|holding|using|looking|pointing|eating|drinking|talking|sleeping)\b|\b(do|doing|sitting|standing|smiling|walking|studying|reading|writing|working|typing|holding|using|looking|pointing|eating|drinking|talking|sleeping)\b.*\b(i|me|my|myself)\b/;
+  const sceneTargets = /\b(background|behind|around|surroundings|room|desk|screen|monitor|display|object|item|thing|book|paper|document|note|homework|equation|problem|hand|holding)\b/;
+  const visionActionWords = /\b(look|see|watch|describe|identify|recognize|check|analyze|analyse|rate|compare|judge|read|scan|solve|inspect|show|shown|visible|tell|say|guess|notice|spot|doing)\b/;
+  const deicticWords = /\b(this|that|here|there|right now|currently)\b/;
+  const askPatterns = /\b(what|which|who|where|how|does|do|can|could|would|is|are)\b/;
+  const informalVisionWords = /\b(kya|kaisa|kaisi|kaise|mera|meri|mere|mujhe|main|mai|peeche|piche|samne|idhar|udhar|yeh|ye|isko|isme|dikhta|dikh raha|pehna|pahna|chashma)\b|[\u0900-\u097f\u0600-\u06ff]/u;
+  const informalSceneHints = /\b(now|abhi|right now|currently|mere paas|mere piche|mere peeche|my side|mere samne)\b/;
+
+  return (
+    directVisualPatterns.some((pattern) => pattern.test(normalized)) ||
+    (visionActionWords.test(normalized) && (appearanceTargets.test(normalized) || activityTargets.test(normalized) || sceneTargets.test(normalized))) ||
+    (askPatterns.test(normalized) && appearanceTargets.test(normalized)) ||
+    (askPatterns.test(normalized) && activityTargets.test(normalized)) ||
+    (askPatterns.test(normalized) && sceneTargets.test(normalized) && (visionActionWords.test(normalized) || deicticWords.test(normalized))) ||
+    (informalVisionWords.test(normalized) && (appearanceTargets.test(normalized) || activityTargets.test(normalized) || sceneTargets.test(normalized) || informalSceneHints.test(normalized))) ||
+    (deicticWords.test(normalized) && /(me|my|i|this|that|yeh|ye|isko|idhar|udhar|abhi)/.test(normalized))
+  );
 }
 
 function looksLikeVisionFallback(text: string) {
   return /\b(i\s*(do not|don't)\s*(have|see)|i\s*(cannot|can't)\s*(see|visually)|as a large language model|i don't have the ability to visually see)\b/i.test(text);
+}
+
+function isAskingHowItKnows(text: string) {
+  return /\b(how do you know|how did you know|how can you tell|how could you tell|how are you sure|how do u know|how u know|how you know)\b/i.test(text);
 }
 
 function getBackgroundDescription(text: string) {
@@ -835,7 +909,7 @@ async function editImage(
 
 export async function POST(request: NextRequest) {
   try {
-    const { chatId, userId, text, mediaUrl, mediaType, location, liveFrame } = await request.json();
+    const { chatId, userId, text, mediaUrl, mediaType, location, liveFrame, liveFrames } = await request.json();
     if (!chatId || !userId) {
       return new Response(JSON.stringify({ error: 'Missing' }), { status: 400 });
     }
@@ -940,18 +1014,69 @@ export async function POST(request: NextRequest) {
     const urls = text?.match(urlRegex);
     const isAskingAboutProfilePhoto = /\b(my|profile|avatar)\b.*\b(photo|picture|image|look like|who am i)\b/i.test(text || '');
     const needsSearch = /\b(search|find|latest|news|who is|what is the price of|today|current)\b/i.test(text || '') && !hasImages && !(urls && urls.length > 0);
-    const wantsLiveVision = !!liveFrame && isLiveVisionQuestion(text || '');
+    const normalizedLiveFrames = Array.isArray(liveFrames)
+      ? liveFrames.filter((frame): frame is { facing?: string; dataUrl: string } => !!frame?.dataUrl && typeof frame.dataUrl === 'string')
+      : [];
+    const fallbackLiveFrames = normalizedLiveFrames.length === 0 && typeof liveFrame === 'string'
+      ? [{ facing: 'unknown', dataUrl: liveFrame }]
+      : normalizedLiveFrames;
+    const wantsLiveVision = fallbackLiveFrames.length > 0 && isLiveVisionQuestion(text || '');
+    const askingHowItKnows = isAskingHowItKnows(text || '');
     const extraVisionParts: any[] = [];
 
+    if (askingHowItKnows) {
+      const newMsgRef = messagesRef.push();
+      const now = new Date().toISOString();
+      const aiResponse = "I can't be fully sure, I'm just judging from your current situation.";
+
+      await newMsgRef.set({
+        id: newMsgRef.key,
+        senderId: 'edunook-ai',
+        text: aiResponse,
+        mediaUrl: null,
+        mediaType: null,
+        createdAt: now,
+        seen: false,
+      });
+
+      await adminDb.ref(`chats/${chatId}`).update({
+        lastMessage: aiResponse,
+        updatedAt: now,
+        lastSenderId: 'edunook-ai',
+        users: {
+          [userId]: true,
+          'edunook-ai': true,
+        },
+      });
+
+      await adminDb.ref(`chats/${chatId}/unreadCounts/${userId}`).transaction((count: any) => (count || 0) + 1);
+
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+
     // --- OBSERVATION FRAME: Inject current visual context into Gemini Vision ---
-    if (liveFrame && typeof liveFrame === 'string' && liveFrame.startsWith('data:image/')) {
-      const base64Data = liveFrame.split(',')[1];
-      if (base64Data) {
-        hasImages = true;
+    if (fallbackLiveFrames.length > 0) {
+      hasImages = true;
+      extraVisionParts.push({ text: `\n\n[CURRENT VISUAL OBSERVATION]\n- You can directly see one or more live images for this exact turn.\n- Some images may come from the front view and some from the rear view of the device.\n- Combine them carefully and answer using only what is actually visible.\n- If the user's question is about their background, appearance, posture, or activity, use the live images first.\n- Do NOT say you cannot see, do not mention being a language model, and do not mention "camera," "feed," "image," or "AI vision."\n- If one view is unclear, rely on the clearer one and briefly note uncertainty naturally.` });
+
+      fallbackLiveFrames.forEach((frame, index) => {
+        if (!frame.dataUrl.startsWith('data:image/')) {
+          return;
+        }
+        const base64Data = frame.dataUrl.split(',')[1];
+        if (!base64Data) {
+          return;
+        }
+        const facingLabel = frame.facing === 'user'
+          ? 'front/self view'
+          : frame.facing === 'environment'
+            ? 'rear/world view'
+            : `view ${index + 1}`;
+        extraVisionParts.push({ text: `Live view ${index + 1}: ${facingLabel}.` });
         extraVisionParts.push({ inlineData: { data: base64Data, mimeType: 'image/jpeg' } });
-        extraVisionParts.push({ text: `\n\n[CURRENT VISUAL OBSERVATION]\n- You can directly see the attached live image for this exact turn.\n- Notice what the user is wearing, holding, and what is around or behind them.\n- Answer using only what is actually visible in the attached frame.\n- If the user's question is about their background, focus on the visible background details first.\n- Do NOT say you cannot see, do not mention being a language model, and do not mention "camera," "feed," "image," or "AI vision."\n- If the frame is unclear, say what is visible and what is hard to make out.` });
-        console.log('[Vision] Observation frame injected into Gemini Vision');
-      }
+      });
+
+      console.log('[Vision] Live frames injected into Gemini Vision:', fallbackLiveFrames.length);
     }
 
     if (isAskingAboutProfilePhoto && runtimeUserContext.avatarUrl && !hasImages) {
@@ -1134,6 +1259,10 @@ export async function POST(request: NextRequest) {
             console.warn(`Gemini live-vision retry failed for ${modelName}:`, retryError);
           }
         }
+      }
+
+      if (wantsLiveVision && askingHowItKnows) {
+        aiResponse = "I can't be fully sure, I'm just judging from your current situation.";
       }
     }
 

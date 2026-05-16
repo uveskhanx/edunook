@@ -21,6 +21,11 @@ import { toast } from 'sonner';
 import { ReportModal } from '@/components/ReportModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 
+type CapturedFrame = {
+  facing: 'user' | 'environment';
+  dataUrl: string;
+};
+
 export default function ChatClient() {
   const searchParams = useSearchParams();
   const { user, dbUser, loading: authLoading } = useAuth();
@@ -60,6 +65,15 @@ export default function ChatClient() {
   const lastSpokenAiMessageRef = useRef<string | null>(null);
   const CAMERA_BOOT_TIMEOUT_MS = 2500;
   const CAMERA_RETRY_ATTEMPTS = 4;
+
+  const normalizeVisionText = useCallback((rawText: string) => {
+    return rawText
+      .toLowerCase()
+      .normalize('NFKC')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }, []);
 
   // Security Verification
   useEffect(() => {
@@ -259,7 +273,7 @@ export default function ChatClient() {
   }, [user, activeChat]);
 
   const shouldUseCameraForText = useCallback((rawText: string) => {
-    const text = rawText.toLowerCase().trim();
+    const text = normalizeVisionText(rawText);
     if (!text) return false;
 
     const directVisualPatterns = [
@@ -285,11 +299,26 @@ export default function ChatClient() {
       /\bdoes my outfit look\b/,
       /\bwhat is behind me\b/,
       /\bwhat'?s behind me\b/,
+      /\bwhat is in my background\b/,
+      /\bwhat'?s in my background\b/,
+      /\bwhat is shown in my background\b/,
+      /\bwhat'?s shown in my background\b/,
+      /\bwhat do you see in my background\b/,
       /\bwhat is around me\b/,
       /\bwhat'?s around me\b/,
       /\bwhat am i holding\b/,
       /\bwhat is in my hand\b/,
       /\bwhat'?s in my hand\b/,
+      /\bwhat am i doing\b/,
+      /\bwhat'?m i doing\b/,
+      /\bwhat i am doing\b/,
+      /\bwhat i am currently doing\b/,
+      /\bwhat am i currently doing\b/,
+      /\bwhat am i doing right now\b/,
+      /\bam i sitting\b/,
+      /\bam i standing\b/,
+      /\bam i smiling\b/,
+      /\bwhat am i looking at\b/,
       /\bwhat is this\b/,
       /\bwhat'?s this\b/,
       /\bwhat is on my screen\b/,
@@ -317,14 +346,28 @@ export default function ChatClient() {
       /\brate my\b/,
     ];
 
-    const contextWords = /\b(wear|wearing|outfit|shirt|dress|pant|pants|clothes|face|hair|skin|beard|makeup|room|desk|background|behind|around|holding|object|item|thing|screen|monitor|display|board|book|paper|document|note|homework|equation|problem|surroundings|camera)\b/;
-    const visualVerbs = /\b(look|see|watch|describe|identify|recognize|check|analyze|rate|compare|judge|read|scan|solve|inspect)\b/;
+    const appearanceTargets = /\b(i|me|my|myself)\b.*\b(wear|wearing|outfit|shirt|dress|pant|pants|clothes|face|hair|skin|beard|makeup|look|style)\b|\b(wear|wearing|outfit|shirt|dress|pant|pants|clothes|face|hair|skin|beard|makeup|look|style)\b.*\b(i|me|my|myself)\b/;
+    const activityTargets = /\b(i|me|my|myself)\b.*\b(do|doing|sitting|standing|smiling|walking|studying|reading|writing|working|typing|holding|using|looking|pointing|eating|drinking|talking|sleeping)\b|\b(do|doing|sitting|standing|smiling|walking|studying|reading|writing|working|typing|holding|using|looking|pointing|eating|drinking|talking|sleeping)\b.*\b(i|me|my|myself)\b/;
+    const sceneTargets = /\b(background|behind|around|surroundings|room|desk|screen|monitor|display|object|item|thing|book|paper|document|note|homework|equation|problem|hand|holding)\b/;
+    const visionActionWords = /\b(look|see|watch|describe|identify|recognize|check|analyze|analyse|rate|compare|judge|read|scan|solve|inspect|show|shown|visible|tell|say|guess|notice|spot|doing)\b/;
+    const deicticWords = /\b(this|that|here|there|right now|currently)\b/;
+    const askPatterns = /\b(what|which|who|where|how|does|do|can|could|would|is|are)\b/;
+    const informalVisionWords = /\b(kya|kaisa|kaisi|kaise|mera|meri|mere|mujhe|main|mai|peeche|piche|samne|idhar|udhar|yeh|ye|isko|isme|dikhta|dikh raha|pehna|pahna|chashma)\b|[\u0900-\u097f\u0600-\u06ff]/u;
+    const informalSceneHints = /\b(now|abhi|right now|currently|mere paas|mere piche|mere peeche|my side|mere samne)\b/;
 
-    return directVisualPatterns.some((pattern) => pattern.test(text)) || (visualVerbs.test(text) && contextWords.test(text));
-  }, []);
+    return (
+      directVisualPatterns.some((pattern) => pattern.test(text)) ||
+      (visionActionWords.test(text) && (appearanceTargets.test(text) || activityTargets.test(text) || sceneTargets.test(text))) ||
+      (askPatterns.test(text) && appearanceTargets.test(text)) ||
+      (askPatterns.test(text) && activityTargets.test(text)) ||
+      (askPatterns.test(text) && sceneTargets.test(text) && (visionActionWords.test(text) || deicticWords.test(text))) ||
+      (informalVisionWords.test(text) && (appearanceTargets.test(text) || activityTargets.test(text) || sceneTargets.test(text) || informalSceneHints.test(text))) ||
+      (deicticWords.test(text) && /(me|my|i|this|that|yeh|ye|isko|idhar|udhar|abhi)/.test(text))
+    );
+  }, [normalizeVisionText]);
 
   const getPreferredCameraFacingForText = useCallback((rawText: string): 'user' | 'environment' => {
-    const text = rawText.toLowerCase().trim();
+    const text = normalizeVisionText(rawText);
     if (!text) return 'user';
 
     const frontCameraPatterns = [
@@ -340,6 +383,9 @@ export default function ChatClient() {
       /\bdo i look\b/,
       /\bdoes my face look\b/,
       /\bdoes my outfit look\b/,
+      /\bmy background\b/,
+      /\bin my background\b/,
+      /\bbehind me\b/,
       /\bwhich outfit\b/,
       /\bwhich shirt\b/,
       /\bwhich dress\b/,
@@ -349,6 +395,12 @@ export default function ChatClient() {
       /\bselfie\b/,
       /\bmy face\b/,
       /\bmy look\b/,
+      /\bwhat am i doing\b/,
+      /\bwhat i am doing\b/,
+      /\bcurrently doing\b/,
+      /\bam i sitting\b/,
+      /\bam i standing\b/,
+      /\bam i smiling\b/,
     ];
 
     const rearCameraPatterns = [
@@ -379,7 +431,6 @@ export default function ChatClient() {
       /\bon my screen\b/,
       /\bmonitor\b/,
       /\bdisplay\b/,
-      /\bbackground\b/,
       /\bobject\b/,
       /\bitem\b/,
       /\bbook\b/,
@@ -391,9 +442,15 @@ export default function ChatClient() {
       /\bproblem\b/,
     ];
 
+    const frontHints = /\b(my background|behind me|around me|what am i wearing|my outfit|my face|my hair|my skin|do i look|how do i look|selfie|my look|what am i doing|am i sitting|am i standing|am i smiling|mera|meri|mere|main|mai|peeche|piche|samne|chashma|pehna|pahna)\b/;
+    const rearHints = /\b(this|that)\b.*\b(read|scan|solve|identify|recognize|look|check|inspect)\b|\b(on my screen|my screen|monitor|display|book|paper|document|note|homework|equation|problem|object|item|isko|isme)\b/;
+
     if (frontCameraPatterns.some((pattern) => pattern.test(text))) return 'user';
-    return rearCameraPatterns.some((pattern) => pattern.test(text)) ? 'environment' : 'user';
-  }, []);
+    if (rearCameraPatterns.some((pattern) => pattern.test(text))) return 'environment';
+    if (frontHints.test(text)) return 'user';
+    if (rearHints.test(text)) return 'environment';
+    return 'user';
+  }, [normalizeVisionText]);
 
   const clearCameraIdleTimeout = useCallback(() => {
     if (cameraIdleTimeoutRef.current) {
@@ -459,7 +516,8 @@ export default function ChatClient() {
     return null;
   }, [captureFrame, waitForCameraReady, CAMERA_BOOT_TIMEOUT_MS, CAMERA_RETRY_ATTEMPTS]);
 
-  const startCamera = useCallback(async (facing: 'user' | 'environment' = 'user') => {
+  const startCamera = useCallback(async (facing: 'user' | 'environment' = 'user', options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
     clearCameraIdleTimeout();
     const activeStream = cameraStreamRef.current;
     const hasLiveTrack = !!activeStream?.getVideoTracks().some((track) => track.readyState === 'live');
@@ -482,11 +540,15 @@ export default function ChatClient() {
     }
 
     if (!window.isSecureContext) {
-      toast.error('Camera requires a secure (HTTPS) connection. Please check your URL.');
+      if (!silent) {
+        toast.error('Camera requires a secure (HTTPS) connection. Please check your URL.');
+      }
       return false;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
-      toast.error('This browser does not expose camera access here. Try HTTPS in Chrome or Edge and check site permissions.');
+      if (!silent) {
+        toast.error('This browser does not expose camera access here. Try HTTPS in Chrome or Edge and check site permissions.');
+      }
       return false;
     }
 
@@ -511,15 +573,15 @@ export default function ChatClient() {
       } catch (err: any) {
         console.error('Camera access failed:', err);
         const errName = err.name || 'UnknownError';
-        if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+        if ((errName === 'NotAllowedError' || errName === 'PermissionDeniedError') && !silent) {
           toast.error(`Camera is blocked! 1. Click the lock icon in your URL bar and set Camera to "Allow". 2. If on mobile, check your PHONE SETTINGS > APPS > CHROME > PERMISSIONS and allow Camera there.`, { duration: 10000 });
-        } else if (errName === 'SecurityError') {
+        } else if (errName === 'SecurityError' && !silent) {
           toast.error('Camera access was blocked by browser security or site policy. Refresh after checking site permissions and HTTPS.');
-        } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+        } else if ((errName === 'NotFoundError' || errName === 'DevicesNotFoundError') && !silent) {
           toast.error('No camera found on this device.');
-        } else if (errName === 'NotReadableError' || errName === 'TrackStartError') {
+        } else if ((errName === 'NotReadableError' || errName === 'TrackStartError') && !silent) {
           toast.error('Your camera is busy in another app. Close other camera apps and try again.');
-        } else {
+        } else if (!silent) {
           toast.error(`Could not start camera: ${errName} - ${err.message}`);
         }
         return false;
@@ -544,6 +606,28 @@ export default function ChatClient() {
     cameraStartPromiseRef.current = null;
     setCameraActive(false);
   }, [clearCameraIdleTimeout]);
+
+  const captureLiveFramesForInquiry = useCallback(async (preferredFacing: 'user' | 'environment'): Promise<CapturedFrame[]> => {
+    const frames: CapturedFrame[] = [];
+    const captureOrder: Array<'user' | 'environment'> = preferredFacing === 'user'
+      ? ['user', 'environment']
+      : ['environment', 'user'];
+
+    for (const facing of captureOrder) {
+      const started = await startCamera(facing, { silent: facing !== preferredFacing });
+      if (!started) {
+        continue;
+      }
+
+      const frame = await captureLiveFrameForInquiry();
+      if (frame) {
+        frames.push({ facing, dataUrl: frame });
+      }
+    }
+
+    stopCamera();
+    return frames;
+  }, [captureLiveFrameForInquiry, startCamera, stopCamera]);
 
   const scheduleCameraIdleStop = useCallback((delayMs = 1200) => {
     clearCameraIdleTimeout();
@@ -570,31 +654,24 @@ export default function ChatClient() {
       const txt = text.toLowerCase();
       const isVisualInquiry = shouldUseCameraForText(text);
       const preferredFacing = getPreferredCameraFacingForText(text);
-      let liveFrame: string | null = null;
+      let liveFrames: CapturedFrame[] = [];
 
       if (activeChat.profile.uid === 'edunook-ai') {
         let state = 'Thinking...';
         
-        if (isVisualInquiry && !cameraActive) {
-          const started = await startCamera(preferredFacing);
-        } else if (isVisualInquiry && cameraFacing !== preferredFacing) {
-          const restarted = await startCamera(preferredFacing);
-        }
-
         if (media?.type === 'image') state = 'Analyzing image...';
         else if (txt.includes('search') || txt.includes('find') || txt.includes('look for')) state = 'Searching database...';
         else if (txt.includes('calculate') || txt.includes('math') || txt.includes('solve')) state = 'Calculating...';
         
         if (isVisualInquiry) {
-          liveFrame = await captureLiveFrameForInquiry();
-          stopCamera();
-          if (!liveFrame) {
+          liveFrames = await captureLiveFramesForInquiry(preferredFacing);
+          if (liveFrames.length === 0) {
             toast.warning('I could not capture a camera frame for that question. Please allow camera access and keep yourself in view, then try again.', {
               duration: 7000,
             });
           }
         }
-        if (liveFrame) state = 'Observing...';
+        if (liveFrames.length > 0) state = liveFrames.length > 1 ? 'Observing both sides...' : 'Observing...';
         setAiLoadingState(state);
       }
 
@@ -612,7 +689,8 @@ export default function ChatClient() {
             mediaUrl: media?.url,
             mediaType: media?.type,
             location: currentLocation,
-            liveFrame
+            liveFrame: liveFrames[0]?.dataUrl || null,
+            liveFrames
           })
         }).then(async res => {
           if (!res.ok) {
@@ -628,7 +706,7 @@ export default function ChatClient() {
     } finally {
       setSending(false);
     }
-  }, [activeChat, cameraActive, cameraFacing, captureLiveFrameForInquiry, currentLocation, getPreferredCameraFacingForText, sending, shouldUseCameraForText, startCamera, stopCamera, user]);
+  }, [activeChat, captureLiveFramesForInquiry, currentLocation, getPreferredCameraFacingForText, sending, shouldUseCameraForText, user]);
 
   useEffect(() => {
     setReplyingTo(null);
