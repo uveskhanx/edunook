@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import { 
   createUserWithEmailAndPassword, 
-  updateProfile
+  updateProfile,
+  sendEmailVerification,
+  signOut as firebaseSignOut
 } from 'firebase/auth';
 import { ref, set, runTransaction } from 'firebase/database';
 import { DbService } from '@/lib/db-service';
@@ -16,11 +18,9 @@ import {
   Eye, EyeOff, Calendar, Phone, ChevronLeft,
   Mail, ShieldCheck, Fingerprint, Info
 } from 'lucide-react';
-import { AuthService } from '@/lib/auth-service';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { differenceInMonths, parseISO, isFuture } from 'date-fns';
-import { sendSignupOTPEmailAction, verifySignupOTPAction } from '@/lib/client-actions';
 import { optimizeCloudinaryUrl } from '@/lib/image-utils';
 import Image from 'next/image';
 
@@ -41,8 +41,6 @@ export default function SignupPageClient() {
   const [countryCode, setCountryCode] = useState('+91');
   const [phone, setPhone] = useState('');
   const [realEmail, setRealEmail] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
-  const [resendTimer, setResendTimer] = useState(0);
   
   // UI State
   const [loading, setLoading] = useState(false);
@@ -106,10 +104,10 @@ export default function SignupPageClient() {
   }, [username]);
 
   useEffect(() => {
-    if (authUser && !loading) {
+    if (authUser && !loading && step !== 3) {
       router.push('/home');
     }
-  }, [authUser, router, loading]);
+  }, [authUser, router, loading, step]);
 
   const handleNext = () => {
     if (step === 1) {
@@ -137,52 +135,6 @@ export default function SignupPageClient() {
     setError('');
   };
 
-  const sendVerificationCode = async () => {
-    if (loading || !realEmail || password.length < 6) return;
-    
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(realEmail)) {
-      setError("Please enter a valid email address");
-      return;
-    }
-
-    setError('');
-    setLoading(true);
-
-    try {
-      await sendSignupOTPEmailAction({
-        data: {
-          email: realEmail,
-          username: username || 'student'
-        }
-      });
-
-      setStep(3);
-      setResendTimer(60);
-      toast.success("Verification code sent to your email!");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      console.error("Email OTP Send Error:", err);
-      setError(err.message || "Failed to send verification email");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSendCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await sendVerificationCode();
-  };
-
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | undefined;
-    if (resendTimer > 0) {
-      interval = setInterval(() => setResendTimer(t => t - 1), 1000);
-    }
-    return () => clearInterval(interval);
-  }, [resendTimer]);
-
   async function handleFinalSubmit(e: React.FormEvent) {
     if (e) e.preventDefault();
     if (loading || !realEmail) return;
@@ -190,30 +142,15 @@ export default function SignupPageClient() {
     setLoading(true);
 
     const cleanUsername = username.toLowerCase().trim();
-    const virtualEmail = AuthService.getInternalEmail(cleanUsername);
+    const normalizedEmail = realEmail.toLowerCase().trim();
     let tempUser = null;
 
     try {
-      // 1. Verify Email OTP (DISABLED TEMPORARILY)
-      /*
-      try {
-        await verifySignupOTPAction({
-          data: {
-            email: realEmail,
-            code: verificationCode
-          }
-        });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } catch (confirmErr: any) {
-        throw new Error(confirmErr.message || "Invalid verification code.");
-      }
-      */
-
-      // 2. Create Auth account
-      const userCred = await createUserWithEmailAndPassword(auth, virtualEmail, password);
+      // 1. Create Auth account using the real email
+      const userCred = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
       tempUser = userCred.user;
 
-      // 3. Claim Username
+      // 2. Claim Username
       const usernameRef = ref(db, `usernames/${cleanUsername}`);
       const transactionResult = await runTransaction(usernameRef, (currentVal) => {
         if (currentVal === null) return tempUser!.uid;
@@ -224,7 +161,7 @@ export default function SignupPageClient() {
         throw new Error("Username was claimed during verification.");
       }
 
-      // 4. Save public profile and private account data separately
+      // 3. Save public profile and private account data separately
       const publicProfile = {
         uid: tempUser.uid,
         fullName: fullName.trim(),
@@ -243,8 +180,7 @@ export default function SignupPageClient() {
         uid: tempUser.uid,
         fullName: fullName.trim(),
         username: cleanUsername,
-        email: virtualEmail,
-        realEmail,
+        email: normalizedEmail,
         dob,
         phone: phone ? `${countryCode}${phone}` : '',
         role: 'student' as const,
@@ -258,9 +194,13 @@ export default function SignupPageClient() {
       await set(ref(db, `users/${tempUser.uid}`), userData);
       await set(ref(db, `profiles/${tempUser.uid}`), publicProfile);
       await updateProfile(tempUser, { displayName: fullName });
+      await sendEmailVerification(tempUser, {
+        url: `${window.location.origin}/login`,
+      });
+      await firebaseSignOut(auth);
 
-      toast.success('Account verified and created!');
-      router.push('/home');
+      setStep(3);
+      toast.success('Verification link sent. Check your inbox.');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       console.error('Final Signup Error:', err);
@@ -344,7 +284,15 @@ export default function SignupPageClient() {
           {/* Subtle Inner Glow */}
           <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 via-transparent to-accent/5 pointer-events-none" />
           
-          <form onSubmit={step === 3 ? handleFinalSubmit : (step === 2 ? handleFinalSubmit : handleSendCode)} className="relative z-10">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (step === 2) {
+                void handleFinalSubmit(e);
+              }
+            }}
+            className="relative z-10"
+          >
             <AnimatePresence mode="wait">
               {step === 1 ? (
                 <motion.div 
@@ -622,7 +570,7 @@ export default function SignupPageClient() {
                       <Fingerprint className="w-3 h-3" /> Step 03
                     </div>
                     <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">Verify Email</h1>
-                    <p className="text-muted-foreground text-sm font-medium">Enter the 6-digit code sent to</p>
+                    <p className="text-muted-foreground text-sm font-medium">We sent your Firebase verification link to</p>
                     <p className="text-primary text-xs font-bold truncate px-4">{realEmail}</p>
                   </div>
 
@@ -637,47 +585,16 @@ export default function SignupPageClient() {
                   )}
 
                   <div className="space-y-6">
-                    <div className="space-y-3 group">
-                      <label className="text-xs font-bold text-muted-foreground/60 uppercase tracking-wider text-center block">Verification Code</label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          maxLength={6}
-                          value={verificationCode}
-                          onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
-                          placeholder="000000"
-                          className="w-full px-6 py-5 bg-white/[0.02] border border-white/10 rounded-2xl text-center text-3xl font-black tracking-[0.6em] text-white focus:outline-none focus:ring-2 focus:ring-primary/40 focus:bg-white/[0.05] transition-all placeholder:text-white/5"
-                        />
-                      </div>
-                    </div>
-
                     <div className="flex flex-col gap-4">
-                      <button
-                        type="submit"
-                        disabled={verificationCode.length < 6 || loading}
-                        className="w-full py-4 bg-success text-white rounded-2xl font-black text-[16px] shadow-lg shadow-success/20 hover:shadow-success/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 flex items-center justify-center gap-2 group/btn"
+                      <p className="text-center text-sm text-muted-foreground leading-relaxed">
+                        Open the email, tap the verification link, then return to login and sign in with your email or username.
+                      </p>
+                      <Link
+                        href="/login"
+                        className="w-full py-4 bg-success text-white rounded-2xl font-black text-[16px] shadow-lg shadow-success/20 hover:shadow-success/40 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 group/btn"
                       >
-                        {loading ? (
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                        ) : (
-                          <>Complete Registration <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>
-                        )}
-                      </button>
-                      
-                      <div className="text-center">
-                        <button 
-                          type="button"
-                          disabled={resendTimer > 0 || loading}
-                          onClick={sendVerificationCode}
-                          className="text-xs font-bold text-muted-foreground hover:text-white transition-colors disabled:opacity-50 inline-flex items-center gap-2"
-                        >
-                          {resendTimer > 0 ? (
-                            <>Resend code in <span className="text-primary">{resendTimer}s</span></>
-                          ) : (
-                            "Didn't receive the code? Resend"
-                          )}
-                        </button>
-                      </div>
+                        Continue to Login <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                      </Link>
                     </div>
                   </div>
                 </motion.div>

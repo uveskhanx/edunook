@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { sendPasswordResetAction } from '@/lib/client-actions';
+import { AuthService } from '@/lib/auth-service';
 
 export default function ForgotPasswordClient() {
   const [username, setUsername] = useState('');
@@ -25,11 +25,9 @@ export default function ForgotPasswordClient() {
     setLoading(true);
 
     try {
-      await sendPasswordResetAction({
-        data: { username: username.toLowerCase().trim() }
-      });
+      await AuthService.sendResetPasswordEmail(username.toLowerCase().trim());
       setSubmitted(true);
-      toast.success('Recovery link sent!');
+      toast.success('Firebase reset link sent!');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       console.error('Reset Error:', err);

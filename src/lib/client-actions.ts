@@ -14,8 +14,8 @@ async function postAction<TResponse>(path: string, body: unknown): Promise<TResp
   return payload as TResponse;
 }
 
-export function sendPasswordResetAction(payload: ActionPayload<{ username: string }>) {
-  return postAction<{ success: boolean }>('/api/email/password-reset', payload.data);
+export function resolveAuthEmailAction(payload: ActionPayload<{ username: string }>) {
+  return postAction<{ success: boolean; email: string }>('/api/auth/resolve-email', payload.data);
 }
 
 export function sendFeedbackEmailAction(payload: ActionPayload<{
@@ -26,14 +26,6 @@ export function sendFeedbackEmailAction(payload: ActionPayload<{
   userId?: string;
 }>) {
   return postAction<{ success: boolean }>('/api/feedback', payload.data);
-}
-
-export function sendSignupOTPEmailAction(payload: ActionPayload<{ email: string; username: string }>) {
-  return postAction<{ success: boolean }>('/api/email/signup-otp', payload.data);
-}
-
-export function verifySignupOTPAction(payload: ActionPayload<{ email: string; code: string }>) {
-  return postAction<{ success: boolean }>('/api/email/verify-signup-otp', payload.data);
 }
 
 export function getCloudinarySignatureAction(payload: ActionPayload<{

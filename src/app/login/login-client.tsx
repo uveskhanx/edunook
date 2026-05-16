@@ -35,6 +35,14 @@ export default function LoginPageClient() {
   // Focus Refs
   const passwordRef = useRef<HTMLInputElement>(null);
 
+  const getVerificationActionUrl = () => {
+    if (typeof window !== 'undefined' && window.location.origin) {
+      return `${window.location.origin}/login`;
+    }
+
+    return `${process.env.NEXT_PUBLIC_FRONTEND_URL || 'https://edunook-io.vercel.app'}/login`;
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!identifier || !password || loading) return;
@@ -44,33 +52,34 @@ export default function LoginPageClient() {
     setLoading(true);
 
     try {
-      const cleanUsername = identifier.toLowerCase().trim();
+      const normalizedIdentifier = identifier.toLowerCase().trim();
+      let signInEmail = normalizedIdentifier;
 
-      const isValidPath = /^[a-zA-Z0-9_]+$/.test(cleanUsername);
-      if (!isValidPath) {
-         setError('Please enter a valid username (no spaces or special characters).');
-         setLoading(false);
-         return;
+      if (!normalizedIdentifier.includes('@')) {
+        const isValidUsername = /^[a-zA-Z0-9_]+$/.test(normalizedIdentifier);
+        if (!isValidUsername) {
+          setError('Please enter a valid username (no spaces or special characters).');
+          setLoading(false);
+          return;
+        }
+
+        const uid = await DbService.getUidByUsername(normalizedIdentifier);
+        if (!uid) {
+          console.warn(`[Login] Username "${normalizedIdentifier}" not found in database index.`);
+          throw new Error('auth/user-not-found');
+        }
+
+        const result = await AuthService.resolveAuthEmail(normalizedIdentifier);
+        signInEmail = result;
       }
 
-      // 1. Lookup UID connected to this username
-      const uid = await DbService.getUidByUsername(cleanUsername);
-      if (!uid) {
-        console.warn(`[Login] Username "${cleanUsername}" not found in database index.`);
-        throw new Error('auth/user-not-found');
+      const userCred = await signInWithEmailAndPassword(auth, signInEmail, password);
+
+      if (!userCred.user.emailVerified) {
+        setNeedsVerification(true);
+        setError('Please verify your email before continuing.');
+        return;
       }
-
-      // 2. Retrieve their mapped email (Legacy real email OR Modern virtual email)
-      const profile = await DbService.getProfile(uid);
-      let profileEmail = profile?.email;
-
-      if (!profileEmail) {
-        console.warn(`[Login] Profile for UID "${uid}" is missing or has no email. Attempting recovery via internal mapping...`);
-        // Self-Healing Fallback: Generate the virtual email if profile data is missing
-        profileEmail = AuthService.getInternalEmail(cleanUsername);
-      }
-
-      await signInWithEmailAndPassword(auth, profileEmail, password);
 
       // Success!
       toast.success('Welcome back!');
@@ -97,7 +106,9 @@ export default function LoginPageClient() {
     if (resendLoading || !auth.currentUser) return;
     setResendLoading(true);
     try {
-      await sendEmailVerification(auth.currentUser);
+      await sendEmailVerification(auth.currentUser, {
+        url: getVerificationActionUrl(),
+      });
       toast.success('Verification link sent to your email');
     } catch (err: any) {
       toast.error('Failed to send link. Try again later.');
@@ -192,8 +203,8 @@ export default function LoginPageClient() {
             <div className="space-y-6">
               <div className="space-y-2 group">
                 <div className="flex items-center justify-between px-1">
-                  <label className="text-xs font-bold text-muted-foreground/60 uppercase tracking-wider">Username</label>
-                  <span className="text-[10px] text-muted-foreground/40 font-medium italic">Your unique identifier</span>
+                  <label className="text-xs font-bold text-muted-foreground/60 uppercase tracking-wider">Username or Email</label>
+                  <span className="text-[10px] text-muted-foreground/40 font-medium italic">Use either one</span>
                 </div>
                 <div className="relative">
                   <AtSign className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
@@ -201,7 +212,7 @@ export default function LoginPageClient() {
                     type="text"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="Enter your username"
+                    placeholder="Enter your username or email"
                     autoFocus
                     autoComplete="username"
                     autoCapitalize="none"
